@@ -6,6 +6,13 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Changed (plan)
 
+- MCP design revised after reading muagent's MCP client: the server's own read-only hint is ignored (only
+  `autoApprove` skips a prompt, so MCP calls run one at a time), strict `${VAR}` expansion, URL and redirect checks,
+  private stderr logs, unique stable tool names, restart after a lost connection (3 per session), a `tools`
+  allow-list and opt-in `instructions`. The child process inherits the full environment by choice.
+
+### Changed (plan)
+
 - Phase 4 split into 4a (approvals, queued prompts, expandable cards; tag v0.4.0) and 4b (MCP client; tag v0.4.1) and
   elaborated in `PLAN.md` sections 4.5 and 4.6: centered approval modal, a per-server `autoApprove` list, MCP servers
   connecting in the background with a 10 s limit and a fixed tool list, 2-minute calls and a 50 KB result cap,

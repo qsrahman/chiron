@@ -1,7 +1,7 @@
 # desk-agent — Product Requirements Document
 
 Status: living document. Update it whenever a change affects scope, architecture or phases.
-Last reviewed: 2026-11-17 (Phase 4 design).
+Last reviewed: 2026-11-17 (Phase 4 design, MCP).
 
 ## 1. Goal
 
@@ -140,29 +140,63 @@ synthetic messages. Real-API checks are manual and documented in the README.
 
 ### 4.6 MCP client (Phase 4b)
 
-- **Transports:** stdio via `mcp.CommandTransport` (the SDK closes stdin, then sends SIGTERM after 5 s) and remote
-  servers via `mcp.StreamableClientTransport` with an `http.Client` whose `RoundTripper` adds the configured headers.
-  No OAuth, no sampling, no elicitation (the client declares no such capabilities, so servers do not ask).
-- **Connecting:** all enabled servers connect in parallel in the background; each gets 10 s. The chat opens at once and
-  shows "connecting"; a prompt sent before they finish waits (up to 10 s) so the model sees the tools. The registry is
-  built once from the servers that connected in time. A server that is late or failed is reported and stays out for
-  the session; tool-list change notifications are ignored (restart to pick up changes).
-- **Reporting:** a status line per server at startup (connected with N tools, or the error, never a secret) and a
-  count in the header. For stdio servers the tail of stderr is kept to explain a failed start.
-- **Tool adapter:** the MCP tool becomes a `tools.Tool`. Name `server__tool`, characters outside `[a-zA-Z0-9_-]`
-  replaced by `_`, cut to 64 characters, collisions reported and skipped. Schema passed through, with an empty
-  `properties` added when missing. `ReadOnly()` is the server's `readOnlyHint` (a plain bool, so "unset" means
-  mutating). Tools named in the server's `autoApprove` list never prompt.
+Informed by a read of muagent's `mcp_client.py` and `mcp_hub.py` (Python; see section 9.2).
+
+- **Transports:** stdio via `mcp.CommandTransport` (shortened `TerminateDuration`, about 2 s, so quitting never hangs)
+  and remote servers via `mcp.StreamableClientTransport` with our own `http.Client`. No OAuth, no sampling, no
+  elicitation (no such capabilities are declared, so servers do not ask).
+- **Trust:** the server's own `readOnlyHint` is **ignored**: a server can claim anything about itself. Every MCP call
+  asks for approval unless the tool is listed in that server's `autoApprove`. Because nothing is declared
+  read-only, MCP calls run one at a time.
+- **Process environment:** a stdio server inherits the full environment of desk-agent plus its own `env` (a user
+  decision). This means the server can see variables such as `OPENAI_API_KEY`; the README says so. Tightening it
+  later is a small change (an allow-list in `internal/mcp`).
+- **Remote servers:** the URL must be https unless it points at loopback, and may not contain credentials. The
+  configured headers are sent only to the configured origin: redirects to another origin are refused, and the
+  header-adding `RoundTripper` checks the host of every request itself (Go's default client forwards custom headers
+  across a cross-domain redirect; it strips only `Authorization`, `Cookie` and `WWW-Authenticate`).
+- **Stderr:** a stdio server's stderr goes to a private log file (mode 0600, under the user's state directory, emptied
+  at each launch and appended to on a restart), never to the terminal, which would corrupt the TUI. The status shows
+  the log path.
+- **Config values:** `${NAME}` in `command`, `args`, `env`, `url` and `headers` is expanded strictly: an unset variable
+  is an error that names the variable and where it is used (never the value), the expanded text is not scanned
+  again, and that server fails without stopping the others. (The three top-level fields keep the lenient
+  environment fallback of section 6.) Server names may only use letters, digits, `_` and `-`.
+- **Connecting:** all enabled servers are launched before any is waited for, connect and list their tools in
+  parallel, and share one 10 s deadline counted from the launch. The chat opens at once and shows "connecting"; a
+  prompt sent before they finish waits (up to that deadline) so the model sees the tools. Failure notices reach the
+  TUI as messages, never printed over the screen. The registry is built once from the servers that connected in time;
+  a late or failed server stays out for the session, and tool-list change notifications are ignored.
+- **Lost connection:** the connection is watched with the SDK's `KeepAlive` and `Wait`. After a server dies, the next
+  call starts it again, at most 3 times per session; the call that found it dead fails and is not repeated, since it
+  may have done part of its work. Restarting does not change the registry: if the restarted server no longer has a
+  tool, that call fails with the server's error text.
+- **Tool adapter:** `server__tool`, characters outside `[a-zA-Z0-9_-]` replaced by `_`, cut to 64 characters. Names
+  are made unique across servers with a numeric suffix (`a` + `b__c` and `a__b` + `c` would both give `a__b__c`) and
+  are assigned in sorted server order after every server has answered, so they never depend on who was faster. A name
+  the API rejects fails the whole request, so this matters. Schemas pass through, with an empty `properties` added
+  when missing. Arguments are checked only for being a JSON object with the schema's required keys; types are left
+  to the server, whose own errors go back to the model as text.
+- **Config extras:** `tools: ["a","b"]` exposes only those tools and is an error for a name the server does not have
+  (a typo would otherwise offer nothing, silently); the count of hidden tools is shown in the status.
+  `instructions: true` adds the server's own usage notes to the system prompt, framed as notes from the server and not
+  as orders, cut to 4000 characters. Without it they are not used.
 - **Results:** text parts joined; structured content used when there is no text; images and audio become a short
   placeholder (`[image: image/png, 12 KB]`); resource links keep their URL; embedded text resources are included.
-  `isError` becomes a tool failure. Output is capped at 50 KB (cut with a note); each call has a 2-minute timeout.
+  `isError` becomes a tool failure. Output is capped at 50 KB (cut with a note); each call has a 2-minute timeout, and
+  cancelling the turn cancels the request.
+- **Shutdown:** servers close in parallel (closing one can take seconds), including servers that failed to start.
 - **Cards:** MCP calls show as `server → tool`, not the mangled name.
+- **Status:** a line per server at startup (connected with N tools, hidden count, or the error, never a secret) and a
+  count in the header. A `/servers` and `/reconnect` command arrive with the slash commands in Phase 9; a reconnect
+  would apply between turns so a turn's tools never change under it.
 - **Limits to respect:** OpenAI function names allow `[a-zA-Z0-9_-]`; the docs I found give a 64 (chat) or 128
   (responses) character maximum and at most 128 tools per request. If a configuration exceeds the tool count, extra
   tools are skipped with a warning. (Native namespaces and `tool_search` exist on newer models and are the way out
   for very large tool sets, not used now.)
-- **Tests:** `mcp.NewInMemoryTransports()` with a test server; the test binary re-run as a stdio server; an
-  `httptest` server with the SDK's streamable handler to check that headers arrive and secrets are never logged.
+- **Tests:** `mcp.NewInMemoryTransports()` with a test server; the test binary re-run as a stdio server (including one
+  that exits, for the restart rule); an `httptest` server with the SDK's streamable handler to check that headers
+  arrive, that a cross-origin redirect does not carry them, and that no secret appears in errors or logs.
 
 ## 5. Tools (v1)
 
@@ -176,7 +210,7 @@ synthetic messages. Real-API checks are manual and documented in the README.
 | `todo` | yes | In-memory list shown in the TUI; replaces the whole list per call. |
 | `ask_user` | yes | Blocks on a `QuestionAsked` reply. |
 | `web_fetch` | yes | `net/http` + HTML-to-markdown library (chosen in Phase 8), size cap, timeout. |
-| MCP tools | per server | Namespaced `server__tool`; treated as mutating (approval) unless the MCP annotations mark them read-only. |
+| MCP tools | no | Namespaced `server__tool`; every call asks for approval unless listed in the server's `autoApprove`. The server's own read-only hint is ignored. |
 
 ## 6. Configuration
 
@@ -208,7 +242,7 @@ synthetic messages. Real-API checks are manual and documented in the README.
   `OPENAI_API_KEY`), which override the file, which overrides the built-in default model. `base_url` and
   `api_key` may be omitted. `mcpServers` is parsed from Phase 4 on; until then it is ignored.
 - Each `mcpServers` entry may list `"autoApprove": ["tool", ...]`: tools of that server that never prompt (names as
-  the server reports them). Everything else follows the server's read-only hint (section 4.6).
+  the server reports them) and never prompt. Everything else asks: the server's own read-only hint is ignored (section 4.6).
 - Each `mcpServers` entry is either a **stdio server** (`command`, `args`, `env`) or a **remote HTTP server**
   (`url`, `headers`). An entry with both, or with neither, is a config error. `enabled` defaults to true when
   omitted; disabled servers are not started.
@@ -229,7 +263,7 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 3.5 (done, v0.3.1) | Quick wins from the Crush study: a real system prompt (embedded template with an `<env>` block: working directory, platform, date, git state; loads `AGENTS.md`/`CLAUDE.md` from the working directory), loop detection (the same tool call, arguments and output repeated more than 5 times in the last 10 steps stops the turn), a stream idle timeout, and token/context usage read from `response.completed` and shown in the status line | Prompt renders with the env block and project file; a scripted repeating tool call is stopped before the step limit; a stalled stream fails with a clear error; usage appears in the status line. Tagged v0.3.1. |
 | 3.6 (done, v0.3.2) | UI foundation (from the Crush UI study). `internal/tui/theme.go`: a semantic palette (primary, info, success, warning, danger, subtle and muted text, band background; diff colours are added in Phase 5 when diffs exist) with dark and light variants chosen from the terminal background; bands and diff colours are derived from that background with lipgloss `Darken`/`Lighten`/`Alpha`, and the terminal background is never painted. Layout: 1-column margin, text width capped at 120, a 2-column gutter shared by every item, a 1-row gap between items, a left bar in the primary colour on user messages. A one-row header (brand, working directory, git branch; model and context % on the right). Tool cards: arguments parsed into a main parameter plus `key=value` (never raw JSON), state-coloured icon (spinner via `bubbles/spinner` while running, then `✓` / `×`, muted when cancelled), elapsed time for slow calls, output on a background band with a `… (N more lines)` hint, an `ERROR` badge for failures, collapsed to 5 lines; syntax highlighting with chroma (already in the module graph). Input: prompt on the first line only, dynamic height (textarea `DynamicHeight`), focus and busy styles. Bottom help bar built with `bubbles/help` and `key.Binding` (bright key, dim description). Glamour style derived from the theme with no document margin. Welcome screen (name, version, directory, model, hint). Golden-file tests of the main views. No sidebar. | The golden views (welcome, conversation, each card state, error, narrow and wide widths, dark and light themes) match; no raw JSON in card headers; every item shares one gutter; existing behaviour tests still pass. Tagged v0.3.2. |
 | 4a | Approvals and TUI. Agent: a mutating call emits `ApprovalRequested` and waits for the answer or a cancel; session grants; denial text for the model (section 4.5). TUI: centered approval modal (starts on Deny), queued prompts (shown above the input, sent after the turn; Ctrl-C cancels the turn and drops the queue), expandable tool cards (Tab / Shift+Tab select a card when the input is empty, Enter or Space toggle 5 lines versus full output, Esc returns to typing). Exercised with fake mutating tools in tests; no real mutating tool exists until 4b. | Allow, Allow for session and Deny each behave as specified; a denied call is reported to the model and not retried; cancelling closes an open prompt; session grants are scoped by grant key; queued prompts run in order and are dropped on Ctrl-C; cards expand and collapse; golden tests for the modal, the queue and an expanded card. Tagged v0.4.0. |
-| 4b | MCP client (section 4.6): `mcpServers` config (`command`/`args`/`env` or `url`/`headers`, `enabled`, `autoApprove`), `${VAR}` expansion, parallel background connect, tool adapter, `server → tool` cards, startup status. | A real stdio server and an httptest HTTP server both work, including headers and parallel read-only calls; an unapproved MCP call is refused; a failing or slow server is reported and does not stop the agent; golden test for the startup status. Tagged v0.4.1. |
+| 4b | MCP client (section 4.6): `mcpServers` config (`command`/`args`/`env` or `url`/`headers`, `enabled`, `autoApprove`, `tools`, `instructions`), strict `${VAR}` expansion, URL and redirect checks, parallel background connect with a shared deadline, restart after a lost connection (3 per session), tool adapter with unique names, `server → tool` cards, startup status, private stderr logs. | A real stdio server and an httptest HTTP server both work, including headers; an unapproved MCP call is refused and an `autoApprove`d one is not; a cross-origin redirect does not carry headers; a killed server is restarted by the next call (at most 3 times); a failing or slow server is reported and does not stop the agent; golden test for the startup status. Tagged v0.4.1. |
 | 5 | `read_file` (line-numbered, `offset`/`limit`, default 200 lines, lines cut at 2000 characters), `list_dir`, `write_file`, `edit_file`, working-directory confinement. `edit_file` and `write_file` over an existing file require that it was read in this session and fail if it changed on disk since; a non-unique match returns a message asking for more context or `replace_all`. Edits show a unified diff in the approval prompt (`go-udiff`, already in the module graph). Tool descriptions live in embedded `.md` files. | Reads work and run in parallel; mutations go through the approval prompt; an edit without a prior read, after an outside change, or with an ambiguous match fails cleanly; paths outside the working tree are rejected. |
 | 6 | `shell`: every command asks for approval (no read-only allowlist in v1). Output is capped; the truncation marker names a file holding the full output. No background jobs in v1. | A hung command is killed on cancel and the loop recovers; long output is truncated with a pointer to the full file. |
 | 7 | `todo` (states pending/in_progress/completed, at most one in_progress, shown in the TUI), `ask_user` with typed questions (`yes_no`, `single_choice`, `multi_choice`, `free_text`; at most 5 choices; a description is required) | The model can pause, ask and resume; an invalid question is rejected with a clear error. |
@@ -298,3 +332,14 @@ header row and no sidebar (MCP and todo status can become small pills above the 
 cards of 5 lines. Not copied: the gradient logo, the sidebar, the painted background and Crush's custom screen
 buffer renderer. Overlays for the Phase 4 permission dialog can use lipgloss v2 `Layer`/`Compositor`
 (present in v2.1.1; to be verified when used).
+
+### 9.2 Lessons from muagent's MCP client (2026-11-17)
+
+Read: `mcp_client.py` and `mcp_hub.py` (Python). Adopted: ignoring a server's own read-only claim, strict `${VAR}`
+expansion with an error naming the variable, https or loopback URLs without credentials and no cross-origin redirects,
+private stderr log files, unique stable tool names, required-keys-only argument checks, one shared startup deadline
+with parallel connect and close, restart after a lost connection (3 per session, the failed call not repeated),
+a `tools` allow-list with a typo guard, and opt-in server instructions. Decided otherwise: the child process
+inherits the full environment (muagent passes only a short allow-list), and a `readOnly` flag per server was not
+chosen (only per-tool `autoApprove`). Not needed in Go: the background thread and event-loop machinery. Not adopted
+now: per-server timeouts, image pass-through, a live tool list.
