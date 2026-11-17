@@ -1,7 +1,7 @@
 # desk-agent — Product Requirements Document
 
 Status: living document. Update it whenever a change affects scope, architecture or phases.
-Last reviewed: 2026-11-17 (Phase 0).
+Last reviewed: 2026-11-17 (Phase 1).
 
 ## 1. Goal
 
@@ -38,7 +38,7 @@ config, glob/grep tools (the model uses `rg`/`find` through `shell`).
 | MCP | Official `github.com/modelcontextprotocol/go-sdk`; stdio servers (`CommandTransport`) and remote HTTP servers (Streamable HTTP client transport) | Official SDK; tools adapt to our `Tool` interface. Both transports are needed by the config. |
 | Config | One file: `$XDG_CONFIG_HOME/desk-agent/config.json`, else `~/.config/desk-agent/config.json`. No per-project config. | Requested. `os.UserConfigDir` would give `~/Library/Application Support` on macOS, so the path is built explicitly. Precedence: flags > env vars > file. |
 | Model | `gpt-5.4-mini` is the intended default; configurable via flag, env `DESK_AGENT_MODEL` or config. | Requested. Model IDs change often, so it is never hard-coded in logic. Confirm the ID against the account when Phase 1 first hits the real API. |
-| API key / endpoint | `api_key` and `base_url` in the config, or `OPENAI_API_KEY` / `OPENAI_BASE_URL` env vars; passed to the client with `option.WithAPIKey` / `option.WithBaseURL` | Lets the agent target OpenAI-compatible servers (for example a local one at `http://localhost:11434/v1`). `base_url` is unset by default, which means the OpenAI API. |
+| API key / endpoint | `api_key` and `base_url` in the config, or `OPENAI_API_KEY` / `OPENAI_BASE_URL` env vars; `--base-url` flag. There is deliberately no `--api-key` flag (shell history, process lists). The resolved values are passed to the client with `option.WithAPIKey` / `option.WithBaseURL`; an API key is only required when `base_url` is unset. | Lets the agent target OpenAI-compatible servers (for example a local one at `http://localhost:11434/v1`). `base_url` is unset by default, which means the OpenAI API. |
 | Secrets in config | Every string value goes through `os.ExpandEnv`, so `"${NAME}"` pulls from the environment. The loader warns when the file is readable by group or others. | Keep keys out of the file where possible; no custom expansion code. |
 | Commits | Conventional Commits, no co-author trailer | User preference. |
 | Versioning | Tag `v0.N.0` at the end of each phase | Keep a Changelog + SemVer. |
@@ -46,7 +46,8 @@ config, glob/grep tools (the model uses `rg`/`find` through `shell`).
 ## 4. Architecture
 
 ```
-cmd/desk-agent/main.go     flags, config, wiring
+cmd/desk-agent/main.go     flags, wiring, -p mode
+internal/config/           config file, env and flag precedence
 internal/agent/            loop, events, history
 internal/tools/            Tool interface + registry; fs, shell, web, todo, ask
 internal/mcp/              MCP servers adapted to tools.Tool
@@ -73,9 +74,11 @@ can recover. MCP tools implement the same interface.
 
 ### 4.2 Agent loop
 
-1. Send history + tools with `store=false` and `include: ["reasoning.encrypted_content"]` (verify in Phase 1).
-2. Stream the response (`client.Responses.NewStreaming`), emitting `TextDelta` events and accumulating output
-   items (`responses.ResponseAccumulator`; verified against SSE in the Phase 1 spike).
+1. Send history + tools with `store=false` and `include: ["reasoning.encrypted_content"]` (implemented in
+   Phase 1; not yet confirmed against the real API, see section 8).
+2. Stream the response (`client.Responses.NewStreaming`), emitting `TextDelta` events. The final
+   `response.completed` event carries the whole response, so its output items are used directly;
+   `responses.ResponseAccumulator` is not needed.
 3. Append all output items to history unchanged.
 4. If there are no function calls, emit `Done`.
 5. Otherwise split the calls, in model order, into groups: each run of consecutive read-only calls is one
@@ -138,8 +141,9 @@ synthetic messages. Real-API checks are manual and documented in the README.
 ```
 
 - Parsed with `encoding/json`; unknown keys are ignored. Every string value is expanded with `os.ExpandEnv`.
-- `model`, `base_url`, `api_key`: flags override env vars, which override the file. `base_url` and `api_key`
-  may be omitted (the SDK then uses `OPENAI_API_KEY` and the default endpoint).
+- Precedence: flags (`--model`, `--base-url`) override env vars (`DESK_AGENT_MODEL`, `OPENAI_BASE_URL`,
+  `OPENAI_API_KEY`), which override the file, which overrides the built-in default model. `base_url` and
+  `api_key` may be omitted. `mcpServers` is parsed from Phase 4 on; until then it is ignored.
 - Each `mcpServers` entry is either a **stdio server** (`command`, `args`, `env`) or a **remote HTTP server**
   (`url`, `headers`). An entry with both, or with neither, is a config error. `enabled` defaults to true when
   omitted; disabled servers are not started.
@@ -152,7 +156,7 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | # | Phase | Done when |
 |---|---|---|
 | 0 | Scaffold: module, git, docs, skeleton, smoke test | `go vet ./...` and `go test ./...` pass; docs describe the skeleton. |
-| 1 | Agent core: config loading, streaming, local history, `-p "prompt"` non-interactive mode. Starts with the `ResponseAccumulator`-over-SSE and reasoning-replay spikes. | Fake-server test streams text; a second turn replays history correctly. |
+| 1 (done, v0.1.0) | Agent core: config loading, streaming, local history, `-p "prompt"` non-interactive mode. | Fake-server test streams text; a second turn replays history correctly. |
 | 2 | TUI shell: transcript viewport, input, token streaming, `Ctrl-C` cancels the turn, markdown for completed messages | `Update` tests pass; manual run against the real API. |
 | 3 | Tool loop only: `Tool` interface and registry, function-call handling, concurrent read-only / serial mutating dispatch, `function_call_output` replay, tool cards in the TUI. Exercised with fake tools defined in tests; no real tools ship. | Three slow fake read-only calls finish in about 1x, not 3x, the time of one; mutating fakes run one at a time in model order; a tool error reaches the model as output and the loop continues. |
 | 4 | MCP client (stdio and remote HTTP), `mcpServers` config, `enabled` flag, header/env expansion, namespacing, and the approval prompt (MCP tools are mutating unless annotated read-only, so approvals must exist first) | A real stdio server and a remote HTTP server both work, including parallel calls; an unapproved MCP call is refused; a failing server is reported but does not stop the agent. |
@@ -164,8 +168,10 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 
 ## 8. Open items
 
-- Confirm `gpt-5.4-mini` is valid for the account (Phase 1, first real call).
-- Verify `ResponseAccumulator` over SSE and `include: reasoning.encrypted_content` behaviour (Phase 1 spike).
+- Real-API check still pending (no `OPENAI_API_KEY` was available when Phase 1 was built; all Phase 1 tests
+  use a fake server). Confirm with `desk-agent -p "..."`: that `gpt-5.4-mini` is valid for the account, that
+  `include: reasoning.encrypted_content` is accepted, and that a second turn replaying reasoning items works
+  with `store=false`. This needs a multi-turn session, so it is best done once the TUI exists (Phase 2).
 - Verify Bubble Tea v2 / `bubbles` v2 / `glamour` import paths and APIs (Phase 2).
 - Check which features survive a custom `base_url`. Servers that only partly implement the Responses API may
   lack `reasoning.encrypted_content` or `responses.compact`. Phase 1

@@ -5,7 +5,8 @@ Read [PLAN.md](PLAN.md) first for goals, decisions and the phase table.
 ## Layout
 
 ```
-cmd/desk-agent/     main: flags, config, wiring
+cmd/desk-agent/     main: flags, wiring, -p mode
+internal/config/    config file, env and flag precedence
 internal/agent/     loop, events, history            (no UI imports)
 internal/tools/     Tool interface, registry, built-in tools
 internal/mcp/       MCP servers adapted to tools.Tool
@@ -37,6 +38,8 @@ Build, vet and test must pass before a commit.
 - **Read-only tools run concurrently; mutating tools run alone, in model order.** Mark a tool read-only only if
   it cannot change anything outside the process.
 - **File tools are confined to the working directory tree.**
+- **`agent.Send` contract:** the caller must read the returned channel until it closes (the last event is `Done`
+  or `Error`); cancel the context to stop early. History changes only when a turn succeeds.
 - **Tests use no network.** Point the SDK at an `httptest` server with `option.WithBaseURL` and scripted SSE.
   Test the TUI through `Update` with synthetic messages.
 - **Comments explain why**, not what. No line-by-line commentary.
