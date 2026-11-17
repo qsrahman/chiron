@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -16,8 +17,12 @@ import (
 	"github.com/qsrahman/desk-agent/internal/tools"
 )
 
-// DefaultInstructions is the system prompt used when the caller does not supply one.
-const DefaultInstructions = "You are desk-agent, an AI coding assistant running in the user's terminal. Be concise and accurate."
+// defaultIdleTimeout is how long a response stream may stay silent before the request is abandoned. It is
+// generous because reasoning models can think for a while between events.
+const defaultIdleTimeout = 2 * time.Minute
+
+// errStreamIdle is the cancellation cause used when the idle timeout fires.
+var errStreamIdle = errors.New("model stopped sending data")
 
 // maxSteps bounds the model calls in one turn, so a model that keeps calling tools cannot run (and bill) forever.
 const maxSteps = 25
@@ -29,13 +34,14 @@ type Agent struct {
 	model        string
 	instructions string
 	tools        *tools.Registry
+	idleTimeout  time.Duration
 	history      []responses.ResponseInputItemUnionParam
 }
 
 // New returns an agent with an empty history. registry holds the tools the model may call; use
 // &tools.Registry{} for none.
 func New(client openai.Client, model, instructions string, registry *tools.Registry) *Agent {
-	return &Agent{client: client, model: model, instructions: instructions, tools: registry}
+	return &Agent{client: client, model: model, instructions: instructions, tools: registry, idleTimeout: defaultIdleTimeout}
 }
 
 // Send starts a turn for the user's text and streams events on the returned channel.
@@ -61,12 +67,14 @@ func (a *Agent) Send(ctx context.Context, text string) <-chan Event {
 func (a *Agent) turn(ctx context.Context, text string, events chan<- Event) error {
 	user := responses.ResponseInputItemParamOfMessage(text, responses.EasyInputMessageRoleUser)
 	input := append(slices.Clone(a.history), user)
+	var steps []string // signatures of the tool steps so far, for loop detection
 
 	for range maxSteps {
 		response, err := a.respond(ctx, input, events)
 		if err != nil {
 			return err
 		}
+		events <- Usage{InputTokens: response.Usage.InputTokens, OutputTokens: response.Usage.OutputTokens}
 		input = append(input, outputAsInput(response.Output)...)
 
 		calls := functionCalls(response.Output)
@@ -74,9 +82,15 @@ func (a *Agent) turn(ctx context.Context, text string, events chan<- Event) erro
 			a.history = input
 			return nil
 		}
-		input = append(input, a.runCalls(ctx, calls, events)...)
+		outputs := a.runCalls(ctx, calls, events)
+		input = append(input, functionOutputs(calls, outputs)...)
 		if err := ctx.Err(); err != nil {
 			return err // cancelled while tools ran; the model is not asked again
+		}
+
+		steps = append(steps, stepSignature(calls, outputs))
+		if isLooping(steps) {
+			return fmt.Errorf("stopped: the model keeps repeating the same tool calls (more than %d of its last %d steps)", loopMaxRepeats, loopWindow)
 		}
 	}
 	return fmt.Errorf("stopped after %d model calls without a final answer", maxSteps)
@@ -99,12 +113,19 @@ func (a *Agent) respond(ctx context.Context, input []responses.ResponseInputItem
 		params.Tools = specs
 	}
 
+	// Abandon the request if the stream goes silent. The timer restarts on every event.
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	idle := time.AfterFunc(a.idleTimeout, func() { cancel(errStreamIdle) })
+	defer idle.Stop()
+
 	stream := a.client.Responses.NewStreaming(ctx, params)
 	defer stream.Close()
 
 	// The completed event carries the whole response, so no accumulator is needed.
 	var completed *responses.Response
 	for stream.Next() {
+		idle.Reset(a.idleTimeout)
 		event := stream.Current()
 		switch event.Type {
 		case "response.output_text.delta":
@@ -121,6 +142,9 @@ func (a *Agent) respond(ctx context.Context, input []responses.ResponseInputItem
 		}
 	}
 	if err := stream.Err(); err != nil {
+		if errors.Is(context.Cause(ctx), errStreamIdle) {
+			return nil, fmt.Errorf("%w for %s", errStreamIdle, a.idleTimeout)
+		}
 		return nil, fmt.Errorf("streaming response: %w", err)
 	}
 	if completed == nil {
@@ -139,10 +163,10 @@ func functionCalls(output []responses.ResponseOutputItemUnion) []responses.Respo
 	return calls
 }
 
-// runCalls executes the calls and returns one function_call_output item per call, in call order.
+// runCalls executes the calls and returns one output text per call, in call order.
 // Each run of consecutive read-only calls executes concurrently; any other call runs alone, so
 // mutations happen one at a time in the order the model gave them.
-func (a *Agent) runCalls(ctx context.Context, calls []responses.ResponseFunctionToolCall, events chan<- Event) []responses.ResponseInputItemUnionParam {
+func (a *Agent) runCalls(ctx context.Context, calls []responses.ResponseFunctionToolCall, events chan<- Event) []string {
 	outputs := make([]string, len(calls))
 	for start := 0; start < len(calls); {
 		end := start + 1
@@ -159,7 +183,11 @@ func (a *Agent) runCalls(ctx context.Context, calls []responses.ResponseFunction
 		wg.Wait()
 		start = end
 	}
+	return outputs
+}
 
+// functionOutputs turns the call outputs into the function_call_output items the model expects next.
+func functionOutputs(calls []responses.ResponseFunctionToolCall, outputs []string) []responses.ResponseInputItemUnionParam {
 	items := make([]responses.ResponseInputItemUnionParam, len(calls))
 	for i, call := range calls {
 		item := responses.ResponseInputItemParamOfFunctionCallOutput(outputs[i])

@@ -3,7 +3,7 @@
 A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI, and works on your
 machine through tools (files, shell, web, todo, questions) and optional MCP servers.
 
-> **Status: Phase 3 (v0.3.0).** You can chat with the model in a terminal UI or send a single prompt from the
+> **Status: Phase 3.5 (v0.3.1).** You can chat with the model in a terminal UI or send a single prompt from the
 > command line. The machinery for tool calls is in place (calls run in parallel when safe, and show up as cards
 > in the chat), but no tools ship yet, so the model still cannot touch your files. Tools and MCP arrive in the
 > next phases; see [PLAN.md](PLAN.md). This README is updated as each phase lands.
@@ -23,6 +23,16 @@ export OPENAI_API_KEY=...
 ./desk-agent -p "Explain what a goroutine is in two sentences"   # one prompt, answer on stdout
 ```
 
+## What the model is told
+
+Every session starts with a built-in system prompt (guidance on how to work, use tools and communicate) plus an
+environment block: working directory, platform, today's date and the git branch and state. If the working
+directory has an `AGENTS.md` (or, failing that, a `CLAUDE.md`), its contents are added as project instructions,
+cut at 32 KB.
+
+If the model keeps repeating the same tool call with the same result, the turn is stopped with an error. A
+response stream that goes silent for 2 minutes is abandoned.
+
 ## Using the chat
 
 Type a message and press `Enter`. The answer streams in and is rendered as markdown when it finishes. The
@@ -35,6 +45,8 @@ conversation keeps its history for the whole session.
 | `PgUp` / `PgDn` | Scroll the transcript |
 | `Ctrl-C` | While an answer is streaming: cancel it. Press again to quit. When idle: quit. |
 | `Ctrl-D` | Quit when the input is empty |
+
+The status line shows the model name and, after the first answer, the size of the conversation in tokens.
 
 When the model calls a tool, a card appears in the transcript: `…` while it runs, then `✓` or `✗` with the
 first lines of the result. Independent read-only calls run at the same time; anything that could change
@@ -65,6 +77,7 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
   "model": "gpt-5.4-mini",
   "base_url": "http://localhost:11434/v1",
   "api_key": "${OPENAI_API_KEY}",
+  "context_window": 400000,
   "mcpServers": {
     "context7": {
       "url": "https://mcp.context7.com/mcp",
@@ -84,6 +97,8 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
 - `model`, `base_url`, `api_key`: command-line flags override environment variables (`DESK_AGENT_MODEL`,
   `OPENAI_BASE_URL`, `OPENAI_API_KEY`), which override the file. `base_url` and `api_key` are optional. The
   default model is `gpt-5.4-mini`.
+- `context_window` is optional. With it, the status line shows how much of the context window the conversation
+  uses (for example `25.5k tokens (6%)`); without it only the token count appears.
 - `mcpServers` is accepted but ignored until MCP support lands (Phase 4).
 - `"${NAME}"` in any string value is replaced from the environment, so secrets need not live in the file.
   If you do put a key in the file, keep it private: `chmod 600 ~/.config/desk-agent/config.json`.

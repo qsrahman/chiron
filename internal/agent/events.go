@@ -21,6 +21,10 @@ type ToolFinished struct {
 	Failed bool
 }
 
+// Usage reports the token counts of one model response. Input plus output is roughly the size of the
+// conversation the next request will start from.
+type Usage struct{ InputTokens, OutputTokens int64 }
+
 // Done marks a completed turn; it is the last event of a successful Send.
 type Done struct{}
 
@@ -31,5 +35,6 @@ type Error struct{ Err error }
 func (TextDelta) isEvent()    {}
 func (ToolStarted) isEvent()  {}
 func (ToolFinished) isEvent() {}
+func (Usage) isEvent()        {}
 func (Done) isEvent()         {}
 func (Error) isEvent()        {}

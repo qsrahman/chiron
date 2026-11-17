@@ -25,6 +25,7 @@ func TestLoad(t *testing.T) {
 		"model": "m1",
 		"base_url": "http://localhost:11434/v1",
 		"api_key": "${TEST_KEY}",
+		"context_window": 128000,
 		"mcpServers": {"x": {"command": "npx"}},
 		"future_field": true
 	}`, 0o600)
@@ -34,7 +35,7 @@ func TestLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Config{Model: "m1", BaseURL: "http://localhost:11434/v1", APIKey: "sk-from-env"}
+	want := Config{Model: "m1", BaseURL: "http://localhost:11434/v1", APIKey: "sk-from-env", ContextWindow: 128000}
 	if got != want {
 		t.Errorf("Load() = %+v, want %+v", got, want)
 	}

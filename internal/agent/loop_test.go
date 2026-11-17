@@ -3,11 +3,19 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
 
 	"github.com/qsrahman/desk-agent/internal/tools"
 )
@@ -96,6 +104,16 @@ func outputsOf(t *testing.T, req map[string]any) []map[string]any {
 	return out
 }
 
+func withoutUsage(events []Event) []Event {
+	var out []Event
+	for _, e := range events {
+		if _, ok := e.(Usage); !ok {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // --- tests ---
 
 func TestToolCallRoundTrip(t *testing.T) {
@@ -103,7 +121,7 @@ func TestToolCallRoundTrip(t *testing.T) {
 	srv := newFakeServer(t, callsThenAnswer(functionCall("call_1", "read", nameArgs{"a"}))...)
 	a := newAgentWithTools(t, srv, fakeTool("read", true, 0, log))
 
-	events := drain(t, a.Send(context.Background(), "go"))
+	events := withoutUsage(drain(t, a.Send(context.Background(), "go")))
 
 	// Events: the call starts and finishes, then the model's final answer streams.
 	var kinds []string
@@ -282,10 +300,12 @@ func TestToolCallsStayInHistoryAcrossTurns(t *testing.T) {
 }
 
 func TestStepLimitStopsRunawayToolLoop(t *testing.T) {
-	log := &recorder{}
-	// The script's only reply is a tool call, so the model "never stops".
-	srv := newFakeServer(t, sse(completedWith(functionCall("c1", "read", nameArgs{"a"}))))
-	a := newAgentWithTools(t, srv, fakeTool("read", true, 0, log))
+	// Every call returns something new, so this is not a repeat and only the step limit can stop it.
+	var n atomic.Int32
+	counter := tools.MustNew("count", "returns a different number each time", true,
+		func(context.Context, nameArgs) (string, error) { return fmt.Sprint(n.Add(1)), nil })
+	srv := newFakeServer(t, sse(completedWith(functionCall("c1", "count", nameArgs{"a"}))))
+	a := newAgentWithTools(t, srv, counter)
 
 	events := drain(t, a.Send(context.Background(), "go"))
 
@@ -300,6 +320,83 @@ func TestStepLimitStopsRunawayToolLoop(t *testing.T) {
 	}
 	if len(a.history) != 0 {
 		t.Error("a turn that hit the limit must not change history")
+	}
+}
+
+func TestRepeatedToolCallsAreStopped(t *testing.T) {
+	log := &recorder{}
+	// The model asks for the same thing forever and always gets the same answer.
+	srv := newFakeServer(t, sse(completedWith(functionCall("c1", "read", nameArgs{"a"}))))
+	a := newAgentWithTools(t, srv, fakeTool("read", true, 0, log))
+
+	events := drain(t, a.Send(context.Background(), "go"))
+
+	last, ok := events[len(events)-1].(Error)
+	if !ok || !strings.Contains(last.Err.Error(), "repeating the same tool calls") {
+		t.Fatalf("last event = %#v, want a loop Error", events[len(events)-1])
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	if want := loopMaxRepeats + 1; len(srv.requests) != want {
+		t.Errorf("made %d requests, want %d (stopped at the first step over the limit)", len(srv.requests), want)
+	}
+	if len(a.history) != 0 {
+		t.Error("a looping turn must not change history")
+	}
+}
+
+func TestUsageIsReported(t *testing.T) {
+	withUsage := `{"type":"response.completed","sequence_number":3,"response":{"id":"r","object":"response","status":"completed",
+		"output":[{"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hi","annotations":[]}]}],
+		"usage":{"input_tokens":120,"output_tokens":30,"total_tokens":150}}}`
+	srv := newFakeServer(t, sse(withUsage))
+	a := New(srv.client(), "m", "", &tools.Registry{})
+
+	events := drain(t, a.Send(context.Background(), "hi"))
+
+	var got []Usage
+	for _, e := range events {
+		if u, ok := e.(Usage); ok {
+			got = append(got, u)
+		}
+	}
+	if len(got) != 1 || got[0] != (Usage{InputTokens: 120, OutputTokens: 30}) {
+		t.Errorf("usage events = %+v, want one with 120 in and 30 out", got)
+	}
+}
+
+func TestSilentStreamIsAbandoned(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, sse(textDelta("partial")))
+		w.(http.Flusher).Flush()
+		select { // then go quiet, like a stalled connection
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	t.Cleanup(func() { close(release); srv.Close() })
+
+	client := openai.NewClient(option.WithBaseURL(srv.URL), option.WithAPIKey("k"), option.WithMaxRetries(0))
+	a := New(client, "m", "", &tools.Registry{})
+	a.idleTimeout = 150 * time.Millisecond
+
+	begin := time.Now()
+	events := drain(t, a.Send(context.Background(), "hi"))
+
+	last, ok := events[len(events)-1].(Error)
+	if !ok || !strings.Contains(last.Err.Error(), "stopped sending data") {
+		t.Fatalf("last event = %#v, want the idle-timeout Error", events[len(events)-1])
+	}
+	if elapsed := time.Since(begin); elapsed > 3*time.Second {
+		t.Errorf("took %v to give up on a stream with a 150ms idle timeout", elapsed)
+	}
+	if errors.Is(last.Err, context.Canceled) {
+		t.Error("an idle timeout is not a user cancellation and must not look like one")
+	}
+	if len(a.history) != 0 {
+		t.Error("history must not change when the stream stalls")
 	}
 }
 

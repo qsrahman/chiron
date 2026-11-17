@@ -7,7 +7,7 @@ Read [PLAN.md](PLAN.md) first for goals, decisions and the phase table.
 ```
 cmd/desk-agent/     main: flags, wiring, -p mode
 internal/config/    config file, env and flag precedence
-internal/agent/     loop, events, history            (no UI imports)
+internal/agent/     loop, events, history, system prompt (no UI imports)
 internal/tools/     Tool interface, MustNew, Registry (built-in tools are added from Phase 5)
 internal/tui/       Bubble Tea chat UI (model, rendering)
 internal/tools/     Tool interface, registry, built-in tools
@@ -60,6 +60,12 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
   returns a message. The TUI depends on the small `tui.Sender` interface, not on `*agent.Agent`, so tests drive
   it with a fake and synthetic messages (see `internal/tui/model_test.go`). Bubble Tea v2 APIs: `View()`
   returns `tea.View`, keys are `tea.KeyPressMsg`.
+- **System prompt.** The text lives in `internal/agent/prompt.md.tmpl` (embedded, `text/template`); change the
+  wording there, and add new facts about the session through `promptData` in `prompt.go`. Do not mention tools
+  that are not registered yet.
+- **Guards.** `guard.go` holds loop detection (window 10, more than 5 repeats); the stream idle timeout is a field
+  on `Agent` so tests can shorten it. Cancelling must stay distinguishable from timeouts: only a user cancel
+  satisfies `errors.Is(err, context.Canceled)`.
 - **Tests use no network.** Point the SDK at an `httptest` server with `option.WithBaseURL` and scripted SSE.
   Test the TUI through `Update` with synthetic messages.
 - **Comments explain why**, not what. No line-by-line commentary.

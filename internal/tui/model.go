@@ -5,6 +5,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -51,11 +52,15 @@ type Model struct {
 	markdown *glamour.TermRenderer
 	dark     bool
 
+	contextTokens int64 // size of the conversation after the latest response, 0 until known
+	contextWindow int   // model context size in tokens, 0 when unknown
+
 	width, height int
 }
 
-// New returns a model that sends prompts to sender. modelName is only shown in the status line.
-func New(sender Sender, modelName string) Model {
+// New returns a model that sends prompts to sender. modelName and contextWindow (0 if unknown) only
+// affect the status line.
+func New(sender Sender, modelName string, contextWindow int) Model {
 	input := textarea.New()
 	input.Placeholder = "Ask something…"
 	input.ShowLineNumbers = false
@@ -65,13 +70,14 @@ func New(sender Sender, modelName string) Model {
 	input.Focus()
 
 	m := Model{
-		sender:    sender,
-		modelName: modelName,
-		viewport:  viewport.New(),
-		input:     input,
-		dark:      true, // replaced when the terminal reports its background
-		width:     80,
-		height:    24,
+		sender:        sender,
+		modelName:     modelName,
+		contextWindow: contextWindow,
+		viewport:      viewport.New(),
+		input:         input,
+		dark:          true, // replaced when the terminal reports its background
+		width:         80,
+		height:        24,
 	}
 	m.layout()
 	return m
@@ -179,6 +185,8 @@ func (m *Model) handleEvent(event agent.Event) {
 		m.addEntry(entry{role: roleTool, callID: e.CallID, text: e.Name + " " + e.Arguments})
 	case agent.ToolFinished:
 		m.finishTool(e)
+	case agent.Usage:
+		m.contextTokens = e.InputTokens + e.OutputTokens
 	case agent.Done:
 		m.commitStreaming()
 	case agent.Error:
@@ -279,12 +287,31 @@ func (m Model) statusLine() string {
 	default:
 		text = m.modelName + " · enter send · ctrl+j newline · pgup/pgdn scroll · ctrl+c quit"
 	}
-	return noticeStyle.Render(text)
+	return noticeStyle.Render(text + m.usageText())
+}
+
+// usageText shows how much context the conversation uses, with a percentage when the window is known.
+func (m Model) usageText() string {
+	if m.contextTokens == 0 {
+		return ""
+	}
+	text := " · " + formatTokens(m.contextTokens) + " tokens"
+	if m.contextWindow > 0 {
+		text += fmt.Sprintf(" (%d%%)", m.contextTokens*100/int64(m.contextWindow))
+	}
+	return text
+}
+
+func formatTokens(n int64) string {
+	if n < 1000 {
+		return fmt.Sprint(n)
+	}
+	return fmt.Sprintf("%.1fk", float64(n)/1000)
 }
 
 // Run starts the interactive UI and returns when the user quits.
-func Run(sender Sender, modelName string) error {
-	final, err := tea.NewProgram(New(sender, modelName)).Run()
+func Run(sender Sender, modelName string, contextWindow int) error {
+	final, err := tea.NewProgram(New(sender, modelName, contextWindow)).Run()
 	// Quitting with a turn still running (second Ctrl-C) must not leave its request open.
 	if m, ok := final.(Model); ok && m.cancel != nil {
 		m.cancel()

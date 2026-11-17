@@ -90,7 +90,16 @@ func realAgent(t *testing.T, registry *tools.Registry) *Agent {
 		opts = append(opts, option.WithBaseURL(cfg.BaseURL))
 	}
 	t.Logf("model=%s base_url=%q", cfg.Model, cfg.BaseURL)
-	return New(openai.NewClient(opts...), cfg.Model, DefaultInstructions, registry)
+	// Use the same system prompt as the CLI so the check covers it too.
+	workDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	instructions, err := BuildInstructions(context.Background(), workDir, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return New(openai.NewClient(opts...), cfg.Model, instructions, registry)
 }
 
 // askAgent sends one prompt and returns the streamed answer.
@@ -105,6 +114,8 @@ func askAgent(t *testing.T, a *Agent, prompt string) string {
 			text.WriteString(e.Text)
 		case ToolStarted:
 			t.Logf("tool call: %s %s", e.Name, e.Arguments)
+		case Usage:
+			t.Logf("usage: %d in, %d out", e.InputTokens, e.OutputTokens)
 		case Error:
 			t.Fatalf("turn failed: %v", e.Err)
 		}

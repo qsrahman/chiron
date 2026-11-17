@@ -85,7 +85,7 @@ func TestSubmitStreamsThenRendersMarkdown(t *testing.T) {
 		agent.TextDelta{Text: "** text"},
 		agent.Done{},
 	}}
-	m, cmd := typeAndEnter(t, New(sender, "test-model"), "hello")
+	m, cmd := typeAndEnter(t, New(sender, "test-model", 0), "hello")
 
 	if m.input.Value() != "" {
 		t.Error("input was not cleared after submit")
@@ -112,7 +112,7 @@ func TestSubmitStreamsThenRendersMarkdown(t *testing.T) {
 
 func TestPartialTextIsVisibleWhileStreaming(t *testing.T) {
 	sender := &fakeSender{block: true}
-	m, _ := typeAndEnter(t, New(sender, "m"), "hi")
+	m, _ := typeAndEnter(t, New(sender, "m", 0), "hi")
 	t.Cleanup(func() { m.cancel() })
 
 	m, _ = update(m, eventMsg{agent.TextDelta{Text: "partial answer"}})
@@ -127,7 +127,7 @@ func TestPartialTextIsVisibleWhileStreaming(t *testing.T) {
 
 func TestEnterIsIgnoredWhenEmptyOrBusy(t *testing.T) {
 	sender := &fakeSender{block: true}
-	m := New(sender, "m")
+	m := New(sender, "m", 0)
 
 	m, cmd := update(m, enter)
 	if cmd != nil || len(sender.texts) != 0 {
@@ -147,7 +147,7 @@ func TestEnterIsIgnoredWhenEmptyOrBusy(t *testing.T) {
 
 func TestCtrlCCancelsTurnThenQuits(t *testing.T) {
 	sender := &fakeSender{block: true}
-	m, wait := typeAndEnter(t, New(sender, "m"), "slow")
+	m, wait := typeAndEnter(t, New(sender, "m", 0), "slow")
 
 	m, cmd := update(m, ctrl('c'))
 	if isQuit(cmd) {
@@ -176,13 +176,13 @@ func TestCtrlCCancelsTurnThenQuits(t *testing.T) {
 }
 
 func TestCtrlCQuitsWhenIdle(t *testing.T) {
-	if _, cmd := update(New(&fakeSender{}, "m"), ctrl('c')); !isQuit(cmd) {
+	if _, cmd := update(New(&fakeSender{}, "m", 0), ctrl('c')); !isQuit(cmd) {
 		t.Error("Ctrl-C while idle should quit")
 	}
 }
 
 func TestCtrlDQuitsOnlyWithEmptyInput(t *testing.T) {
-	m := New(&fakeSender{}, "m")
+	m := New(&fakeSender{}, "m", 0)
 	if _, cmd := update(m, ctrl('d')); !isQuit(cmd) {
 		t.Error("Ctrl-D with an empty input should quit")
 	}
@@ -197,7 +197,7 @@ func TestErrorIsShownAndPartialTextKept(t *testing.T) {
 		agent.TextDelta{Text: "half an ans"},
 		agent.Error{Err: errors.New("boom")},
 	}}
-	m, cmd := typeAndEnter(t, New(sender, "m"), "hi")
+	m, cmd := typeAndEnter(t, New(sender, "m", 0), "hi")
 	m = pump(t, m, cmd)
 
 	if got := lastEntry(m); got.role != roleError || got.text != "error: boom" {
@@ -210,7 +210,7 @@ func TestErrorIsShownAndPartialTextKept(t *testing.T) {
 
 func TestResizeRelayoutsAndRerenders(t *testing.T) {
 	sender := &fakeSender{events: []agent.Event{agent.TextDelta{Text: "# Title"}, agent.Done{}}}
-	m, cmd := typeAndEnter(t, New(sender, "m"), "hi")
+	m, cmd := typeAndEnter(t, New(sender, "m", 0), "hi")
 	m = pump(t, m, cmd)
 
 	m, _ = update(m, tea.WindowSizeMsg{Width: 40, Height: 12})
@@ -224,7 +224,7 @@ func TestResizeRelayoutsAndRerenders(t *testing.T) {
 }
 
 func TestLightBackgroundSwitchesTheme(t *testing.T) {
-	m := New(&fakeSender{}, "m")
+	m := New(&fakeSender{}, "m", 0)
 	if !m.dark {
 		t.Fatal("dark should be the default")
 	}
@@ -245,7 +245,7 @@ func TestToolCardsShowProgressAndResult(t *testing.T) {
 		agent.TextDelta{Text: "Done."},
 		agent.Done{},
 	}}
-	m, cmd := typeAndEnter(t, New(sender, "m"), "look around")
+	m, cmd := typeAndEnter(t, New(sender, "m", 0), "look around")
 	m = pump(t, m, cmd)
 
 	// user, the text written before the calls, two cards, the final answer
@@ -269,7 +269,7 @@ func TestToolCardsShowProgressAndResult(t *testing.T) {
 }
 
 func TestRunningToolCardShowsEllipsis(t *testing.T) {
-	m := New(&fakeSender{block: true}, "m")
+	m := New(&fakeSender{block: true}, "m", 0)
 	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "shell", Arguments: `{"command":"sleep 5"}`}})
 
 	card := lastEntry(m)
@@ -279,7 +279,7 @@ func TestRunningToolCardShowsEllipsis(t *testing.T) {
 }
 
 func TestToolPreviewIsShortened(t *testing.T) {
-	m := New(&fakeSender{}, "m")
+	m := New(&fakeSender{}, "m", 0)
 	m, _ = update(m, tea.WindowSizeMsg{Width: 30, Height: 20})
 	long := "line1\nline2\nline3\nline4\nline5 " + strings.Repeat("x", 100)
 
@@ -294,5 +294,46 @@ func TestToolPreviewIsShortened(t *testing.T) {
 		if w := ansi.StringWidth(line); w > 30 {
 			t.Errorf("line %q is %d cells wide, want at most 30", line, w)
 		}
+	}
+}
+
+func TestStatusLineShowsContextUsage(t *testing.T) {
+	tests := []struct {
+		name   string
+		window int
+		usage  agent.Usage
+		want   string // substring of the status line
+		not    string
+	}{
+		{"nothing before the first response", 128000, agent.Usage{}, "", "tokens"},
+		{"tokens only when the window is unknown", 0, agent.Usage{InputTokens: 900, OutputTokens: 50}, "950 tokens", "%"},
+		{"thousands and a percentage", 200000, agent.Usage{InputTokens: 24000, OutputTokens: 1500}, "25.5k tokens (12%)", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := New(&fakeSender{}, "m", tt.window)
+			m, _ = update(m, eventMsg{tt.usage})
+
+			status := m.statusLine()
+			if !strings.Contains(status, tt.want) {
+				t.Errorf("status %q does not contain %q", status, tt.want)
+			}
+			if tt.not != "" && strings.Contains(status, tt.not) {
+				t.Errorf("status %q should not contain %q", status, tt.not)
+			}
+		})
+	}
+}
+
+func TestUsageIsShownWhileBusyAndLatestWins(t *testing.T) {
+	m := New(&fakeSender{block: true}, "m", 0)
+	m, _ = typeAndEnter(t, m, "hi")
+	t.Cleanup(func() { m.cancel() })
+
+	m, _ = update(m, eventMsg{agent.Usage{InputTokens: 1000, OutputTokens: 0}})
+	m, _ = update(m, eventMsg{agent.Usage{InputTokens: 2000, OutputTokens: 500}})
+
+	if status := m.statusLine(); !strings.Contains(status, "working") || !strings.Contains(status, "2.5k tokens") {
+		t.Errorf("status = %q, want it to show progress and the latest context size", status)
 	}
 }

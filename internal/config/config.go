@@ -19,6 +19,10 @@ type Config struct {
 	Model   string `json:"model"`
 	BaseURL string `json:"base_url"`
 	APIKey  string `json:"api_key"`
+
+	// ContextWindow is the model's context size in tokens. Optional: it only lets the UI show how full the
+	// context is. Models differ and unknown ones (local servers) cannot be asked, so it is never guessed.
+	ContextWindow int `json:"context_window"`
 }
 
 // DefaultPath returns $XDG_CONFIG_HOME/desk-agent/config.json, or ~/.config/desk-agent/config.json.
@@ -67,5 +71,7 @@ func Resolve(file Config, getenv func(string) string, flagModel, flagBaseURL str
 		Model:   cmp.Or(flagModel, getenv("DESK_AGENT_MODEL"), file.Model, DefaultModel),
 		BaseURL: cmp.Or(flagBaseURL, getenv("OPENAI_BASE_URL"), file.BaseURL),
 		APIKey:  cmp.Or(getenv("OPENAI_API_KEY"), file.APIKey),
+
+		ContextWindow: file.ContextWindow,
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -49,11 +50,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	cfg, err := loadConfig(*configPath, *model, *baseURL, stderr)
 	if err == nil {
 		var a *agent.Agent
-		if a, err = newAgent(cfg); err == nil {
+		if a, err = newAgent(ctx, cfg); err == nil {
 			if *prompt != "" {
 				err = runPrompt(ctx, a, *prompt, stdout)
 			} else {
-				err = tui.Run(a, cfg.Model)
+				err = tui.Run(a, cfg.Model, cfg.ContextWindow)
 			}
 		}
 	}
@@ -81,13 +82,22 @@ func loadConfig(path, flagModel, flagBaseURL string, warn io.Writer) (config.Con
 	return config.Resolve(file, os.Getenv, flagModel, flagBaseURL), nil
 }
 
-// newAgent builds the API client and an agent with an empty conversation.
-func newAgent(cfg config.Config) (*agent.Agent, error) {
+// newAgent builds the API client and an agent with an empty conversation, whose system prompt describes the
+// current directory.
+func newAgent(ctx context.Context, cfg config.Config) (*agent.Agent, error) {
 	// Local servers often need no key, so only insist on one for the OpenAI API.
 	if cfg.APIKey == "" && cfg.BaseURL == "" {
 		return nil, errors.New("no API key: set OPENAI_API_KEY or api_key in the config file")
 	}
-	return agent.New(newClient(cfg), cfg.Model, agent.DefaultInstructions, &tools.Registry{}), nil
+	workDir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("finding working directory: %w", err)
+	}
+	instructions, err := agent.BuildInstructions(ctx, workDir, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return agent.New(newClient(cfg), cfg.Model, instructions, &tools.Registry{}), nil
 }
 
 // runPrompt sends one prompt and streams the answer to w.

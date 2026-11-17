@@ -4,6 +4,24 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-17
+
+### Added
+
+- System prompt: embedded template with guidance on working, tool use and communication, an environment block
+  (working directory, platform, date, git branch and state) and the project's `AGENTS.md` or `CLAUDE.md`
+  (cut at 32 KB). Replaces the one-line default; `agent.BuildInstructions` builds it.
+- Loop detection: a turn stops when the same tool step repeats more than 5 times among its last 10.
+- Stream idle timeout (2 minutes without data), reported as "model stopped sending data" rather than a cancel.
+- `Usage` event and a status-line token count; optional `context_window` config adds the percentage.
+- Tests: prompt rendering, project file selection and truncation, git summary, loop detection, idle timeout,
+  usage events and the status line. The opt-in real-server tests now use the real system prompt.
+
+### Changed
+
+- `agent.DefaultInstructions` is gone; `main` passes the built instructions. `tui.New` and `tui.Run` take a
+  context window argument (0 when unknown).
+
 ### Changed (plan)
 
 - Studied Crush and gocode; recorded the findings in `PLAN.md` section 9. Added Phase 3.5 (system prompt, loop

@@ -1,7 +1,7 @@
 # desk-agent — Product Requirements Document
 
 Status: living document. Update it whenever a change affects scope, architecture or phases.
-Last reviewed: 2026-11-17 (Phase 3).
+Last reviewed: 2026-11-17 (Phase 3.5).
 
 ## 1. Goal
 
@@ -93,14 +93,18 @@ implement the same interface.
    "always allow" for that tool. (Phase 4.)
 7. Append a `function_call_output` per `call_id` (in call order, whatever order they finished), then loop.
    A turn is limited to 25 model calls (`maxSteps`); hitting the limit is an error and leaves history unchanged.
-   If the context is cancelled while tools run, the model is not asked again.
+   If the context is cancelled while tools run, the model is not asked again. Loop detection (Phase 3.5): a
+   step is identified by its calls, arguments and outputs; if one step appears more than 5 times among the last
+   10, the turn stops with an error and history is unchanged.
+8. Each response yields a `Usage` event (input and output tokens). A stream that sends nothing for 2 minutes
+   (`defaultIdleTimeout`) is abandoned with a "stopped sending data" error, which is not a user cancellation.
 
 `Ctrl-C` cancels the context of the current turn only. Shell commands run in their own process group so cancel
 kills the whole tree.
 
 ### 4.3 Events
 
-`TextDelta`, `ToolStarted{CallID, Name, Arguments}`, `ToolFinished{CallID, Name, Output, Failed}`,
+`TextDelta`, `Usage{InputTokens, OutputTokens}`, `ToolStarted{CallID, Name, Arguments}`, `ToolFinished{CallID, Name, Output, Failed}`,
 `ApprovalRequested{Reply chan bool}`,
 `QuestionAsked{Reply chan string}`, `TodoUpdated`, `Done`, `Error`. The agent returns `<-chan Event`.
 Approvals and questions are events with reply channels so any front-end (TUI now, others later) can answer them.
@@ -132,6 +136,7 @@ synthetic messages. Real-API checks are manual and documented in the README.
   "model": "gpt-5.4-mini",
   "base_url": "http://localhost:11434/v1",
   "api_key": "${OPENAI_API_KEY}",
+  "context_window": 400000,
   "mcpServers": {
     "context7": {
       "url": "https://mcp.context7.com/mcp",
@@ -156,6 +161,8 @@ synthetic messages. Real-API checks are manual and documented in the README.
 - Each `mcpServers` entry is either a **stdio server** (`command`, `args`, `env`) or a **remote HTTP server**
   (`url`, `headers`). An entry with both, or with neither, is a config error. `enabled` defaults to true when
   omitted; disabled servers are not started.
+- `context_window` (tokens, optional, file only) lets the status line show how full the context is. It is never
+  guessed because local models differ; without it only the token count is shown. Compaction (Phase 9) will use it.
 - Approval mode is not configurable in v1: mutating tools always ask (see section 3).
 
 ## 7. Phases
@@ -168,7 +175,7 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 1 (done, v0.1.0) | Agent core: config loading, streaming, local history, `-p "prompt"` non-interactive mode. | Fake-server test streams text; a second turn replays history correctly. |
 | 2 (done, v0.2.0) | TUI shell: transcript viewport, input, token streaming, `Ctrl-C` cancels the turn, markdown for completed messages | `Update` tests pass; manual run against the real API. |
 | 3 (done, v0.3.0) | Tool loop only: `Tool` interface and registry, function-call handling, concurrent read-only / serial mutating dispatch, `function_call_output` replay, tool cards in the TUI. Exercised with fake tools defined in tests; no real tools ship. | Three slow fake read-only calls finish in about 1x, not 3x, the time of one; mutating fakes run one at a time in model order; a tool error reaches the model as output and the loop continues. |
-| 3.5 | Quick wins from the Crush study: a real system prompt (embedded template with an `<env>` block: working directory, platform, date, git state; loads `AGENTS.md`/`CLAUDE.md` from the working directory), loop detection (the same tool call, arguments and output repeated more than 5 times in the last 10 steps stops the turn), a stream idle timeout, and token/context usage read from `response.completed` and shown in the status line | Prompt renders with the env block and project file; a scripted repeating tool call is stopped before the step limit; a stalled stream fails with a clear error; usage appears in the status line. Tagged v0.3.1. |
+| 3.5 (done, v0.3.1) | Quick wins from the Crush study: a real system prompt (embedded template with an `<env>` block: working directory, platform, date, git state; loads `AGENTS.md`/`CLAUDE.md` from the working directory), loop detection (the same tool call, arguments and output repeated more than 5 times in the last 10 steps stops the turn), a stream idle timeout, and token/context usage read from `response.completed` and shown in the status line | Prompt renders with the env block and project file; a scripted repeating tool call is stopped before the step limit; a stalled stream fails with a clear error; usage appears in the status line. Tagged v0.3.1. |
 | 4 | MCP client (stdio and remote HTTP), `mcpServers` config, `enabled` flag, header/env expansion, namespacing. Approval prompt (MCP tools are mutating unless annotated read-only): request carries tool, call id, description, params, path; options Allow / Allow for session / Deny with **Deny preselected**; session grants are scoped by a grant key (for `shell`, the command, not "any shell"); an open prompt is abandoned when the turn is cancelled. TUI: prompts typed while a turn runs are queued and sent afterwards (shown in the status line); tool cards are collapsed by default, expandable, with a spinner and elapsed time while running. | A real stdio server and a remote HTTP server both work, including parallel calls; an unapproved MCP call is refused; a failing server is reported but does not stop the agent; a queued prompt is sent after the turn; cards expand and collapse. If this proves too large, split it into 4a (MCP) and 4b (approvals and TUI). |
 | 5 | `read_file` (line-numbered, `offset`/`limit`, default 200 lines, lines cut at 2000 characters), `list_dir`, `write_file`, `edit_file`, working-directory confinement. `edit_file` and `write_file` over an existing file require that it was read in this session and fail if it changed on disk since; a non-unique match returns a message asking for more context or `replace_all`. Edits show a unified diff in the approval prompt (`go-udiff`, already in the module graph). Tool descriptions live in embedded `.md` files. | Reads work and run in parallel; mutations go through the approval prompt; an edit without a prior read, after an outside change, or with an ambiguous match fails cleanly; paths outside the working tree are rejected. |
 | 6 | `shell`: every command asks for approval (no read-only allowlist in v1). Output is capped; the truncation marker names a file holding the full output. No background jobs in v1. | A hung command is killed on cancel and the loop recovers; long output is truncated with a pointer to the full file. |
