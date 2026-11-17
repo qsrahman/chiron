@@ -82,22 +82,32 @@ func readProjectFile(dir string) (name, content string, truncated bool) {
 	return "", "", false
 }
 
-// gitSummary describes the repository state in one line for the environment block.
-func gitSummary(ctx context.Context, dir string) string {
+// GitBranch returns the current branch of the repository containing dir, or "" if there is none.
+func GitBranch(ctx context.Context, dir string) string {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-
-	branch, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD").Output()
 	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// gitSummary describes the repository state in one line for the environment block.
+func gitSummary(ctx context.Context, dir string) string {
+	branch := GitBranch(ctx, dir)
+	if branch == "" {
 		return "no git repository detected"
 	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
 	status, err := exec.CommandContext(ctx, "git", "-C", dir, "status", "--porcelain").Output()
 	if err != nil {
-		return "branch " + strings.TrimSpace(string(branch))
+		return "branch " + branch
 	}
 	state := "no uncommitted changes"
 	if len(bytes.TrimSpace(status)) > 0 {
 		state = "uncommitted changes present"
 	}
-	return fmt.Sprintf("branch %s, %s", strings.TrimSpace(string(branch)), state)
+	return fmt.Sprintf("branch %s, %s", branch, state)
 }

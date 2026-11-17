@@ -19,6 +19,9 @@ type ToolFinished struct {
 	Name   string
 	Output string
 	Failed bool
+	// Cancelled is set when the call failed because the turn was cancelled, so front-ends can show it
+	// as interrupted rather than as an error.
+	Cancelled bool
 }
 
 // Usage reports the token counts of one model response. Input plus output is roughly the size of the

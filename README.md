@@ -3,7 +3,7 @@
 A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI, and works on your
 machine through tools (files, shell, web, todo, questions) and optional MCP servers.
 
-> **Status: Phase 3.5 (v0.3.1).** You can chat with the model in a terminal UI or send a single prompt from the
+> **Status: Phase 3.6 (v0.3.2).** You can chat with the model in a terminal UI or send a single prompt from the
 > command line. The machinery for tool calls is in place (calls run in parallel when safe, and show up as cards
 > in the chat), but no tools ship yet, so the model still cannot touch your files. Tools and MCP arrive in the
 > next phases; see [PLAN.md](PLAN.md). This README is updated as each phase lands.
@@ -35,21 +35,27 @@ response stream that goes silent for 2 minutes is abandoned.
 
 ## Using the chat
 
-Type a message and press `Enter`. The answer streams in and is rendered as markdown when it finishes. The
-conversation keeps its history for the whole session.
+Type a message and press `Enter`. The answer streams in and is rendered as markdown when it finishes; while the
+agent works you see a spinner and the elapsed time. The input box grows with your text (up to 8 lines), and the
+conversation keeps its history for the whole session. Terminals narrower than 40 columns are not supported.
 
 | Key | Action |
 |---|---|
-| `Enter` | Send the message (ignored while an answer is streaming) |
+| `Enter` | Send the message (ignored while an answer is streaming; your draft stays) |
 | `Ctrl-J` or `Alt-Enter` | New line in the message |
 | `PgUp` / `PgDn` | Scroll the transcript |
 | `Ctrl-C` | While an answer is streaming: cancel it. Press again to quit. When idle: quit. |
 | `Ctrl-D` | Quit when the input is empty |
 
-The status line shows the model name and, after the first answer, the size of the conversation in tokens.
+The top row shows the working directory and git branch on the left and the model, and after the first answer the
+size of the conversation in tokens, on the right. Below the transcript are the input box and a one-line key
+help. The colours adapt to your terminal: the UI asks the terminal for its background and picks a dark or light
+palette, deriving the shaded areas from it, so it fits any terminal theme.
 
-When the model calls a tool, a card appears in the transcript: `…` while it runs, then `✓` or `✗` with the
-first lines of the result. Independent read-only calls run at the same time; anything that could change
+When the model calls a tool, a card appears in the transcript: a spinner while it runs, then `✓` or `×`, the
+tool name, its main argument and the others as `key=value`, and the duration if it was slow. The result sits
+below on a shaded band, cut to 5 lines with a count of the rest. A failure shows an `ERROR` badge, and a call
+that was interrupted shows as cancelled. Independent read-only calls run at the same time; anything that could change
 something runs alone, in the order the model asked.
 
 A cancelled or failed answer stays on screen but is not added to the conversation history, so the next

@@ -1,14 +1,17 @@
-// Package tui is the Bubble Tea front-end: a transcript, an input box and a status line.
+// Package tui is the Bubble Tea front-end: a header, a transcript, an input box and a help bar.
 // It only consumes agent events, so the agent package never depends on it.
 package tui
 
 import (
 	"context"
 	"errors"
-	"fmt"
+	"image/color"
 	"strings"
+	"time"
 
+	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -23,10 +26,14 @@ type Sender interface {
 	Send(ctx context.Context, text string) <-chan agent.Event
 }
 
-const (
-	inputHeight  = 3 // rows of the input box
-	statusHeight = 1
-)
+// Info is what the UI shows about the session. Only the fields it displays are here.
+type Info struct {
+	Version       string
+	WorkDir       string
+	Branch        string // empty outside a git repository
+	Model         string
+	ContextWindow int // tokens; 0 when unknown
+}
 
 // eventMsg carries one agent event into Update; turnClosedMsg means the channel is closed.
 type eventMsg struct{ event agent.Event }
@@ -35,8 +42,8 @@ type turnClosedMsg struct{}
 // Model is the Bubble Tea model. Like all Bubble Tea models it is copied on every Update,
 // so it holds no strings.Builder or other copy-sensitive values.
 type Model struct {
-	sender    Sender
-	modelName string
+	sender Sender
+	info   Info
 
 	entries   []entry
 	streaming string // assistant text of the turn in progress, not yet markdown-rendered
@@ -46,59 +53,86 @@ type Model struct {
 	events     <-chan agent.Event
 	cancel     context.CancelFunc
 	cancelling bool
+	turnStart  time.Time
+	now        func() time.Time // replaceable so tests can control time
 
 	viewport viewport.Model
 	input    textarea.Model
+	spin     spinner.Model
+	help     help.Model
+	keys     keyMap
+
+	th       theme
+	sty      styles
 	markdown *glamour.TermRenderer
-	dark     bool
 
 	contextTokens int64 // size of the conversation after the latest response, 0 until known
-	contextWindow int   // model context size in tokens, 0 when unknown
 
 	width, height int
 }
 
-// New returns a model that sends prompts to sender. modelName and contextWindow (0 if unknown) only
-// affect the status line.
-func New(sender Sender, modelName string, contextWindow int) Model {
+// New returns a model that sends prompts to sender.
+func New(sender Sender, info Info) Model {
+	keys := newKeyMap()
 	input := textarea.New()
 	input.Placeholder = "Ask something…"
 	input.ShowLineNumbers = false
-	input.Prompt = "› "
-	// Enter submits, so a newline needs another key.
-	input.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("alt+enter", "ctrl+j"))
+	input.DynamicHeight = true
+	input.MinHeight = 1
+	input.MaxHeight = 8
+	input.KeyMap.InsertNewline = keys.newline
 	input.Focus()
 
 	m := Model{
-		sender:        sender,
-		modelName:     modelName,
-		contextWindow: contextWindow,
-		viewport:      viewport.New(),
-		input:         input,
-		dark:          true, // replaced when the terminal reports its background
-		width:         80,
-		height:        24,
+		sender:   sender,
+		info:     info,
+		now:      time.Now,
+		viewport: viewport.New(),
+		input:    input,
+		keys:     keys,
+		width:    80,
+		height:   24,
 	}
+	m.applyTheme(newTheme(true, nil)) // replaced when the terminal reports its background
 	m.layout()
+	m.refresh()
 	return m
 }
 
-// Init asks the terminal for its background colour so markdown uses a matching theme.
+// applyTheme (re)builds everything that depends on the palette.
+func (m *Model) applyTheme(t theme) {
+	m.th = t
+	m.sty = newStyles(t)
+	m.spin = spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(m.sty.iconRunning))
+	m.help = help.New()
+	m.help.Styles = m.sty.help
+	m.help.ShortSeparator = " · "
+	m.inputStyles()
+	m.markdown = newMarkdownRenderer(m.contentWidth()-gutter, t)
+}
+
+// Init asks the terminal for its background colour so the palette fits it.
 func (m Model) Init() tea.Cmd {
 	return tea.RequestBackgroundColor
 }
 
 // Update handles one message.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	next.layout() // the input grows and shrinks with its text
+	return next, cmd
+}
+
+func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.layout()
+		m.markdown = newMarkdownRenderer(m.contentWidth()-gutter, m.th)
 		m.rerender()
 		return m, nil
 
 	case tea.BackgroundColorMsg:
-		m.dark = msg.IsDark()
+		m.applyTheme(newTheme(msg.IsDark(), color.Color(msg.Color)))
 		m.rerender()
 		return m, nil
 
@@ -111,7 +145,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case turnClosedMsg:
 		m.finishTurn()
+		m.refresh()
 		return m, nil
+
+	case spinner.TickMsg:
+		if m.events == nil {
+			return m, nil // the turn is over: stop ticking
+		}
+		var cmd tea.Cmd
+		m.spin, cmd = m.spin.Update(msg)
+		m.rerenderRunning()
+		return m, cmd
 	}
 
 	// Anything else (cursor blink, paste, ...) belongs to the input box.
@@ -120,30 +164,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	busy := m.events != nil
-	switch msg.String() {
-	case "ctrl+c":
+	switch {
+	case key.Matches(msg, m.keys.interrupt):
 		if !busy || m.cancelling {
 			return m, tea.Quit
 		}
 		m.cancelling = true
 		m.cancel()
+		m.refresh()
 		return m, nil
 
-	case "ctrl+d":
+	case key.Matches(msg, m.keys.eof):
 		if !busy && m.input.Value() == "" {
 			return m, tea.Quit
 		}
 
-	case "enter":
+	case key.Matches(msg, m.keys.send):
 		text := strings.TrimSpace(m.input.Value())
 		if busy || text == "" {
 			return m, nil
 		}
 		return m.submit(text)
 
-	case "pgup", "pgdown":
+	case key.Matches(msg, m.keys.scroll):
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
@@ -154,15 +199,17 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) submit(text string) (tea.Model, tea.Cmd) {
+func (m Model) submit(text string) (Model, tea.Cmd) {
 	m.input.Reset()
 	m.addEntry(entry{role: roleUser, text: text})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	m.events = m.sender.Send(ctx, text)
+	m.turnStart = m.now()
+	m.inputStyles() // the prompt dims while a turn runs
 	m.refresh()
-	return m, waitForEvent(m.events)
+	return m, tea.Batch(waitForEvent(m.events), m.spin.Tick)
 }
 
 // waitForEvent blocks in a command goroutine until the agent produces its next event.
@@ -182,7 +229,7 @@ func (m *Model) handleEvent(event agent.Event) {
 		m.streaming += e.Text
 	case agent.ToolStarted:
 		m.commitStreaming() // keep the text the model wrote before the call above its card
-		m.addEntry(entry{role: roleTool, callID: e.CallID, text: e.Name + " " + e.Arguments})
+		m.addEntry(entry{role: roleTool, callID: e.CallID, name: e.Name, args: e.Arguments, started: m.now()})
 	case agent.ToolFinished:
 		m.finishTool(e)
 	case agent.Usage:
@@ -193,9 +240,9 @@ func (m *Model) handleEvent(event agent.Event) {
 		// Keep what was already shown; the agent has dropped it from its own history.
 		m.commitStreaming()
 		if errors.Is(e.Err, context.Canceled) {
-			m.addEntry(entry{role: roleNotice, text: "cancelled"})
+			m.addEntry(entry{role: roleNotice, text: "Cancelled"})
 		} else {
-			m.addEntry(entry{role: roleError, text: "error: " + e.Err.Error()})
+			m.addEntry(entry{role: roleError, text: e.Err.Error()})
 		}
 	}
 	m.refresh()
@@ -211,9 +258,11 @@ func (m *Model) commitStreaming() {
 // finishTool completes the card started for the same call. Parallel calls can finish in any order.
 func (m *Model) finishTool(e agent.ToolFinished) {
 	for i := len(m.entries) - 1; i >= 0; i-- {
-		if m.entries[i].role == roleTool && m.entries[i].callID == e.CallID {
-			m.entries[i].done, m.entries[i].failed, m.entries[i].output = true, e.Failed, e.Output
-			m.entries[i].rendered = m.render(m.entries[i])
+		card := &m.entries[i]
+		if card.role == roleTool && card.callID == e.CallID {
+			card.done, card.failed, card.cancelled, card.output = true, e.Failed, e.Cancelled, e.Output
+			card.elapsed = m.now().Sub(card.started)
+			card.rendered = m.render(*card)
 			return
 		}
 	}
@@ -223,6 +272,7 @@ func (m *Model) finishTool(e agent.ToolFinished) {
 func (m *Model) finishTurn() {
 	m.cancel()
 	m.events, m.cancel, m.cancelling = nil, nil, false
+	m.inputStyles()
 }
 
 func (m *Model) addEntry(e entry) {
@@ -230,88 +280,74 @@ func (m *Model) addEntry(e entry) {
 	m.entries = append(m.entries, e)
 }
 
-// layout sizes the children for the current window and rebuilds the markdown renderer,
-// whose word wrap depends on the width.
+// layout sizes the children for the current window and input height.
 func (m *Model) layout() {
-	m.viewport.SetWidth(m.width)
-	m.viewport.SetHeight(max(1, m.height-inputHeight-statusHeight))
-	m.input.SetWidth(m.width)
-	m.input.SetHeight(inputHeight)
-	m.markdown = newMarkdownRenderer(m.width, m.dark)
+	width := m.contentWidth()
+	m.input.SetWidth(width - boxFrame)
+	inputHeight := m.input.Height() + 2 // plus the box border
+	m.help.SetWidth(width - 1)          // the bar drops its last hints instead of overflowing
+	m.viewport.SetWidth(width)
+	m.viewport.SetHeight(max(1, m.height-headerHeight-inputHeight-helpHeight))
 }
 
 // rerender re-styles every entry after a resize or a theme change.
 func (m *Model) rerender() {
-	m.markdown = newMarkdownRenderer(m.width, m.dark)
 	for i := range m.entries {
 		m.entries[i].rendered = m.render(m.entries[i])
 	}
 	m.refresh()
 }
 
+// rerenderRunning redraws the cards still waiting for a result, so their spinner moves.
+func (m *Model) rerenderRunning() {
+	for i := range m.entries {
+		if m.entries[i].role == roleTool && !m.entries[i].done {
+			m.entries[i].rendered = m.render(m.entries[i])
+		}
+	}
+	m.refresh()
+}
+
 // refresh rebuilds the viewport content, following new output only if the user is at the bottom.
 func (m *Model) refresh() {
-	parts := make([]string, 0, len(m.entries)+1)
+	var parts []string
 	for _, e := range m.entries {
 		parts = append(parts, e.rendered)
 	}
 	if m.streaming != "" {
-		parts = append(parts, wrap(m.streaming, m.width))
+		parts = append(parts, indent(wrap(m.streaming, m.contentWidth()-gutter), gutter))
+	}
+	if line := m.activityLine(); line != "" {
+		parts = append(parts, line)
+	}
+	content := m.welcomeView()
+	if len(parts) > 0 {
+		content = strings.Join(parts, "\n\n")
 	}
 
 	follow := m.viewport.AtBottom()
-	m.viewport.SetContent(strings.Join(parts, "\n\n"))
+	m.viewport.SetContent(content)
 	if follow {
 		m.viewport.GotoBottom()
 	}
 }
 
-// View draws the transcript, the status line and the input box.
+// View draws the header, the transcript, the input box and the help bar.
 func (m Model) View() tea.View {
-	v := tea.NewView(lipgloss.JoinVertical(lipgloss.Left,
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		m.headerView(),
 		m.viewport.View(),
-		m.statusLine(),
-		m.input.View(),
-	))
+		m.inputView(),
+		m.helpView(),
+	)
+	v := tea.NewView(indent(body, margin))
 	v.AltScreen = true
 	return v
 }
 
-func (m Model) statusLine() string {
-	var text string
-	switch {
-	case m.cancelling:
-		text = "cancelling… ctrl+c again to quit"
-	case m.events != nil:
-		text = "working… ctrl+c cancels"
-	default:
-		text = m.modelName + " · enter send · ctrl+j newline · pgup/pgdn scroll · ctrl+c quit"
-	}
-	return noticeStyle.Render(text + m.usageText())
-}
-
-// usageText shows how much context the conversation uses, with a percentage when the window is known.
-func (m Model) usageText() string {
-	if m.contextTokens == 0 {
-		return ""
-	}
-	text := " · " + formatTokens(m.contextTokens) + " tokens"
-	if m.contextWindow > 0 {
-		text += fmt.Sprintf(" (%d%%)", m.contextTokens*100/int64(m.contextWindow))
-	}
-	return text
-}
-
-func formatTokens(n int64) string {
-	if n < 1000 {
-		return fmt.Sprint(n)
-	}
-	return fmt.Sprintf("%.1fk", float64(n)/1000)
-}
-
 // Run starts the interactive UI and returns when the user quits.
-func Run(sender Sender, modelName string, contextWindow int) error {
-	final, err := tea.NewProgram(New(sender, modelName, contextWindow)).Run()
+func Run(sender Sender, info Info) error {
+	final, err := tea.NewProgram(New(sender, info)).Run()
 	// Quitting with a turn still running (second Ctrl-C) must not leave its request open.
 	if m, ok := final.(Model); ok && m.cancel != nil {
 		m.cancel()

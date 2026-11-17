@@ -207,18 +207,18 @@ func (a *Agent) isReadOnly(call responses.ResponseFunctionToolCall) bool {
 func (a *Agent) runCall(ctx context.Context, call responses.ResponseFunctionToolCall, events chan<- Event) string {
 	events <- ToolStarted{CallID: call.CallID, Name: call.Name, Arguments: call.Arguments}
 
-	output, failed := "", false
+	output, failed, cancelled := "", false, false
 	if tool, ok := a.tools.Get(call.Name); !ok {
 		output, failed = fmt.Sprintf("error: unknown tool %q", call.Name), true
 	} else if result, err := tool.Run(ctx, call.Arguments); err != nil {
-		output, failed = "error: "+err.Error(), true
+		output, failed, cancelled = "error: "+err.Error(), true, errors.Is(err, context.Canceled)
 	} else if result == "" {
 		output = "(no output)"
 	} else {
 		output = result
 	}
 
-	events <- ToolFinished{CallID: call.CallID, Name: call.Name, Output: output, Failed: failed}
+	events <- ToolFinished{CallID: call.CallID, Name: call.Name, Output: output, Failed: failed, Cancelled: cancelled}
 	return output
 }
 

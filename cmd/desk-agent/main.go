@@ -49,20 +49,41 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	cfg, err := loadConfig(*configPath, *model, *baseURL, stderr)
 	if err == nil {
-		var a *agent.Agent
-		if a, err = newAgent(ctx, cfg); err == nil {
-			if *prompt != "" {
-				err = runPrompt(ctx, a, *prompt, stdout)
-			} else {
-				err = tui.Run(a, cfg.Model, cfg.ContextWindow)
-			}
-		}
+		err = start(ctx, cfg, *prompt, stdout)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "desk-agent:", err)
 		return 1
 	}
 	return 0
+}
+
+// start builds the agent for the current directory and runs either one prompt or the chat UI.
+func start(ctx context.Context, cfg config.Config, prompt string, stdout io.Writer) error {
+	// Local servers often need no key, so only insist on one for the OpenAI API.
+	if cfg.APIKey == "" && cfg.BaseURL == "" {
+		return errors.New("no API key: set OPENAI_API_KEY or api_key in the config file")
+	}
+	workDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("finding working directory: %w", err)
+	}
+	instructions, err := agent.BuildInstructions(ctx, workDir, time.Now())
+	if err != nil {
+		return err
+	}
+	a := agent.New(newClient(cfg), cfg.Model, instructions, &tools.Registry{})
+
+	if prompt != "" {
+		return runPrompt(ctx, a, prompt, stdout)
+	}
+	return tui.Run(a, tui.Info{
+		Version:       version,
+		WorkDir:       workDir,
+		Branch:        agent.GitBranch(ctx, workDir),
+		Model:         cfg.Model,
+		ContextWindow: cfg.ContextWindow,
+	})
 }
 
 // loadConfig reads the config file and applies environment and flag overrides.
@@ -80,24 +101,6 @@ func loadConfig(path, flagModel, flagBaseURL string, warn io.Writer) (config.Con
 		return config.Config{}, err
 	}
 	return config.Resolve(file, os.Getenv, flagModel, flagBaseURL), nil
-}
-
-// newAgent builds the API client and an agent with an empty conversation, whose system prompt describes the
-// current directory.
-func newAgent(ctx context.Context, cfg config.Config) (*agent.Agent, error) {
-	// Local servers often need no key, so only insist on one for the OpenAI API.
-	if cfg.APIKey == "" && cfg.BaseURL == "" {
-		return nil, errors.New("no API key: set OPENAI_API_KEY or api_key in the config file")
-	}
-	workDir, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("finding working directory: %w", err)
-	}
-	instructions, err := agent.BuildInstructions(ctx, workDir, time.Now())
-	if err != nil {
-		return nil, err
-	}
-	return agent.New(newClient(cfg), cfg.Model, instructions, &tools.Registry{}), nil
 }
 
 // runPrompt sends one prompt and streams the answer to w.

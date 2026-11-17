@@ -9,7 +9,7 @@ cmd/desk-agent/     main: flags, wiring, -p mode
 internal/config/    config file, env and flag precedence
 internal/agent/     loop, events, history, system prompt (no UI imports)
 internal/tools/     Tool interface, MustNew, Registry (built-in tools are added from Phase 5)
-internal/tui/       Bubble Tea chat UI (model, rendering)
+internal/tui/       Bubble Tea chat UI (model, theme, layout, cards, chrome; golden tests in testdata/)
 internal/tools/     Tool interface, registry, built-in tools
 internal/mcp/       MCP servers adapted to tools.Tool
 internal/tui/       Bubble Tea model / update / view
@@ -60,6 +60,16 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
   returns a message. The TUI depends on the small `tui.Sender` interface, not on `*agent.Agent`, so tests drive
   it with a fake and synthetic messages (see `internal/tui/model_test.go`). Bubble Tea v2 APIs: `View()`
   returns `tea.View`, keys are `tea.KeyPressMsg`.
+- **UI look.** Colours come only from the palette in `theme.go`; never hard-code a colour or an ANSI index
+  elsewhere, and never paint the terminal background (bands are derived from it). Everything in the transcript
+  shares the `gutter` indent and is capped at `maxTextWidth`; `render` clamps every line to the content width,
+  because a line wider than the terminal wraps and wrecks the layout. Tool cards show parsed arguments, never raw
+  JSON. Key bindings live in `keys.go` and feed both the key handling and the help bar.
+- **UI tests.** The main screens have golden files (`internal/tui/testdata/*.golden`, plain text). After an
+  intended visual change run `go test ./internal/tui -update` and review the diff. The flag goes after the
+  package. `TestNoLineIsWiderThanTheTerminal` guards the layout at several widths; colours are tested in
+  `theme_test.go` because the goldens have none. To see the real colours, dump `View().Content` and convert the
+  ANSI to HTML.
 - **System prompt.** The text lives in `internal/agent/prompt.md.tmpl` (embedded, `text/template`); change the
   wording there, and add new facts about the session through `promptData` in `prompt.go`. Do not mention tools
   that are not registered yet.

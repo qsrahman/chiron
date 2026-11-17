@@ -4,6 +4,37 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-17
+
+### Added
+
+- UI foundation (from the Crush UI study): a semantic palette with dark and light variants chosen from the
+  terminal background, with shaded bands derived from it (the terminal background is never painted).
+- Layout: one margin, a shared 2-column gutter, a text width cap of 120, a 1-row gap between items, a brand-coloured
+  bar on user messages, and a clamp so no line is ever wider than the terminal.
+- A header row (name, directory, git branch; model and context usage on the right) and a welcome screen.
+- Tool cards: parsed arguments instead of raw JSON, a spinner while running, `✓` / `×` / cancelled markers,
+  duration for slow calls, output on a band cut to 5 lines (one hidden line is shown instead), an `ERROR` badge for
+  failures, and syntax-highlighted shell commands (chroma).
+- A framed input box with a prompt on the first line only and a height that follows the text, a working/cancelling
+  indicator with elapsed time in the transcript, and a bottom help bar built from the key bindings that also drive
+  the key handling.
+- A glamour style derived from the theme (no document margin, theme colours for headings and inline code).
+- `agent.GitBranch`, and `Cancelled` on `ToolFinished` for calls interrupted by a cancelled turn.
+- Golden-file tests for the welcome screen, a full conversation at 50, 100 and 160 columns, a running tool, a
+  cancelled turn and a multi-line input, plus tests for width limits, themes, argument parsing, the spinner and
+  input growth.
+
+### Changed
+
+- `tui.New` and `tui.Run` take an `Info` struct (version, directory, branch, model, context window) instead of
+  separate arguments. The one-line status bar is replaced by the header and the help bar.
+
+### Fixed
+
+- Tab characters in code blocks made lines 4 columns too wide (glamour counts a tab as zero cells); tabs are now
+  expanded before rendering.
+
 ### Changed (plan)
 
 - Studied Crush's UI in depth and recorded the findings and decisions in `PLAN.md` section 9.1. Added Phase 3.6

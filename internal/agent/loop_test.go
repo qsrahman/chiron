@@ -420,6 +420,15 @@ func TestCancelWhileToolRuns(t *testing.T) {
 	if _, ok := got[len(got)-1].(Error); !ok {
 		t.Fatalf("last event = %#v, want Error", got[len(got)-1])
 	}
+	var finished *ToolFinished
+	for _, e := range got {
+		if f, ok := e.(ToolFinished); ok {
+			finished = &f
+		}
+	}
+	if finished == nil || !finished.Failed || !finished.Cancelled {
+		t.Errorf("the interrupted call should be reported as failed and cancelled: %+v", finished)
+	}
 	if err := <-stopped; err == nil {
 		t.Error("the tool never saw the cancellation")
 	}
