@@ -1,7 +1,7 @@
 # desk-agent — Product Requirements Document
 
 Status: living document. Update it whenever a change affects scope, architecture or phases.
-Last reviewed: 2026-11-17 (Phase 3.6).
+Last reviewed: 2026-11-17 (Phase 4 design).
 
 ## 1. Goal
 
@@ -115,6 +115,55 @@ Tests never touch the network. `openai-go` accepts `option.WithBaseURL`, so test
 `httptest` server that replays scripted SSE fixtures. The TUI is tested through its `Update` function with
 synthetic messages. Real-API checks are manual and documented in the README.
 
+### 4.5 Approvals (Phase 4a)
+
+- **Which calls ask:** every call to a tool whose `ReadOnly()` is false. Read-only tools never ask and keep running
+  concurrently. Mutating calls run one at a time, so at most one prompt is open.
+- **Event:** `ApprovalRequested{CallID, Tool, Summary, Details, GrantKey, Reply chan<- Decision}`. `Summary` is one
+  line ("Run a shell command"); `Details` is what is about to happen (a command, a diff, MCP parameters). The reply
+  channel is buffered so the UI never blocks sending the answer.
+- **Decision:** `Deny`, `Allow` (once) or `AllowSession`. `AllowSession` is remembered by tool name plus `GrantKey`,
+  so for `shell` it covers that command and not "any shell"; tools without a key are granted per tool.
+- **Tools describe their own prompt** through an optional interface, so Phases 5 and 6 supply a diff or a command
+  without changing the loop. Tools that do not implement it get a generic prompt showing the arguments.
+- **Denial:** the model gets `error: the user denied this call; do not retry it or work around it` and the card shows
+  it as denied. Cancelling the turn abandons an open prompt (the call is reported cancelled, not denied).
+- **Modal (TUI):** a rounded, primary-coloured dialog centered over the transcript (lipgloss `Layer`/`Compositor`),
+  scrollable when the details are long. Options: Allow, Allow for session, Deny, with **Deny preselected** so an
+  answer by reflex refuses; keys `y`, `s`, `n`/`Esc`, arrows and Enter. A prototype of the overlay comes first; if
+  `Layer`/`Compositor` does not fit, fall back to an inline panel that replaces the input box.
+- **Queue:** Enter while a turn runs adds the text to a queue shown above the input; when the turn ends the next
+  prompt is sent. Ctrl-C cancels the turn and drops the queue, and the UI says how many were dropped.
+- **Expandable cards:** the model keeps a selected card index; Tab / Shift+Tab move it when the input is empty;
+  Enter or Space toggle that card; Esc clears the selection. Collapsed cards show 5 lines, expanded ones show the
+  whole output (still width-clamped).
+
+### 4.6 MCP client (Phase 4b)
+
+- **Transports:** stdio via `mcp.CommandTransport` (the SDK closes stdin, then sends SIGTERM after 5 s) and remote
+  servers via `mcp.StreamableClientTransport` with an `http.Client` whose `RoundTripper` adds the configured headers.
+  No OAuth, no sampling, no elicitation (the client declares no such capabilities, so servers do not ask).
+- **Connecting:** all enabled servers connect in parallel in the background; each gets 10 s. The chat opens at once and
+  shows "connecting"; a prompt sent before they finish waits (up to 10 s) so the model sees the tools. The registry is
+  built once from the servers that connected in time. A server that is late or failed is reported and stays out for
+  the session; tool-list change notifications are ignored (restart to pick up changes).
+- **Reporting:** a status line per server at startup (connected with N tools, or the error, never a secret) and a
+  count in the header. For stdio servers the tail of stderr is kept to explain a failed start.
+- **Tool adapter:** the MCP tool becomes a `tools.Tool`. Name `server__tool`, characters outside `[a-zA-Z0-9_-]`
+  replaced by `_`, cut to 64 characters, collisions reported and skipped. Schema passed through, with an empty
+  `properties` added when missing. `ReadOnly()` is the server's `readOnlyHint` (a plain bool, so "unset" means
+  mutating). Tools named in the server's `autoApprove` list never prompt.
+- **Results:** text parts joined; structured content used when there is no text; images and audio become a short
+  placeholder (`[image: image/png, 12 KB]`); resource links keep their URL; embedded text resources are included.
+  `isError` becomes a tool failure. Output is capped at 50 KB (cut with a note); each call has a 2-minute timeout.
+- **Cards:** MCP calls show as `server → tool`, not the mangled name.
+- **Limits to respect:** OpenAI function names allow `[a-zA-Z0-9_-]`; the docs I found give a 64 (chat) or 128
+  (responses) character maximum and at most 128 tools per request. If a configuration exceeds the tool count, extra
+  tools are skipped with a warning. (Native namespaces and `tool_search` exist on newer models and are the way out
+  for very large tool sets, not used now.)
+- **Tests:** `mcp.NewInMemoryTransports()` with a test server; the test binary re-run as a stdio server; an
+  `httptest` server with the SDK's streamable handler to check that headers arrive and secrets are never logged.
+
 ## 5. Tools (v1)
 
 | Tool | Read-only | Notes |
@@ -158,6 +207,8 @@ synthetic messages. Real-API checks are manual and documented in the README.
 - Precedence: flags (`--model`, `--base-url`) override env vars (`DESK_AGENT_MODEL`, `OPENAI_BASE_URL`,
   `OPENAI_API_KEY`), which override the file, which overrides the built-in default model. `base_url` and
   `api_key` may be omitted. `mcpServers` is parsed from Phase 4 on; until then it is ignored.
+- Each `mcpServers` entry may list `"autoApprove": ["tool", ...]`: tools of that server that never prompt (names as
+  the server reports them). Everything else follows the server's read-only hint (section 4.6).
 - Each `mcpServers` entry is either a **stdio server** (`command`, `args`, `env`) or a **remote HTTP server**
   (`url`, `headers`). An entry with both, or with neither, is a config error. `enabled` defaults to true when
   omitted; disabled servers are not started.
@@ -177,7 +228,8 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 3 (done, v0.3.0) | Tool loop only: `Tool` interface and registry, function-call handling, concurrent read-only / serial mutating dispatch, `function_call_output` replay, tool cards in the TUI. Exercised with fake tools defined in tests; no real tools ship. | Three slow fake read-only calls finish in about 1x, not 3x, the time of one; mutating fakes run one at a time in model order; a tool error reaches the model as output and the loop continues. |
 | 3.5 (done, v0.3.1) | Quick wins from the Crush study: a real system prompt (embedded template with an `<env>` block: working directory, platform, date, git state; loads `AGENTS.md`/`CLAUDE.md` from the working directory), loop detection (the same tool call, arguments and output repeated more than 5 times in the last 10 steps stops the turn), a stream idle timeout, and token/context usage read from `response.completed` and shown in the status line | Prompt renders with the env block and project file; a scripted repeating tool call is stopped before the step limit; a stalled stream fails with a clear error; usage appears in the status line. Tagged v0.3.1. |
 | 3.6 (done, v0.3.2) | UI foundation (from the Crush UI study). `internal/tui/theme.go`: a semantic palette (primary, info, success, warning, danger, subtle and muted text, band background; diff colours are added in Phase 5 when diffs exist) with dark and light variants chosen from the terminal background; bands and diff colours are derived from that background with lipgloss `Darken`/`Lighten`/`Alpha`, and the terminal background is never painted. Layout: 1-column margin, text width capped at 120, a 2-column gutter shared by every item, a 1-row gap between items, a left bar in the primary colour on user messages. A one-row header (brand, working directory, git branch; model and context % on the right). Tool cards: arguments parsed into a main parameter plus `key=value` (never raw JSON), state-coloured icon (spinner via `bubbles/spinner` while running, then `✓` / `×`, muted when cancelled), elapsed time for slow calls, output on a background band with a `… (N more lines)` hint, an `ERROR` badge for failures, collapsed to 5 lines; syntax highlighting with chroma (already in the module graph). Input: prompt on the first line only, dynamic height (textarea `DynamicHeight`), focus and busy styles. Bottom help bar built with `bubbles/help` and `key.Binding` (bright key, dim description). Glamour style derived from the theme with no document margin. Welcome screen (name, version, directory, model, hint). Golden-file tests of the main views. No sidebar. | The golden views (welcome, conversation, each card state, error, narrow and wide widths, dark and light themes) match; no raw JSON in card headers; every item shares one gutter; existing behaviour tests still pass. Tagged v0.3.2. |
-| 4 | MCP client (stdio and remote HTTP), `mcpServers` config, `enabled` flag, header/env expansion, namespacing. Approval prompt (MCP tools are mutating unless annotated read-only): request carries tool, call id, description, params, path; options Allow / Allow for session / Deny with **Deny preselected**; session grants are scoped by a grant key (for `shell`, the command, not "any shell"); an open prompt is abandoned when the turn is cancelled. TUI: prompts typed while a turn runs are queued and sent afterwards (shown in the status line); cards (built in 3.6) become expandable: a key expands the selected card from its 5-line preview to the full output. | A real stdio server and a remote HTTP server both work, including parallel calls; an unapproved MCP call is refused; a failing server is reported but does not stop the agent; a queued prompt is sent after the turn; cards expand and collapse. If this proves too large, split it into 4a (MCP) and 4b (approvals and TUI). |
+| 4a | Approvals and TUI. Agent: a mutating call emits `ApprovalRequested` and waits for the answer or a cancel; session grants; denial text for the model (section 4.5). TUI: centered approval modal (starts on Deny), queued prompts (shown above the input, sent after the turn; Ctrl-C cancels the turn and drops the queue), expandable tool cards (Tab / Shift+Tab select a card when the input is empty, Enter or Space toggle 5 lines versus full output, Esc returns to typing). Exercised with fake mutating tools in tests; no real mutating tool exists until 4b. | Allow, Allow for session and Deny each behave as specified; a denied call is reported to the model and not retried; cancelling closes an open prompt; session grants are scoped by grant key; queued prompts run in order and are dropped on Ctrl-C; cards expand and collapse; golden tests for the modal, the queue and an expanded card. Tagged v0.4.0. |
+| 4b | MCP client (section 4.6): `mcpServers` config (`command`/`args`/`env` or `url`/`headers`, `enabled`, `autoApprove`), `${VAR}` expansion, parallel background connect, tool adapter, `server → tool` cards, startup status. | A real stdio server and an httptest HTTP server both work, including headers and parallel read-only calls; an unapproved MCP call is refused; a failing or slow server is reported and does not stop the agent; golden test for the startup status. Tagged v0.4.1. |
 | 5 | `read_file` (line-numbered, `offset`/`limit`, default 200 lines, lines cut at 2000 characters), `list_dir`, `write_file`, `edit_file`, working-directory confinement. `edit_file` and `write_file` over an existing file require that it was read in this session and fail if it changed on disk since; a non-unique match returns a message asking for more context or `replace_all`. Edits show a unified diff in the approval prompt (`go-udiff`, already in the module graph). Tool descriptions live in embedded `.md` files. | Reads work and run in parallel; mutations go through the approval prompt; an edit without a prior read, after an outside change, or with an ambiguous match fails cleanly; paths outside the working tree are rejected. |
 | 6 | `shell`: every command asks for approval (no read-only allowlist in v1). Output is capped; the truncation marker names a file holding the full output. No background jobs in v1. | A hung command is killed on cancel and the loop recovers; long output is truncated with a pointer to the full file. |
 | 7 | `todo` (states pending/in_progress/completed, at most one in_progress, shown in the TUI), `ask_user` with typed questions (`yes_no`, `single_choice`, `multi_choice`, `free_text`; at most 5 choices; a description is required) | The model can pause, ask and resume; an invalid question is rejected with a clear error. |
@@ -205,6 +257,8 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
   search-capable ones such as a Brave-backed toolbox) or a local tool. The OpenAI built-in tool is excluded.
 - Confirm the exact name of the MCP SDK's Streamable HTTP client transport and how to attach custom headers
   (Phase 4).
+- Phase 4a: prototype the modal overlay with lipgloss `Layer`/`Compositor` first; fall back to an inline panel.
+- Phase 4b: confirm OpenAI's tool-count and function-name limits for the Responses API with a real request.
 - Pick the HTML-to-markdown library (Phase 8).
 - Decide the session storage format and location (Phase 9).
 

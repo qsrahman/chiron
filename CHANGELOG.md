@@ -4,6 +4,13 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Changed (plan)
+
+- Phase 4 split into 4a (approvals, queued prompts, expandable cards; tag v0.4.0) and 4b (MCP client; tag v0.4.1) and
+  elaborated in `PLAN.md` sections 4.5 and 4.6: centered approval modal, a per-server `autoApprove` list, MCP servers
+  connecting in the background with a 10 s limit and a fixed tool list, 2-minute calls and a 50 KB result cap,
+  Ctrl-C dropping the queue, Tab/Enter to expand cards.
+
 ### Changed
 
 - User messages are a shaded block with a brand-coloured bar (previously only a thin bar).
