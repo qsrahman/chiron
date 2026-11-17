@@ -26,6 +26,12 @@ go test -race ./...   # required whenever concurrency code changes
 
 Build, vet and test must pass before a commit.
 
+Real-API check (costs a few tokens, never run by default; skips without a key):
+
+```bash
+OPENAI_API_KEY=... go test -tags=integration -run TestRealAPIReplay -v ./internal/agent
+```
+
 ## Conventions
 
 - **Do not hand-roll.** Before writing a utility, check `openai-go`, `modelcontextprotocol/go-sdk`,
