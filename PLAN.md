@@ -168,12 +168,13 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 1 (done, v0.1.0) | Agent core: config loading, streaming, local history, `-p "prompt"` non-interactive mode. | Fake-server test streams text; a second turn replays history correctly. |
 | 2 (done, v0.2.0) | TUI shell: transcript viewport, input, token streaming, `Ctrl-C` cancels the turn, markdown for completed messages | `Update` tests pass; manual run against the real API. |
 | 3 (done, v0.3.0) | Tool loop only: `Tool` interface and registry, function-call handling, concurrent read-only / serial mutating dispatch, `function_call_output` replay, tool cards in the TUI. Exercised with fake tools defined in tests; no real tools ship. | Three slow fake read-only calls finish in about 1x, not 3x, the time of one; mutating fakes run one at a time in model order; a tool error reaches the model as output and the loop continues. |
-| 4 | MCP client (stdio and remote HTTP), `mcpServers` config, `enabled` flag, header/env expansion, namespacing, and the approval prompt (MCP tools are mutating unless annotated read-only, so approvals must exist first) | A real stdio server and a remote HTTP server both work, including parallel calls; an unapproved MCP call is refused; a failing server is reported but does not stop the agent. |
-| 5 | `read_file`, `list_dir`, `write_file`, `edit_file`, working-directory confinement | Reads work and run in parallel; mutations go through the approval prompt; an ambiguous edit fails cleanly; paths outside the working tree are rejected. |
-| 6 | `shell` | A hung command is killed on cancel and the loop recovers. |
-| 7 | `todo`, `ask_user` | The model can pause, ask and resume. |
+| 3.5 | Quick wins from the Crush study: a real system prompt (embedded template with an `<env>` block: working directory, platform, date, git state; loads `AGENTS.md`/`CLAUDE.md` from the working directory), loop detection (the same tool call, arguments and output repeated more than 5 times in the last 10 steps stops the turn), a stream idle timeout, and token/context usage read from `response.completed` and shown in the status line | Prompt renders with the env block and project file; a scripted repeating tool call is stopped before the step limit; a stalled stream fails with a clear error; usage appears in the status line. Tagged v0.3.1. |
+| 4 | MCP client (stdio and remote HTTP), `mcpServers` config, `enabled` flag, header/env expansion, namespacing. Approval prompt (MCP tools are mutating unless annotated read-only): request carries tool, call id, description, params, path; options Allow / Allow for session / Deny with **Deny preselected**; session grants are scoped by a grant key (for `shell`, the command, not "any shell"); an open prompt is abandoned when the turn is cancelled. TUI: prompts typed while a turn runs are queued and sent afterwards (shown in the status line); tool cards are collapsed by default, expandable, with a spinner and elapsed time while running. | A real stdio server and a remote HTTP server both work, including parallel calls; an unapproved MCP call is refused; a failing server is reported but does not stop the agent; a queued prompt is sent after the turn; cards expand and collapse. If this proves too large, split it into 4a (MCP) and 4b (approvals and TUI). |
+| 5 | `read_file` (line-numbered, `offset`/`limit`, default 200 lines, lines cut at 2000 characters), `list_dir`, `write_file`, `edit_file`, working-directory confinement. `edit_file` and `write_file` over an existing file require that it was read in this session and fail if it changed on disk since; a non-unique match returns a message asking for more context or `replace_all`. Edits show a unified diff in the approval prompt (`go-udiff`, already in the module graph). Tool descriptions live in embedded `.md` files. | Reads work and run in parallel; mutations go through the approval prompt; an edit without a prior read, after an outside change, or with an ambiguous match fails cleanly; paths outside the working tree are rejected. |
+| 6 | `shell`: every command asks for approval (no read-only allowlist in v1). Output is capped; the truncation marker names a file holding the full output. No background jobs in v1. | A hung command is killed on cancel and the loop recovers; long output is truncated with a pointer to the full file. |
+| 7 | `todo` (states pending/in_progress/completed, at most one in_progress, shown in the TUI), `ask_user` with typed questions (`yes_no`, `single_choice`, `multi_choice`, `free_text`; at most 5 choices; a description is required) | The model can pause, ask and resume; an invalid question is rejected with a clear error. |
 | 8 | `web_fetch` (web search is decided later; see section 8) | Redirects, size limits and non-HTML handled. |
-| 9 | Session save/resume, compaction via `responses.compact`, slash commands | A resumed session continues; a long one compacts. |
+| 9 | Session save/resume (JSON files), compaction via `responses.compact` triggered when the context nears the model window (using the usage tracked since Phase 3.5), slash commands | A resumed session continues; a long one compacts. |
 
 ## 8. Open items
 
@@ -198,3 +199,22 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
   (Phase 4).
 - Pick the HTML-to-markdown library (Phase 8).
 - Decide the session storage format and location (Phase 9).
+
+## 9. Lessons from other agents (studied 2026-11-17)
+
+Crush (`charmbracelet/crush`) is the reference; gocode (`firebitsbr/gocode`) is a scaffold: no agent loop, tools
+never invoked, permissions defined in config but never enforced, so it was only a source of ideas.
+
+Adopted (see the phase table): a real system prompt, loop detection, stream idle timeout, usage and context
+tracking, queued prompts, scoped session grants with a Deny-first dialog, read-before-edit and modified-since-read
+checks, diffs in approvals, view limits, output cap with a spill file, a one-in_progress todo rule, typed
+questions, embedded tool descriptions, expandable tool cards with spinner and timing.
+
+Decided against for now: a read-only shell allowlist (would add `mvdan.cc/sh` and a list to keep strict),
+background jobs, whitespace-tolerant edit fallback, `multiedit`, hooks, sub-agents, LSP, SQLite, multiple
+providers, telemetry, live markdown while streaming (we render plain text, then markdown when the turn ends), and
+a virtualised chat list (revisit when long sessions feel slow: the transcript is currently rebuilt as one string
+on every streamed token).
+
+TUI rules we already follow and keep: no I/O in `Update`, no state changes inside commands, use `x/ansi` for any
+string work that may contain escape codes.

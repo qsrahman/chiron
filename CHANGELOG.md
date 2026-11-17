@@ -4,6 +4,13 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Changed (plan)
+
+- Studied Crush and gocode; recorded the findings in `PLAN.md` section 9. Added Phase 3.5 (system prompt, loop
+  detection, stream timeout, usage in the status line) and extended Phases 4 to 7 and 9 with the adopted ideas:
+  richer approvals with scoped grants and a Deny-first dialog, queued prompts, expandable tool cards,
+  read-before-edit and diffs, shell output cap, a typed `ask_user`.
+
 ## [0.3.0] - 2026-11-17
 
 ### Added
