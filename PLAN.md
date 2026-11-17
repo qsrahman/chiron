@@ -108,7 +108,7 @@ synthetic messages. Real-API checks are manual and documented in the README.
 | `shell` | no | `sh -c`, timeout, output cap, process-group kill on cancel. |
 | `todo` | yes | In-memory list shown in the TUI; replaces the whole list per call. |
 | `ask_user` | yes | Blocks on a `QuestionAsked` reply. |
-| `web_fetch` | yes | `net/http` + HTML-to-markdown library (chosen in Phase 7), size cap, timeout. |
+| `web_fetch` | yes | `net/http` + HTML-to-markdown library (chosen in Phase 8), size cap, timeout. |
 | MCP tools | per server | Namespaced `server__tool`; treated as mutating (approval) unless the MCP annotations mark them read-only. |
 
 ## 6. Configuration
@@ -153,11 +153,11 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 1 | Agent core: config loading, streaming, local history, `-p "prompt"` non-interactive mode. Starts with the `ResponseAccumulator`-over-SSE and reasoning-replay spikes. | Fake-server test streams text; a second turn replays history correctly. |
 | 2 | TUI shell: transcript viewport, input, token streaming, `Ctrl-C` cancels the turn, markdown for completed messages | `Update` tests pass; manual run against the real API. |
 | 3 | Tool loop only: `Tool` interface and registry, function-call handling, concurrent read-only / serial mutating dispatch, `function_call_output` replay, tool cards in the TUI. Exercised with fake tools defined in tests; no real tools ship. | Three slow fake read-only calls finish in about 1x, not 3x, the time of one; mutating fakes run one at a time in model order; a tool error reaches the model as output and the loop continues. |
-| 4 | `read_file`, `list_dir`, `write_file`, `edit_file`, working-directory confinement, approval prompt | Reads work and run in parallel; mutations are refused without approval; an ambiguous edit fails cleanly; paths outside the working tree are rejected. |
-| 5 | `shell` | A hung command is killed on cancel and the loop recovers. |
-| 6 | `todo`, `ask_user` | The model can pause, ask and resume. |
-| 7 | `web_fetch` (web search is decided later; see section 8) | Redirects, size limits and non-HTML handled. |
-| 8 | MCP client (stdio and remote HTTP), `mcpServers` config, `enabled` flag, header/env expansion, namespacing | A real stdio server and a remote HTTP server both work, including parallel calls; a failing server is reported but does not stop the agent. |
+| 4 | MCP client (stdio and remote HTTP), `mcpServers` config, `enabled` flag, header/env expansion, namespacing, and the approval prompt (MCP tools are mutating unless annotated read-only, so approvals must exist first) | A real stdio server and a remote HTTP server both work, including parallel calls; an unapproved MCP call is refused; a failing server is reported but does not stop the agent. |
+| 5 | `read_file`, `list_dir`, `write_file`, `edit_file`, working-directory confinement | Reads work and run in parallel; mutations go through the approval prompt; an ambiguous edit fails cleanly; paths outside the working tree are rejected. |
+| 6 | `shell` | A hung command is killed on cancel and the loop recovers. |
+| 7 | `todo`, `ask_user` | The model can pause, ask and resume. |
+| 8 | `web_fetch` (web search is decided later; see section 8) | Redirects, size limits and non-HTML handled. |
 | 9 | Session save/resume, compaction via `responses.compact`, slash commands | A resumed session continues; a long one compacts. |
 
 ## 8. Open items
@@ -171,6 +171,6 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 - Web search: undecided, to be chosen by the user. Candidates: an MCP server (the config already supports
   search-capable ones such as a Brave-backed toolbox) or a local tool. The OpenAI built-in tool is excluded.
 - Confirm the exact name of the MCP SDK's Streamable HTTP client transport and how to attach custom headers
-  (Phase 8).
-- Pick the HTML-to-markdown library (Phase 7).
+  (Phase 4).
+- Pick the HTML-to-markdown library (Phase 8).
 - Decide the session storage format and location (Phase 9).
