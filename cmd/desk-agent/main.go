@@ -15,6 +15,7 @@ import (
 
 	"github.com/qsrahman/desk-agent/internal/agent"
 	"github.com/qsrahman/desk-agent/internal/config"
+	"github.com/qsrahman/desk-agent/internal/tui"
 )
 
 // version is overridden at build time: -ldflags "-X main.version=v0.1.0".
@@ -43,17 +44,19 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "desk-agent", version)
 		return 0
 	}
-	if *prompt == "" {
-		fmt.Fprintln(stderr, "desk-agent: the interactive UI is not implemented yet (Phase 2); use -p \"prompt\"")
-		return 1
-	}
 
 	cfg, err := loadConfig(*configPath, *model, *baseURL, stderr)
-	if err != nil {
-		fmt.Fprintln(stderr, "desk-agent:", err)
-		return 1
+	if err == nil {
+		var a *agent.Agent
+		if a, err = newAgent(cfg); err == nil {
+			if *prompt != "" {
+				err = runPrompt(ctx, a, *prompt, stdout)
+			} else {
+				err = tui.Run(a, cfg.Model)
+			}
+		}
 	}
-	if err := runPrompt(ctx, cfg, *prompt, stdout); err != nil {
+	if err != nil {
 		fmt.Fprintln(stderr, "desk-agent:", err)
 		return 1
 	}
@@ -77,15 +80,17 @@ func loadConfig(path, flagModel, flagBaseURL string, warn io.Writer) (config.Con
 	return config.Resolve(file, os.Getenv, flagModel, flagBaseURL), nil
 }
 
-// runPrompt sends one prompt and streams the answer to w.
-func runPrompt(ctx context.Context, cfg config.Config, prompt string, w io.Writer) error {
+// newAgent builds the API client and an agent with an empty conversation.
+func newAgent(cfg config.Config) (*agent.Agent, error) {
 	// Local servers often need no key, so only insist on one for the OpenAI API.
 	if cfg.APIKey == "" && cfg.BaseURL == "" {
-		return errors.New("no API key: set OPENAI_API_KEY or api_key in the config file")
+		return nil, errors.New("no API key: set OPENAI_API_KEY or api_key in the config file")
 	}
-	client := newClient(cfg)
+	return agent.New(newClient(cfg), cfg.Model, agent.DefaultInstructions), nil
+}
 
-	a := agent.New(client, cfg.Model, agent.DefaultInstructions)
+// runPrompt sends one prompt and streams the answer to w.
+func runPrompt(ctx context.Context, a *agent.Agent, prompt string, w io.Writer) error {
 	var failure error
 	for event := range a.Send(ctx, prompt) {
 		switch e := event.(type) {

@@ -29,16 +29,6 @@ func TestRunBadFlag(t *testing.T) {
 	}
 }
 
-func TestRunWithoutPromptExplainsStatus(t *testing.T) {
-	var out, errOut bytes.Buffer
-	if code := run(context.Background(), nil, &out, &errOut); code != 1 {
-		t.Fatalf("exit code = %d, want 1", code)
-	}
-	if !strings.Contains(errOut.String(), "-p") {
-		t.Errorf("stderr = %q, want a hint about -p", errOut.String())
-	}
-}
-
 // isolate keeps tests away from the developer's real config and credentials.
 func isolate(t *testing.T) {
 	t.Helper()
@@ -109,14 +99,19 @@ func TestRunPromptUsesConfigFile(t *testing.T) {
 	}
 }
 
-func TestRunPromptRequiresAPIKeyForOpenAI(t *testing.T) {
-	isolate(t)
-	var out, errOut bytes.Buffer
-	if code := run(context.Background(), []string{"-p", "hi"}, &out, &errOut); code != 1 {
-		t.Fatalf("exit code = %d, want 1", code)
-	}
-	if !strings.Contains(errOut.String(), "OPENAI_API_KEY") {
-		t.Errorf("stderr = %q, want a hint about OPENAI_API_KEY", errOut.String())
+// Both modes need a key for the OpenAI API; without a prompt this also proves the TUI is never started.
+func TestRequiresAPIKeyForOpenAI(t *testing.T) {
+	for _, args := range [][]string{{"-p", "hi"}, {}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			isolate(t)
+			var out, errOut bytes.Buffer
+			if code := run(context.Background(), args, &out, &errOut); code != 1 {
+				t.Fatalf("exit code = %d, want 1", code)
+			}
+			if !strings.Contains(errOut.String(), "OPENAI_API_KEY") {
+				t.Errorf("stderr = %q, want a hint about OPENAI_API_KEY", errOut.String())
+			}
+		})
 	}
 }
 

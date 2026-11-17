@@ -3,9 +3,9 @@
 A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI, and works on your
 machine through tools (files, shell, web, todo, questions) and optional MCP servers.
 
-> **Status: Phase 1 (v0.1.0).** You can send one prompt from the command line and stream the answer. The
-> interactive TUI, tools and MCP are planned; see [PLAN.md](PLAN.md) for the phase table. This README is
-> updated as each phase lands.
+> **Status: Phase 2 (v0.2.0).** You can chat with the model in a terminal UI or send a single prompt from the
+> command line. Tools and MCP are planned and the model cannot touch your files yet; see [PLAN.md](PLAN.md)
+> for the phase table. This README is updated as each phase lands.
 
 ## Requirements
 
@@ -18,14 +18,31 @@ machine through tools (files, shell, web, todo, questions) and optional MCP serv
 ```bash
 go build -o desk-agent ./cmd/desk-agent
 export OPENAI_API_KEY=...
-./desk-agent -p "Explain what a goroutine is in two sentences"
+./desk-agent                                              # interactive chat
+./desk-agent -p "Explain what a goroutine is in two sentences"   # one prompt, answer on stdout
 ```
+
+## Using the chat
+
+Type a message and press `Enter`. The answer streams in and is rendered as markdown when it finishes. The
+conversation keeps its history for the whole session.
+
+| Key | Action |
+|---|---|
+| `Enter` | Send the message (ignored while an answer is streaming) |
+| `Ctrl-J` or `Alt-Enter` | New line in the message |
+| `PgUp` / `PgDn` | Scroll the transcript |
+| `Ctrl-C` | While an answer is streaming: cancel it. Press again to quit. When idle: quit. |
+| `Ctrl-D` | Quit when the input is empty |
+
+A cancelled or failed answer stays on screen but is not added to the conversation history, so the next
+message continues from the last complete answer.
 
 Flags:
 
 | Flag | Meaning |
 |---|---|
-| `-p "prompt"` | Send the prompt, stream the answer to stdout, exit. `Ctrl-C` cancels. |
+| `-p "prompt"` | Send one prompt, stream the answer to stdout and exit. `Ctrl-C` cancels. Without `-p`, the chat UI starts. |
 | `--model name` | Model to use. |
 | `--base-url url` | API base URL for OpenAI-compatible servers. |
 | `--config path` | Config file (default below). A missing explicit file is an error. |
@@ -71,13 +88,9 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
   there.
 - Web search is not built in. If you want it, add a search-capable MCP server under `mcpServers`.
 
-## Planned
+## Notes
 
-```bash
-desk-agent    # interactive TUI (Phase 2)
-```
-
-Each prompt is a fresh conversation for now; multi-turn conversations arrive with the TUI.
+`-p` starts a fresh conversation each time; only the interactive mode keeps history between messages.
 
 ## Safety
 

@@ -1,7 +1,7 @@
 # desk-agent — Product Requirements Document
 
 Status: living document. Update it whenever a change affects scope, architecture or phases.
-Last reviewed: 2026-11-17 (Phase 1).
+Last reviewed: 2026-11-17 (Phase 2).
 
 ## 1. Goal
 
@@ -46,7 +46,7 @@ config, glob/grep tools (the model uses `rg`/`find` through `shell`).
 ## 4. Architecture
 
 ```
-cmd/desk-agent/main.go     flags, wiring, -p mode
+cmd/desk-agent/main.go     flags, wiring, -p mode, starts the TUI
 internal/config/           config file, env and flag precedence
 internal/agent/            loop, events, history
 internal/tools/            Tool interface + registry; fs, shell, web, todo, ask
@@ -157,7 +157,7 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 |---|---|---|
 | 0 | Scaffold: module, git, docs, skeleton, smoke test | `go vet ./...` and `go test ./...` pass; docs describe the skeleton. |
 | 1 (done, v0.1.0) | Agent core: config loading, streaming, local history, `-p "prompt"` non-interactive mode. | Fake-server test streams text; a second turn replays history correctly. |
-| 2 | TUI shell: transcript viewport, input, token streaming, `Ctrl-C` cancels the turn, markdown for completed messages | `Update` tests pass; manual run against the real API. |
+| 2 (done, v0.2.0) | TUI shell: transcript viewport, input, token streaming, `Ctrl-C` cancels the turn, markdown for completed messages | `Update` tests pass; manual run against the real API. |
 | 3 | Tool loop only: `Tool` interface and registry, function-call handling, concurrent read-only / serial mutating dispatch, `function_call_output` replay, tool cards in the TUI. Exercised with fake tools defined in tests; no real tools ship. | Three slow fake read-only calls finish in about 1x, not 3x, the time of one; mutating fakes run one at a time in model order; a tool error reaches the model as output and the loop continues. |
 | 4 | MCP client (stdio and remote HTTP), `mcpServers` config, `enabled` flag, header/env expansion, namespacing, and the approval prompt (MCP tools are mutating unless annotated read-only, so approvals must exist first) | A real stdio server and a remote HTTP server both work, including parallel calls; an unapproved MCP call is refused; a failing server is reported but does not stop the agent. |
 | 5 | `read_file`, `list_dir`, `write_file`, `edit_file`, working-directory confinement | Reads work and run in parallel; mutations go through the approval prompt; an ambiguous edit fails cleanly; paths outside the working tree are rejected. |
@@ -174,7 +174,11 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
   items (history held only the user and assistant messages), so replaying an encrypted reasoning item is covered
   by the fake-server test but not yet by a real response. Re-check when tools are added (Phase 3 onward), where
   the model is more likely to reason.
-- Verify Bubble Tea v2 / `bubbles` v2 / `glamour` import paths and APIs (Phase 2).
+- Bubble Tea stack verified in Phase 2: `charm.land/bubbletea/v2` v2.1.1, `bubbles/v2` v2.2.1, `lipgloss/v2`
+  v2.1.1, `glamour/v2` v2.0.1. In v2, `View()` returns `tea.View`, keys arrive as `tea.KeyPressMsg`, and the
+  terminal background is requested with `tea.RequestBackgroundColor`.
+- Known limits of the Phase 2 TUI: the assistant text is shown as plain wrapped text while streaming and
+  re-rendered as markdown when the turn completes; there is no mouse support; slash commands arrive in Phase 9.
 - Check which features survive a custom `base_url`. Servers that only partly implement the Responses API may
   lack `reasoning.encrypted_content` or `responses.compact`. Phase 1
   should test against the real API first; then decide whether to disable those features when `base_url` is set.

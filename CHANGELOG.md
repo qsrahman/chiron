@@ -4,6 +4,23 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-17
+
+### Added
+
+- `internal/tui`: Bubble Tea v2 chat UI with a scrollable transcript, multi-line input, token streaming,
+  markdown rendering of finished answers (dark or light theme from the terminal background), a status line,
+  and window-resize handling.
+- Keys: `Enter` sends, `Ctrl-J`/`Alt-Enter` adds a line, `PgUp`/`PgDn` scroll, `Ctrl-C` cancels a running turn
+  (a second press quits), `Ctrl-D` quits on empty input.
+- `desk-agent` without `-p` now starts the chat UI and keeps conversation history for the session.
+- Update-level tests with a fake sender (streaming, markdown, busy/empty Enter, cancel, quit, error, resize,
+  theme).
+
+### Changed
+
+- Cancelled or failed turns keep their partial text on screen but stay out of the agent's history.
+
 ### Added
 
 - Opt-in real-server test (`-tags=integration`) that checks the model name, `reasoning.encrypted_content` and a

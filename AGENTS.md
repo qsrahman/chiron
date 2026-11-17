@@ -8,6 +8,7 @@ Read [PLAN.md](PLAN.md) first for goals, decisions and the phase table.
 cmd/desk-agent/     main: flags, wiring, -p mode
 internal/config/    config file, env and flag precedence
 internal/agent/     loop, events, history            (no UI imports)
+internal/tui/       Bubble Tea chat UI (model, rendering)
 internal/tools/     Tool interface, registry, built-in tools
 internal/mcp/       MCP servers adapted to tools.Tool
 internal/tui/       Bubble Tea model / update / view
@@ -25,6 +26,9 @@ go test -race ./...   # required whenever concurrency code changes
 ```
 
 Build, vet and test must pass before a commit.
+
+Manual TUI check: build the binary and run it in a real terminal, or drive it through a pseudo-terminal
+(Python `pty`) sending a prompt and `Ctrl-C`; the TUI is not covered by the go tests' real terminal output.
 
 Real-server check (costs a few tokens, never run by default; skips without a key or base URL). It uses the
 default config file and the environment, like the CLI:
@@ -47,6 +51,11 @@ go test -tags=integration -run TestRealAPIReplay -v -count=1 ./internal/agent
 - **File tools are confined to the working directory tree.**
 - **`agent.Send` contract:** the caller must read the returned channel until it closes (the last event is `Done`
   or `Error`); cancel the context to stop early. History changes only when a turn succeeds.
+- **TUI conventions.** Bubble Tea copies the model on every `Update`, so keep it a plain value: no
+  `strings.Builder` or mutex fields. Anything slow or blocking (reading agent events) runs in a `tea.Cmd` and
+  returns a message. The TUI depends on the small `tui.Sender` interface, not on `*agent.Agent`, so tests drive
+  it with a fake and synthetic messages (see `internal/tui/model_test.go`). Bubble Tea v2 APIs: `View()`
+  returns `tea.View`, keys are `tea.KeyPressMsg`.
 - **Tests use no network.** Point the SDK at an `httptest` server with `option.WithBaseURL` and scripted SSE.
   Test the TUI through `Update` with synthetic messages.
 - **Comments explain why**, not what. No line-by-line commentary.
