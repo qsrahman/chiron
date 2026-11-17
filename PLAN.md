@@ -16,7 +16,9 @@ config, glob/grep tools (the model uses `rg`/`find` through `shell`).
 
 ## 2. Principles
 
-- **Simple and modular, not over-modular.** Four packages and a `main`; no extra layers.
+- **Simple and modular, not over-modular.** Four packages and a `main`; no extra layers. Readable code beats
+  clever code, and new tools or front-ends must be addable without editing the agent loop. The detailed Go
+  rules are in `AGENTS.md`.
 - **Do not hand-roll what a dependency already provides.** Check `openai-go`, the MCP SDK and the standard
   library before writing a utility.
 - **The agent core knows nothing about the UI.** It emits events; front-ends render them.

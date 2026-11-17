@@ -9,6 +9,8 @@ All notable changes to the codebase are documented in this file. Format follows 
 - Config format in the docs: added `base_url`, `api_key`, remote HTTP MCP servers (`url`, `headers`), the
   per-server `enabled` flag and `${VAR}` expansion; removed `approval`. MCP over HTTP is now in scope.
 
+- Developer guide: added code-quality rules (simplicity first, extend by adding, Go conventions) and the
+  `-race` requirement for concurrency changes.
 - MCP client moved from Phase 8 to Phase 4, together with the approval prompt it depends on. File tools,
   `shell`, `todo`/`ask_user` and `web_fetch` are now Phases 5 to 8.
 - Phase 3 is now the tool loop only, tested with fake tools; `read_file` and `list_dir` moved to Phase 4

@@ -20,9 +20,10 @@ Packages are created in the phase that needs them; do not add empty ones.
 go build ./...
 go vet ./...
 go test ./...
+go test -race ./...   # required whenever concurrency code changes
 ```
 
-All three must pass before a commit.
+Build, vet and test must pass before a commit.
 
 ## Conventions
 
@@ -41,6 +42,29 @@ All three must pass before a commit.
 - **Comments explain why**, not what. No line-by-line commentary.
 - Config uses `encoding/json`, `os.ExpandEnv` (for `${VAR}` in string values) and the standard `flag` package
   only. Never print `api_key` or MCP `headers`/`env` values in logs or errors.
+
+## Code quality
+
+Priorities, in order: simple and easy to read, then easy to extend, then efficient.
+
+- **Obvious over clever.** Prefer plain loops, explicit types and straight-line code. If a reader needs a
+  comment to follow the mechanics, rewrite the code; keep comments for the *why*.
+- **Modular, not over-modular.** One package per real responsibility (see Layout). No interface until there are
+  two implementations or a test needs a seam; no wrapper types, factories or layers "for later".
+- **Extend by adding, not editing.** A new tool is a new file that registers itself through `tools.New`; a new
+  front-end consumes `agent.Event`. Adding either must not require changes to the loop.
+- **Go conventions.**
+  - `gofmt` and `go vet` clean; exported identifiers have doc comments starting with the name.
+  - `context.Context` is the first parameter of anything that blocks or does I/O; honour cancellation.
+  - Accept small interfaces, return concrete types. Define interfaces where they are used.
+  - Return errors; wrap with `fmt.Errorf("doing x: %w", err)`; compare with `errors.Is` / `errors.As`. No
+    `panic` outside `main` and tests.
+  - No package-level mutable state and no `init()` side effects; pass dependencies explicitly (constructor
+    arguments), so tests can substitute them.
+  - Every goroutine has an owner, ends when its `ctx` is cancelled, and its channel is closed by the sender.
+  - Table-driven tests with `t.Run`; use `t.TempDir()` and `t.Cleanup()`; run with `-race` when touching
+    concurrency.
+  - Short, lower-case package names; no stutter (`agent.Agent` is fine, `agent.AgentLoop` is not).
 
 ## Workflow for every change
 
