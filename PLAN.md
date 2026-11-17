@@ -7,8 +7,9 @@ Last reviewed: 2026-11-17 (Phase 0).
 
 A terminal-based AI coding agent written in Go. It talks to the user in a Bubble Tea TUI, uses the
 OpenAI Responses API (`openai-go`) and operates on the local machine through tools: file read, write and edit,
-shell, web search, web fetch, todo list and asking the user. It streams output, runs independent tools
-concurrently, and can load extra tools from MCP servers.
+shell, web fetch, todo list and asking the user. It streams output, runs independent tools
+concurrently, and can load extra tools from MCP servers. Web search is deliberately undecided (see section 8);
+OpenAI's built-in `web_search` tool will not be used.
 
 Non-goals for v1: a GUI, sandboxing of shell commands, multi-agent orchestration, MCP OAuth flows, per-project
 config, glob/grep tools (the model uses `rg`/`find` through `shell`).
@@ -107,7 +108,6 @@ synthetic messages. Real-API checks are manual and documented in the README.
 | `shell` | no | `sh -c`, timeout, output cap, process-group kill on cancel. |
 | `todo` | yes | In-memory list shown in the TUI; replaces the whole list per call. |
 | `ask_user` | yes | Blocks on a `QuestionAsked` reply. |
-| `web_search` | n/a | Built-in OpenAI tool (`{"type":"web_search"}`), executed server-side. |
 | `web_fetch` | yes | `net/http` + HTML-to-markdown library (chosen in Phase 7), size cap, timeout. |
 | MCP tools | per server | Namespaced `server__tool`; treated as mutating (approval) unless the MCP annotations mark them read-only. |
 
@@ -156,7 +156,7 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 4 | `write_file`, `edit_file`, approval prompt | Mutations are refused without approval; an ambiguous edit fails cleanly. |
 | 5 | `shell` | A hung command is killed on cancel and the loop recovers. |
 | 6 | `todo`, `ask_user` | The model can pause, ask and resume. |
-| 7 | `web_search`, `web_fetch` | Redirects, size limits and non-HTML handled. |
+| 7 | `web_fetch` (web search is decided later; see section 8) | Redirects, size limits and non-HTML handled. |
 | 8 | MCP client (stdio and remote HTTP), `mcpServers` config, `enabled` flag, header/env expansion, namespacing | A real stdio server and a remote HTTP server both work, including parallel calls; a failing server is reported but does not stop the agent. |
 | 9 | Session save/resume, compaction via `responses.compact`, slash commands | A resumed session continues; a long one compacts. |
 
@@ -166,8 +166,10 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 - Verify `ResponseAccumulator` over SSE and `include: reasoning.encrypted_content` behaviour (Phase 1 spike).
 - Verify Bubble Tea v2 / `bubbles` v2 / `glamour` import paths and APIs (Phase 2).
 - Check which features survive a custom `base_url`. Servers that only partly implement the Responses API may
-  lack `web_search` (an OpenAI-side tool), `reasoning.encrypted_content` or `responses.compact`. Phase 1
+  lack `reasoning.encrypted_content` or `responses.compact`. Phase 1
   should test against the real API first; then decide whether to disable those features when `base_url` is set.
+- Web search: undecided, to be chosen by the user. Candidates: an MCP server (the config already supports
+  search-capable ones such as a Brave-backed toolbox) or a local tool. The OpenAI built-in tool is excluded.
 - Confirm the exact name of the MCP SDK's Streamable HTTP client transport and how to attach custom headers
   (Phase 8).
 - Pick the HTML-to-markdown library (Phase 7).

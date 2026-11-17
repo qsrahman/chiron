@@ -49,8 +49,9 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
   If you do put a key in the file, keep it private: `chmod 600 ~/.config/desk-agent/config.json`.
 - An MCP server is either a local process (`command`, `args`, `env`) or a remote one (`url`, `headers`).
   `enabled` defaults to true.
-- Custom `base_url` servers must implement the OpenAI Responses API; some features (such as `web_search`) are
-  OpenAI-side and may not work there.
+- Custom `base_url` servers must implement the OpenAI Responses API; some OpenAI-side features may not work
+  there.
+- Web search is not built in. If you want it, add a search-capable MCP server under `mcpServers`.
 
 ## Planned usage
 
