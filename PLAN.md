@@ -152,8 +152,8 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 0 | Scaffold: module, git, docs, skeleton, smoke test | `go vet ./...` and `go test ./...` pass; docs describe the skeleton. |
 | 1 | Agent core: config loading, streaming, local history, `-p "prompt"` non-interactive mode. Starts with the `ResponseAccumulator`-over-SSE and reasoning-replay spikes. | Fake-server test streams text; a second turn replays history correctly. |
 | 2 | TUI shell: transcript viewport, input, token streaming, `Ctrl-C` cancels the turn, markdown for completed messages | `Update` tests pass; manual run against the real API. |
-| 3 | Tool loop, `read_file`, `list_dir`, parallel dispatch, tool cards in the TUI | Three slow read-only calls finish in about 1x, not 3x, the time of one. |
-| 4 | `write_file`, `edit_file`, approval prompt | Mutations are refused without approval; an ambiguous edit fails cleanly. |
+| 3 | Tool loop only: `Tool` interface and registry, function-call handling, concurrent read-only / serial mutating dispatch, `function_call_output` replay, tool cards in the TUI. Exercised with fake tools defined in tests; no real tools ship. | Three slow fake read-only calls finish in about 1x, not 3x, the time of one; mutating fakes run one at a time in model order; a tool error reaches the model as output and the loop continues. |
+| 4 | `read_file`, `list_dir`, `write_file`, `edit_file`, working-directory confinement, approval prompt | Reads work and run in parallel; mutations are refused without approval; an ambiguous edit fails cleanly; paths outside the working tree are rejected. |
 | 5 | `shell` | A hung command is killed on cancel and the loop recovers. |
 | 6 | `todo`, `ask_user` | The model can pause, ask and resume. |
 | 7 | `web_fetch` (web search is decided later; see section 8) | Redirects, size limits and non-HTML handled. |
