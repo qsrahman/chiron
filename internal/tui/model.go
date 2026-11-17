@@ -150,7 +150,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) submit(text string) (tea.Model, tea.Cmd) {
 	m.input.Reset()
-	m.addEntry(roleUser, text)
+	m.addEntry(entry{role: roleUser, text: text})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
@@ -174,15 +174,20 @@ func (m *Model) handleEvent(event agent.Event) {
 	switch e := event.(type) {
 	case agent.TextDelta:
 		m.streaming += e.Text
+	case agent.ToolStarted:
+		m.commitStreaming() // keep the text the model wrote before the call above its card
+		m.addEntry(entry{role: roleTool, callID: e.CallID, text: e.Name + " " + e.Arguments})
+	case agent.ToolFinished:
+		m.finishTool(e)
 	case agent.Done:
 		m.commitStreaming()
 	case agent.Error:
 		// Keep what was already shown; the agent has dropped it from its own history.
 		m.commitStreaming()
 		if errors.Is(e.Err, context.Canceled) {
-			m.addEntry(roleNotice, "cancelled")
+			m.addEntry(entry{role: roleNotice, text: "cancelled"})
 		} else {
-			m.addEntry(roleError, "error: "+e.Err.Error())
+			m.addEntry(entry{role: roleError, text: "error: " + e.Err.Error()})
 		}
 	}
 	m.refresh()
@@ -190,8 +195,19 @@ func (m *Model) handleEvent(event agent.Event) {
 
 func (m *Model) commitStreaming() {
 	if m.streaming != "" {
-		m.addEntry(roleAssistant, m.streaming)
+		m.addEntry(entry{role: roleAssistant, text: m.streaming})
 		m.streaming = ""
+	}
+}
+
+// finishTool completes the card started for the same call. Parallel calls can finish in any order.
+func (m *Model) finishTool(e agent.ToolFinished) {
+	for i := len(m.entries) - 1; i >= 0; i-- {
+		if m.entries[i].role == roleTool && m.entries[i].callID == e.CallID {
+			m.entries[i].done, m.entries[i].failed, m.entries[i].output = true, e.Failed, e.Output
+			m.entries[i].rendered = m.render(m.entries[i])
+			return
+		}
 	}
 }
 
@@ -201,8 +217,7 @@ func (m *Model) finishTurn() {
 	m.events, m.cancel, m.cancelling = nil, nil, false
 }
 
-func (m *Model) addEntry(r role, text string) {
-	e := entry{role: r, text: text}
+func (m *Model) addEntry(e entry) {
 	e.rendered = m.render(e)
 	m.entries = append(m.entries, e)
 }

@@ -15,9 +15,11 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+
+	"github.com/qsrahman/desk-agent/internal/tools"
 )
 
-// fakeServer replays one scripted SSE body per request and records the request bodies.
+// fakeServer replays one scripted SSE body per request (repeating the last one) and records the request bodies.
 type fakeServer struct {
 	*httptest.Server
 	mu       sync.Mutex
@@ -39,8 +41,9 @@ func newFakeServer(t *testing.T, replies ...string) *fakeServer {
 		f.mu.Unlock()
 
 		w.Header().Set("Content-Type", "text/event-stream")
-		if n < len(f.replies) {
-			_, _ = io.WriteString(w, f.replies[n])
+		if len(f.replies) > 0 {
+			// Once the script runs out the last reply repeats, which lets tests simulate a model that never stops.
+			_, _ = io.WriteString(w, f.replies[min(n, len(f.replies)-1)])
 		}
 	}))
 	t.Cleanup(f.Close)
@@ -141,7 +144,7 @@ func inputItems(t *testing.T, req map[string]any) []map[string]any {
 
 func TestSendStreamsText(t *testing.T) {
 	srv := newFakeServer(t, sse(textDelta("Hello "), textDelta("there"), completed("Hello there")))
-	a := New(srv.client(), "test-model", "be brief")
+	a := New(srv.client(), "test-model", "be brief", &tools.Registry{})
 
 	events := drain(t, a.Send(context.Background(), "hi"))
 
@@ -166,7 +169,7 @@ func TestSecondTurnReplaysHistory(t *testing.T) {
 		sse(textDelta("first answer"), completed("first answer")),
 		sse(textDelta("second answer"), completed("second answer")),
 	)
-	a := New(srv.client(), "m", "")
+	a := New(srv.client(), "m", "", &tools.Registry{})
 
 	drain(t, a.Send(context.Background(), "question one"))
 	drain(t, a.Send(context.Background(), "question two"))
@@ -199,7 +202,7 @@ func TestFailedTurnLeavesHistoryUnchanged(t *testing.T) {
 		sse(failed),
 		sse(textDelta("ok"), completed("ok")),
 	)
-	a := New(srv.client(), "m", "")
+	a := New(srv.client(), "m", "", &tools.Registry{})
 
 	events := drain(t, a.Send(context.Background(), "will fail"))
 	last, ok := events[len(events)-1].(Error)
@@ -216,7 +219,7 @@ func TestFailedTurnLeavesHistoryUnchanged(t *testing.T) {
 
 func TestStreamWithoutCompletionIsAnError(t *testing.T) {
 	srv := newFakeServer(t, sse(textDelta("partial")))
-	a := New(srv.client(), "m", "")
+	a := New(srv.client(), "m", "", &tools.Registry{})
 
 	events := drain(t, a.Send(context.Background(), "hi"))
 	if _, ok := events[len(events)-1].(Error); !ok {
@@ -238,7 +241,7 @@ func TestCancelStopsTurn(t *testing.T) {
 	t.Cleanup(func() { close(release); srv.Close() })
 
 	client := openai.NewClient(option.WithBaseURL(srv.URL), option.WithAPIKey("k"), option.WithMaxRetries(0))
-	a := New(client, "m", "")
+	a := New(client, "m", "", &tools.Registry{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	events := a.Send(ctx, "hi")

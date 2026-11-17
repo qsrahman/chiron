@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/qsrahman/desk-agent/internal/agent"
 )
@@ -230,5 +231,68 @@ func TestLightBackgroundSwitchesTheme(t *testing.T) {
 	m, _ = update(m, tea.BackgroundColorMsg{Color: color.White})
 	if m.dark {
 		t.Error("a light background should switch to the light theme")
+	}
+}
+
+func TestToolCardsShowProgressAndResult(t *testing.T) {
+	sender := &fakeSender{events: []agent.Event{
+		agent.TextDelta{Text: "Let me look."},
+		agent.ToolStarted{CallID: "c1", Name: "read_file", Arguments: `{"path":"a.go"}`},
+		agent.ToolStarted{CallID: "c2", Name: "list_dir", Arguments: `{"path":"."}`},
+		// Parallel calls can finish in any order; each result must land on its own card.
+		agent.ToolFinished{CallID: "c2", Name: "list_dir", Output: "a.go\nb.go"},
+		agent.ToolFinished{CallID: "c1", Name: "read_file", Output: "error: no such file", Failed: true},
+		agent.TextDelta{Text: "Done."},
+		agent.Done{},
+	}}
+	m, cmd := typeAndEnter(t, New(sender, "m"), "look around")
+	m = pump(t, m, cmd)
+
+	// user, the text written before the calls, two cards, the final answer
+	roles := []role{roleUser, roleAssistant, roleTool, roleTool, roleAssistant}
+	if len(m.entries) != len(roles) {
+		t.Fatalf("got %d entries, want %d: %+v", len(m.entries), len(roles), m.entries)
+	}
+	for i, want := range roles {
+		if m.entries[i].role != want {
+			t.Errorf("entry %d role = %v, want %v", i, m.entries[i].role, want)
+		}
+	}
+
+	failed, ok := m.entries[2], m.entries[3]
+	if !failed.done || !failed.failed || !strings.Contains(failed.rendered, "✗") || !strings.Contains(failed.rendered, "no such file") {
+		t.Errorf("failed card not rendered as failed: %q", failed.rendered)
+	}
+	if !ok.done || ok.failed || !strings.Contains(ok.rendered, "✓") || !strings.Contains(ok.rendered, "b.go") {
+		t.Errorf("successful card not rendered as done: %q", ok.rendered)
+	}
+}
+
+func TestRunningToolCardShowsEllipsis(t *testing.T) {
+	m := New(&fakeSender{block: true}, "m")
+	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "shell", Arguments: `{"command":"sleep 5"}`}})
+
+	card := lastEntry(m)
+	if card.done || !strings.Contains(card.rendered, "… shell") {
+		t.Errorf("running card = %+v", card)
+	}
+}
+
+func TestToolPreviewIsShortened(t *testing.T) {
+	m := New(&fakeSender{}, "m")
+	m, _ = update(m, tea.WindowSizeMsg{Width: 30, Height: 20})
+	long := "line1\nline2\nline3\nline4\nline5 " + strings.Repeat("x", 100)
+
+	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "read_file", Arguments: "{}"}})
+	m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "read_file", Output: long}})
+
+	card := lastEntry(m).rendered
+	if strings.Contains(card, "line4") || !strings.Contains(card, "2 more lines") {
+		t.Errorf("preview should show 3 lines and a count of the rest: %q", card)
+	}
+	for _, line := range strings.Split(card, "\n") {
+		if w := ansi.StringWidth(line); w > 30 {
+			t.Errorf("line %q is %d cells wide, want at most 30", line, w)
+		}
 	}
 }

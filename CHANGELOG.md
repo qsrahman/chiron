@@ -4,6 +4,26 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-17
+
+### Added
+
+- `internal/tools`: the `Tool` interface, `MustNew` (JSON schema from an `Args` struct via
+  `google/jsonschema-go`, strict argument decoding) and `Registry`.
+- Tool loop in `internal/agent`: executes the function calls the model makes and returns their output, until
+  the model answers. Consecutive read-only calls run concurrently, all others one at a time in model order;
+  outputs go back in call order. Failures, unknown tools and bad arguments are returned to the model as text.
+  A turn is limited to 25 model calls; cancelling while tools run stops the turn.
+- `ToolStarted` and `ToolFinished` events.
+- Tool cards in the TUI (running, succeeded, failed, with a short output preview); text the model wrote before
+  a call stays above its card.
+- Tests: concurrency and ordering with fake tools, error handling, step limit, cancellation, history across
+  turns, tool cards. `TestRealAPIToolCall` (opt-in) checks a real call and follow-up turn.
+
+### Changed
+
+- `agent.New` takes a `*tools.Registry` (`&tools.Registry{}` for none). No tools are registered in `main` yet.
+
 ## [0.2.0] - 2026-11-17
 
 ### Added

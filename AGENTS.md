@@ -8,6 +8,7 @@ Read [PLAN.md](PLAN.md) first for goals, decisions and the phase table.
 cmd/desk-agent/     main: flags, wiring, -p mode
 internal/config/    config file, env and flag precedence
 internal/agent/     loop, events, history            (no UI imports)
+internal/tools/     Tool interface, MustNew, Registry (built-in tools are added from Phase 5)
 internal/tui/       Bubble Tea chat UI (model, rendering)
 internal/tools/     Tool interface, registry, built-in tools
 internal/mcp/       MCP servers adapted to tools.Tool
@@ -30,11 +31,11 @@ Build, vet and test must pass before a commit.
 Manual TUI check: build the binary and run it in a real terminal, or drive it through a pseudo-terminal
 (Python `pty`) sending a prompt and `Ctrl-C`; the TUI is not covered by the go tests' real terminal output.
 
-Real-server check (costs a few tokens, never run by default; skips without a key or base URL). It uses the
+Real-server checks (cost a few tokens, never run by default; skip without a key or base URL). They use the
 default config file and the environment, like the CLI:
 
 ```bash
-go test -tags=integration -run TestRealAPIReplay -v -count=1 ./internal/agent
+go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
 ```
 
 ## Conventions
@@ -46,6 +47,9 @@ go test -tags=integration -run TestRealAPIReplay -v -count=1 ./internal/agent
 - **History is local** (`store=false`). Append response output items unchanged (via `param.Override` and
   `RawJSON()`); never rebuild them from parsed fields, or reasoning items and unknown fields are lost.
 - **Tool errors go to the model** as the tool output text, not as Go errors that abort the loop.
+- **Adding a tool:** define an `Args` struct (`json` tags for names, `jsonschema` tags for descriptions), write
+  `func(ctx, Args) (string, error)`, wrap it with `tools.MustNew`, and add it to the registry in `main`. The
+  agent loop and the TUI need no change; the TUI shows every call as a card.
 - **Read-only tools run concurrently; mutating tools run alone, in model order.** Mark a tool read-only only if
   it cannot change anything outside the process.
 - **File tools are confined to the working directory tree.**
@@ -70,14 +74,15 @@ Priorities, in order: simple and easy to read, then easy to extend, then efficie
   comment to follow the mechanics, rewrite the code; keep comments for the *why*.
 - **Modular, not over-modular.** One package per real responsibility (see Layout). No interface until there are
   two implementations or a test needs a seam; no wrapper types, factories or layers "for later".
-- **Extend by adding, not editing.** A new tool is a new file that registers itself through `tools.New`; a new
+- **Extend by adding, not editing.** A new tool is a new file that is built with `tools.MustNew` and added to the registry; a new
   front-end consumes `agent.Event`. Adding either must not require changes to the loop.
 - **Go conventions.**
   - `gofmt` and `go vet` clean; exported identifiers have doc comments starting with the name.
   - `context.Context` is the first parameter of anything that blocks or does I/O; honour cancellation.
   - Accept small interfaces, return concrete types. Define interfaces where they are used.
   - Return errors; wrap with `fmt.Errorf("doing x: %w", err)`; compare with `errors.Is` / `errors.As`. No
-    `panic` outside `main` and tests.
+    `panic` outside `main`, tests and `Must...` constructors (like `tools.MustNew`) whose only failure is a
+    programming error.
   - No package-level mutable state and no `init()` side effects; pass dependencies explicitly (constructor
     arguments), so tests can substitute them.
   - Every goroutine has an owner, ends when its `ctx` is cancelled, and its channel is closed by the sender.

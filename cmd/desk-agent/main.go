@@ -15,6 +15,7 @@ import (
 
 	"github.com/qsrahman/desk-agent/internal/agent"
 	"github.com/qsrahman/desk-agent/internal/config"
+	"github.com/qsrahman/desk-agent/internal/tools"
 	"github.com/qsrahman/desk-agent/internal/tui"
 )
 
@@ -86,7 +87,7 @@ func newAgent(cfg config.Config) (*agent.Agent, error) {
 	if cfg.APIKey == "" && cfg.BaseURL == "" {
 		return nil, errors.New("no API key: set OPENAI_API_KEY or api_key in the config file")
 	}
-	return agent.New(newClient(cfg), cfg.Model, agent.DefaultInstructions), nil
+	return agent.New(newClient(cfg), cfg.Model, agent.DefaultInstructions, &tools.Registry{}), nil
 }
 
 // runPrompt sends one prompt and streams the answer to w.

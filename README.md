@@ -3,9 +3,10 @@
 A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI, and works on your
 machine through tools (files, shell, web, todo, questions) and optional MCP servers.
 
-> **Status: Phase 2 (v0.2.0).** You can chat with the model in a terminal UI or send a single prompt from the
-> command line. Tools and MCP are planned and the model cannot touch your files yet; see [PLAN.md](PLAN.md)
-> for the phase table. This README is updated as each phase lands.
+> **Status: Phase 3 (v0.3.0).** You can chat with the model in a terminal UI or send a single prompt from the
+> command line. The machinery for tool calls is in place (calls run in parallel when safe, and show up as cards
+> in the chat), but no tools ship yet, so the model still cannot touch your files. Tools and MCP arrive in the
+> next phases; see [PLAN.md](PLAN.md). This README is updated as each phase lands.
 
 ## Requirements
 
@@ -34,6 +35,10 @@ conversation keeps its history for the whole session.
 | `PgUp` / `PgDn` | Scroll the transcript |
 | `Ctrl-C` | While an answer is streaming: cancel it. Press again to quit. When idle: quit. |
 | `Ctrl-D` | Quit when the input is empty |
+
+When the model calls a tool, a card appears in the transcript: `…` while it runs, then `✓` or `✗` with the
+first lines of the result. Independent read-only calls run at the same time; anything that could change
+something runs alone, in the order the model asked.
 
 A cancelled or failed answer stays on screen but is not added to the conversation history, so the next
 message continues from the last complete answer.

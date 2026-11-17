@@ -1,7 +1,7 @@
 # desk-agent — Product Requirements Document
 
 Status: living document. Update it whenever a change affects scope, architecture or phases.
-Last reviewed: 2026-11-17 (Phase 2).
+Last reviewed: 2026-11-17 (Phase 3).
 
 ## 1. Goal
 
@@ -61,16 +61,21 @@ type Tool interface {
     Name() string
     Spec() responses.ToolUnionParam              // JSON schema sent to the model
     ReadOnly() bool                              // true: may run concurrently, never needs approval
-    Run(ctx context.Context, args json.RawMessage) (string, error)
+    Run(ctx context.Context, arguments string) (string, error)   // arguments: the model's raw JSON
 }
 
-// Generic constructor: schema and argument decoding derive from the Args struct.
-func New[Args any](name, desc string, readOnly bool,
+// Generic constructor: the schema (google/jsonschema-go) and the argument decoding derive from the Args
+// struct. Unknown argument fields are rejected. It panics on a type that cannot be a schema (a programming
+// error, like regexp.MustCompile).
+func MustNew[Args any](name, desc string, readOnly bool,
     run func(ctx context.Context, a Args) (string, error)) Tool
 ```
 
-Tool errors are returned to the model as the `function_call_output` text, not raised as Go errors, so the model
-can recover. MCP tools implement the same interface.
+A `tools.Registry` holds the tools (unique names, registration order); the zero value is empty.
+
+Tool failures, an unknown tool name and invalid arguments are all returned to the model as the
+`function_call_output` text (`error: ...`), not raised as Go errors, so the model can recover. MCP tools
+implement the same interface.
 
 ### 4.2 Agent loop
 
@@ -79,20 +84,24 @@ can recover. MCP tools implement the same interface.
 2. Stream the response (`client.Responses.NewStreaming`), emitting `TextDelta` events. The final
    `response.completed` event carries the whole response, so its output items are used directly;
    `responses.ResponseAccumulator` is not needed.
-3. Append all output items to history unchanged.
-4. If there are no function calls, emit `Done`.
+3. Append all output items to the turn's input unchanged.
+4. If there are no function calls, replace the history with the turn's input and emit `Done`.
 5. Otherwise split the calls, in model order, into groups: each run of consecutive read-only calls is one
-   concurrent group (`sync.WaitGroup`, results written by index); each mutating call is its own serial group.
+   concurrent group (`sync.WaitGroup`, results written by index); every other call (mutating or unknown) is its
+   own serial group. Each call emits `ToolStarted` and `ToolFinished`. (Phase 3, done.)
 6. Mutating calls emit `ApprovalRequested` and block on a reply channel (honouring `ctx`) unless the user chose
-   "always allow" for that tool.
-7. Append a `function_call_output` per `call_id`, then loop.
+   "always allow" for that tool. (Phase 4.)
+7. Append a `function_call_output` per `call_id` (in call order, whatever order they finished), then loop.
+   A turn is limited to 25 model calls (`maxSteps`); hitting the limit is an error and leaves history unchanged.
+   If the context is cancelled while tools run, the model is not asked again.
 
 `Ctrl-C` cancels the context of the current turn only. Shell commands run in their own process group so cancel
 kills the whole tree.
 
 ### 4.3 Events
 
-`TextDelta`, `ToolStarted`, `ToolFinished`, `ApprovalRequested{Reply chan bool}`,
+`TextDelta`, `ToolStarted{CallID, Name, Arguments}`, `ToolFinished{CallID, Name, Output, Failed}`,
+`ApprovalRequested{Reply chan bool}`,
 `QuestionAsked{Reply chan string}`, `TodoUpdated`, `Done`, `Error`. The agent returns `<-chan Event`.
 Approvals and questions are events with reply channels so any front-end (TUI now, others later) can answer them.
 
@@ -158,7 +167,7 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 0 | Scaffold: module, git, docs, skeleton, smoke test | `go vet ./...` and `go test ./...` pass; docs describe the skeleton. |
 | 1 (done, v0.1.0) | Agent core: config loading, streaming, local history, `-p "prompt"` non-interactive mode. | Fake-server test streams text; a second turn replays history correctly. |
 | 2 (done, v0.2.0) | TUI shell: transcript viewport, input, token streaming, `Ctrl-C` cancels the turn, markdown for completed messages | `Update` tests pass; manual run against the real API. |
-| 3 | Tool loop only: `Tool` interface and registry, function-call handling, concurrent read-only / serial mutating dispatch, `function_call_output` replay, tool cards in the TUI. Exercised with fake tools defined in tests; no real tools ship. | Three slow fake read-only calls finish in about 1x, not 3x, the time of one; mutating fakes run one at a time in model order; a tool error reaches the model as output and the loop continues. |
+| 3 (done, v0.3.0) | Tool loop only: `Tool` interface and registry, function-call handling, concurrent read-only / serial mutating dispatch, `function_call_output` replay, tool cards in the TUI. Exercised with fake tools defined in tests; no real tools ship. | Three slow fake read-only calls finish in about 1x, not 3x, the time of one; mutating fakes run one at a time in model order; a tool error reaches the model as output and the loop continues. |
 | 4 | MCP client (stdio and remote HTTP), `mcpServers` config, `enabled` flag, header/env expansion, namespacing, and the approval prompt (MCP tools are mutating unless annotated read-only, so approvals must exist first) | A real stdio server and a remote HTTP server both work, including parallel calls; an unapproved MCP call is refused; a failing server is reported but does not stop the agent. |
 | 5 | `read_file`, `list_dir`, `write_file`, `edit_file`, working-directory confinement | Reads work and run in parallel; mutations go through the approval prompt; an ambiguous edit fails cleanly; paths outside the working tree are rejected. |
 | 6 | `shell` | A hung command is killed on cancel and the loop recovers. |
@@ -172,8 +181,9 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
   API, model `gpt-5.4-mini`. In both, `desk-agent -p` works and a two-turn replay with `store=false` and
   `include: reasoning.encrypted_content` recalls earlier context. Caveat: the OpenAI run produced no reasoning
   items (history held only the user and assistant messages), so replaying an encrypted reasoning item is covered
-  by the fake-server test but not yet by a real response. Re-check when tools are added (Phase 3 onward), where
-  the model is more likely to reason.
+  by the fake-server test but not yet by a real response. Phase 3 added `TestRealAPIToolCall` (function call,
+  result, follow-up turn); it passed against the local server (`beam:cloud`). Run it against OpenAI by setting
+  `base_url` to `""` in the config to see whether `gpt-5.4-mini` produces reasoning items with tools.
 - Bubble Tea stack verified in Phase 2: `charm.land/bubbletea/v2` v2.1.1, `bubbles/v2` v2.2.1, `lipgloss/v2`
   v2.1.1, `glamour/v2` v2.0.1. In v2, `View()` returns `tea.View`, keys arrive as `tea.KeyPressMsg`, and the
   terminal background is requested with `tea.RequestBackgroundColor`.
