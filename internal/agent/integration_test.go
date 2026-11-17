@@ -4,6 +4,8 @@ package agent
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"strings"
 	"testing"
@@ -21,11 +23,17 @@ import (
 //
 //	OPENAI_API_KEY=... go test -tags=integration -run TestRealAPIReplay -v ./internal/agent
 //
-// DESK_AGENT_MODEL and OPENAI_BASE_URL are honoured like in the CLI.
+// Settings come from the default config file and the environment, exactly like the CLI.
 func TestRealAPIReplay(t *testing.T) {
-	cfg := config.Resolve(config.Config{}, os.Getenv, "", "")
+	var file config.Config
+	if path, err := config.DefaultPath(); err == nil {
+		if file, err = config.Load(path, os.Stderr); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			t.Fatal(err)
+		}
+	}
+	cfg := config.Resolve(file, os.Getenv, "", "")
 	if cfg.APIKey == "" && cfg.BaseURL == "" {
-		t.Skip("OPENAI_API_KEY not set")
+		t.Skip("no API key: set OPENAI_API_KEY or api_key in the config file")
 	}
 
 	var opts []option.RequestOption

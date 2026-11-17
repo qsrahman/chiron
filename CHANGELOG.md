@@ -6,8 +6,8 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Added
 
-- Opt-in real-API test (`-tags=integration`) that checks the model name, `reasoning.encrypted_content` and a
-  two-turn history replay.
+- Opt-in real-server test (`-tags=integration`) that checks the model name, `reasoning.encrypted_content` and a
+  two-turn history replay, using the default config file and the environment.
 
 ## [0.1.0] - 2026-11-17
 

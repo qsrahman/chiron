@@ -26,10 +26,11 @@ go test -race ./...   # required whenever concurrency code changes
 
 Build, vet and test must pass before a commit.
 
-Real-API check (costs a few tokens, never run by default; skips without a key):
+Real-server check (costs a few tokens, never run by default; skips without a key or base URL). It uses the
+default config file and the environment, like the CLI:
 
 ```bash
-OPENAI_API_KEY=... go test -tags=integration -run TestRealAPIReplay -v ./internal/agent
+go test -tags=integration -run TestRealAPIReplay -v -count=1 ./internal/agent
 ```
 
 ## Conventions
