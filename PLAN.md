@@ -168,10 +168,12 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 
 ## 8. Open items
 
-- Real-server check passed on 2026-11-17 against `http://localhost:11434/v1` with model `beam:cloud`: `desk-agent -p`
-  works and a two-turn replay with `store=false` and `include: reasoning.encrypted_content` recalls earlier
-  context. Still unverified against the OpenAI API itself (and `gpt-5.4-mini`): run the integration test with
-  an OpenAI key and `base_url` empty.
+- Real checks passed on 2026-11-17: (1) local server `http://localhost:11434/v1`, model `beam:cloud`; (2) the OpenAI
+  API, model `gpt-5.4-mini`. In both, `desk-agent -p` works and a two-turn replay with `store=false` and
+  `include: reasoning.encrypted_content` recalls earlier context. Caveat: the OpenAI run produced no reasoning
+  items (history held only the user and assistant messages), so replaying an encrypted reasoning item is covered
+  by the fake-server test but not yet by a real response. Re-check when tools are added (Phase 3 onward), where
+  the model is more likely to reason.
 - Verify Bubble Tea v2 / `bubbles` v2 / `glamour` import paths and APIs (Phase 2).
 - Check which features survive a custom `base_url`. Servers that only partly implement the Responses API may
   lack `reasoning.encrypted_content` or `responses.compact`. Phase 1
