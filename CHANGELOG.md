@@ -4,6 +4,12 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Changed (plan)
+
+- Studied Crush's UI in depth and recorded the findings and decisions in `PLAN.md` section 9.1. Added Phase 3.6
+  (UI foundation: theme adapted to the terminal, layout, header, tool cards, input, help bar, markdown style,
+  welcome screen, golden tests) before Phase 4.
+
 ## [0.3.1] - 2026-11-17
 
 ### Added
