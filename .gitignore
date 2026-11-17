@@ -1,0 +1,5 @@
+/desk-agent
+/dist/
+*.test
+*.out
+.DS_Store
