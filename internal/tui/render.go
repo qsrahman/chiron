@@ -102,8 +102,22 @@ func (m *Model) markdownText(text string, width int) string {
 	text = strings.ReplaceAll(text, "\t", "    ")
 	if m.markdown != nil {
 		if out, err := m.markdown.Render(text); err == nil {
-			return strings.Trim(out, "\n")
+			return trimBlankLines(out)
 		}
 	}
 	return wrap(text, width)
+}
+
+// trimBlankLines drops empty or whitespace-only lines at both ends. Glamour pads its output with them, which
+// would make the gap after some answers larger than after others.
+func trimBlankLines(s string) string {
+	lines := strings.Split(s, "\n")
+	start, end := 0, len(lines)
+	for start < end && strings.TrimSpace(ansi.Strip(lines[start])) == "" {
+		start++
+	}
+	for end > start && strings.TrimSpace(ansi.Strip(lines[end-1])) == "" {
+		end--
+	}
+	return strings.Join(lines[start:end], "\n")
 }

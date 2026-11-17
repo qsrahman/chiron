@@ -4,6 +4,19 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Changed
+
+- User messages are a shaded block with a brand-coloured bar (previously only a thin bar).
+- Headings in answers no longer show their `##` markers.
+- A blank row separates the header from the transcript.
+
+### Fixed
+
+- The light theme showed code with the dark theme's colours: glamour registers its custom code colour table once,
+  under one global name. Code now uses named chroma styles (`monokai` for dark, `github` for light).
+- Answers ending in a code block were followed by a double gap; blank padding rows from glamour are now trimmed so
+  every gap is one row.
+
 ## [0.3.2] - 2026-11-17
 
 ### Added

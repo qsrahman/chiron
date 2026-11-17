@@ -65,6 +65,11 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
   shares the `gutter` indent and is capped at `maxTextWidth`; `render` clamps every line to the content width,
   because a line wider than the terminal wraps and wrecks the layout. Tool cards show parsed arguments, never raw
   JSON. Key bindings live in `keys.go` and feed both the key handling and the help bar.
+- **Glamour gotcha.** Glamour registers a custom `Chroma` colour table once under a single global name, so
+  the first theme to render wins for the whole process. Code colours therefore use named chroma styles
+  (`monokai`, `github`) via `CodeBlock.Theme`; `TestCodeColoursFollowTheTheme` guards this. Glamour also counts a
+  tab as zero cells, so tabs are expanded before rendering, and it pads output with blank lines, which
+  `trimBlankLines` removes so every gap between items is exactly one row.
 - **UI tests.** The main screens have golden files (`internal/tui/testdata/*.golden`, plain text). After an
   intended visual change run `go test ./internal/tui -update` and review the diff. The flag goes after the
   package. `TestNoLineIsWiderThanTheTerminal` guards the layout at several widths; colours are tested in

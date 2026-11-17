@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	gstyles "charm.land/glamour/v2/styles"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/qsrahman/desk-agent/internal/agent"
 )
@@ -71,5 +72,64 @@ func TestUserMessagesCarryTheBrandColour(t *testing.T) {
 	// 167;139;250 is the dark theme's primary colour (#A78BFA).
 	if got := m.render(e); !strings.Contains(got, "38;2;167;139;250") {
 		t.Errorf("the user bar does not use the primary colour: %q", got)
+	}
+}
+
+// Every item is separated from the next by exactly one blank row, so no entry may start or end with one.
+func TestEntriesHaveNoLeadingOrTrailingBlankRows(t *testing.T) {
+	m := conversation(t, 100, 40)
+	m.entries = append(m.entries, entry{role: roleAssistant, text: "text before code\n\n```go\nfunc main() {}\n```\n"})
+	m.rerender()
+
+	for i, e := range m.entries {
+		lines := strings.Split(e.rendered, "\n")
+		for _, line := range []string{lines[0], lines[len(lines)-1]} {
+			if strings.TrimSpace(ansi.Strip(line)) == "" {
+				t.Errorf("entry %d (role %d) starts or ends with a blank row:\n%q", i, e.role, e.rendered)
+			}
+		}
+	}
+}
+
+func TestHeadingsHaveNoMarkdownMarkers(t *testing.T) {
+	m := newTestModel(&fakeSender{})
+	for _, md := range []string{"# One", "## Two", "### Three", "#### Four"} {
+		out := ansi.Strip(m.markdownText(md, 80))
+		if strings.Contains(out, "#") {
+			t.Errorf("%q renders with its markers: %q", md, out)
+		}
+	}
+}
+
+func TestUserMessageIsAShadedBlock(t *testing.T) {
+	m := newTestModel(&fakeSender{})
+	rendered := m.render(entry{role: roleUser, text: "a question\nover two lines"})
+	// 35;35;41 is the dark theme's fallback band (#232329): the block must be shaded on every row.
+	for i, line := range strings.Split(rendered, "\n") {
+		if !strings.Contains(line, "48;2;35;35;41") {
+			t.Errorf("row %d of the user message is not shaded: %q", i, line)
+		}
+		if w := ansi.StringWidth(line); w != m.contentWidth() {
+			t.Errorf("row %d is %d cells wide, want the full %d", i, w, m.contentWidth())
+		}
+	}
+}
+
+// Glamour registers its custom code colours under one global name, so the first theme used used to win for the
+// whole process. Rendering the same code under both themes, in either order, must give different colours.
+func TestCodeColoursFollowTheTheme(t *testing.T) {
+	const md = "```go\nfunc main() { fmt.Println(\"hi\") }\n```"
+	render := func(dark bool) string {
+		m := newTestModel(&fakeSender{})
+		m.applyTheme(newTheme(dark, nil))
+		return m.markdownText(md, 80)
+	}
+
+	darkFirst, lightAfter := render(true), render(false)
+	if darkFirst == lightAfter {
+		t.Error("the light theme renders code with the dark theme's colours")
+	}
+	if render(true) != darkFirst || render(false) != lightAfter {
+		t.Error("switching themes back and forth changed the code colours")
 	}
 }

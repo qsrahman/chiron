@@ -1,11 +1,11 @@
  desk-agent  /work/demo on main                                                           test-model
  ───────────────────────────────────────────────────────────────────────────────────────────────────
- │ run the slow tests
+
+ ┃ run the slow tests
 
    ⠙ shell  go test -race ./... · 12s
 
    ⠙ Working… 12s
-
 
 
 

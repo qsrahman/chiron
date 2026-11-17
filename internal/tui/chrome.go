@@ -13,7 +13,7 @@ import (
 
 // Fixed heights of the parts around the transcript.
 const (
-	headerHeight = 2 // title row and a rule
+	headerHeight = 3 // title row, a rule and a blank row of breathing space
 	helpHeight   = 1
 	boxFrame     = 4 // columns taken by the input box: border and padding on both sides
 )
@@ -37,7 +37,7 @@ func (m *Model) headerView() string {
 	right = ansi.Truncate(right, width, "…")
 	left = ansi.Truncate(left, max(0, width-lipgloss.Width(right)-2), "…")
 	gap := strings.Repeat(" ", max(1, width-lipgloss.Width(left)-lipgloss.Width(right)))
-	return left + gap + right + "\n" + m.sty.rule.Render(strings.Repeat("─", width))
+	return left + gap + right + "\n" + m.sty.rule.Render(strings.Repeat("─", width)) + "\n"
 }
 
 // usageText shows how much context the conversation uses, with a percentage when the window is known.

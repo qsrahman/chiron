@@ -100,11 +100,13 @@ func newStyles(t theme) styles {
 		meta:  fg(t.subtle),
 		rule:  fg(t.muted),
 
-		// A bar in the brand colour sets the user's own words apart from everything else.
+		// A shaded block with a bar in the brand colour sets the user's own words apart from everything else.
 		user: lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder(), false, false, false, true).
+			Border(lipgloss.ThickBorder(), false, false, false, true).
 			BorderForeground(t.primary).
-			PaddingLeft(1),
+			BorderBackground(t.band).
+			Background(t.band).
+			Padding(0, 1),
 		notice:    fg(t.subtle).Italic(true),
 		errorText: fg(t.subtle),
 		badge:     lipgloss.NewStyle().Padding(0, 1).Bold(true).Background(t.danger).Foreground(t.onAccent),
@@ -156,13 +158,23 @@ func markdownStyle(t theme) ansi.StyleConfig {
 		h.Color = hex(t.info)
 	}
 	cfg.H6.Color = hex(t.subtle)
+	// Headings are told apart by colour and weight; the "##" markers would look like raw markdown.
+	for _, h := range []*ansi.StyleBlock{&cfg.H2, &cfg.H3, &cfg.H4, &cfg.H5, &cfg.H6} {
+		h.Prefix = ""
+	}
 	cfg.H1.Color, cfg.H1.BackgroundColor = hex(t.onAccent), hex(t.primary)
 
 	cfg.Code.Color, cfg.Code.BackgroundColor = hex(t.warning), hex(t.band)
 
-	// Code blocks keep glamour's syntax colours on the terminal background. Glamour only paints a background
-	// behind each token, not across the line, which looks patchy, so no band is set for them.
+	// Code blocks use a named chroma style. Glamour's own per-theme colour tables are registered once under a
+	// single global name, so the first theme rendered would win for the whole process and a later switch
+	// between dark and light would keep the old code colours. Named styles have no such problem.
 	cfg.CodeBlock.Margin = &zero
+	cfg.CodeBlock.Chroma = nil
+	cfg.CodeBlock.Theme = "github"
+	if t.dark {
+		cfg.CodeBlock.Theme = "monokai"
+	}
 	return cfg
 }
 

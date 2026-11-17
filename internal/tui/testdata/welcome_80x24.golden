@@ -1,11 +1,11 @@
  desk-agent  /work/demo on main                                       test-model
  ───────────────────────────────────────────────────────────────────────────────
+
    Welcome v0.0.0-test
    An AI coding assistant for your terminal.
 
    Describe what you want to do, or ask about the code in this directory.
    Enter sends a message. Ctrl+J starts a new line. Ctrl+C cancels or quits.
-
 
 
 

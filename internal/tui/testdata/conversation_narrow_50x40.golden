@@ -1,11 +1,12 @@
  desk-agent  /work/demo…  test-model · 2.5k tokens
  ─────────────────────────────────────────────────
- │ What does this project do, and do the tests
- │ pass?
+
+ ┃ What does this project do, and do the tests
+ ┃ pass?
 
    I'll check the project layout first.
 
-   ## Summary
+   Summary
 
    Here is what I found:
 
@@ -15,7 +16,6 @@
    func main() {
        fmt.Println("hi")
    }
-
 
    ✓ read_file  main.go (limit=200)
       package main
