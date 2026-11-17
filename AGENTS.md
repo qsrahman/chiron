@@ -39,7 +39,8 @@ All three must pass before a commit.
 - **Tests use no network.** Point the SDK at an `httptest` server with `option.WithBaseURL` and scripted SSE.
   Test the TUI through `Update` with synthetic messages.
 - **Comments explain why**, not what. No line-by-line commentary.
-- Config uses `encoding/json` and the standard `flag` package only.
+- Config uses `encoding/json`, `os.ExpandEnv` (for `${VAR}` in string values) and the standard `flag` package
+  only. Never print `api_key` or MCP `headers`/`env` values in logs or errors.
 
 ## Workflow for every change
 

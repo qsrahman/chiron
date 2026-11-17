@@ -10,7 +10,7 @@ OpenAI Responses API (`openai-go`) and operates on the local machine through too
 shell, web search, web fetch, todo list and asking the user. It streams output, runs independent tools
 concurrently, and can load extra tools from MCP servers.
 
-Non-goals for v1: a GUI, sandboxing of shell commands, multi-agent orchestration, MCP over HTTP, per-project
+Non-goals for v1: a GUI, sandboxing of shell commands, multi-agent orchestration, MCP OAuth flows, per-project
 config, glob/grep tools (the model uses `rg`/`find` through `shell`).
 
 ## 2. Principles
@@ -32,10 +32,11 @@ config, glob/grep tools (the model uses `rg`/`find` through `shell`).
 | Safety | Ask before every `write_file`, `edit_file`, `shell`; per-tool "always allow for this session". File tools are confined to the working directory tree. Shell is not sandboxed. | Predictable and simple. |
 | Search | No glob/grep tools in v1 | Fewer tools; `rg`/`find` via shell. |
 | Tool schemas | Generated from Go structs with `google/jsonschema-go` (`jsonschema.For[T]`) | Already a dependency of the MCP SDK; nothing hand-written. |
-| MCP | Official `github.com/modelcontextprotocol/go-sdk`, stdio transport (`CommandTransport`) | Official SDK; tools adapt to our `Tool` interface. |
+| MCP | Official `github.com/modelcontextprotocol/go-sdk`; stdio servers (`CommandTransport`) and remote HTTP servers (Streamable HTTP client transport) | Official SDK; tools adapt to our `Tool` interface. Both transports are needed by the config. |
 | Config | One file: `$XDG_CONFIG_HOME/desk-agent/config.json`, else `~/.config/desk-agent/config.json`. No per-project config. | Requested. `os.UserConfigDir` would give `~/Library/Application Support` on macOS, so the path is built explicitly. Precedence: flags > env vars > file. |
 | Model | `gpt-5.4-mini` is the intended default; configurable via flag, env `DESK_AGENT_MODEL` or config. | Requested. Model IDs change often, so it is never hard-coded in logic. Confirm the ID against the account when Phase 1 first hits the real API. |
-| API key | `OPENAI_API_KEY`, read by the SDK | No custom key handling. |
+| API key / endpoint | `api_key` and `base_url` in the config, or `OPENAI_API_KEY` / `OPENAI_BASE_URL` env vars; passed to the client with `option.WithAPIKey` / `option.WithBaseURL` | Lets the agent target OpenAI-compatible servers (for example a local one at `http://localhost:11434/v1`). `base_url` is unset by default, which means the OpenAI API. |
+| Secrets in config | Every string value goes through `os.ExpandEnv`, so `"${NAME}"` pulls from the environment. The loader warns when the file is readable by group or others. | Keep keys out of the file where possible; no custom expansion code. |
 | Commits | Conventional Commits, no co-author trailer | User preference. |
 | Versioning | Tag `v0.N.0` at the end of each phase | Keep a Changelog + SemVer. |
 
@@ -115,15 +116,32 @@ synthetic messages. Real-API checks are manual and documented in the README.
 ```json
 {
   "model": "gpt-5.4-mini",
-  "approval": "ask",
+  "base_url": "http://localhost:11434/v1",
+  "api_key": "${OPENAI_API_KEY}",
   "mcpServers": {
-    "name": { "command": "npx", "args": ["-y", "pkg"], "env": {} }
+    "context7": {
+      "url": "https://mcp.context7.com/mcp",
+      "headers": { "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}" },
+      "enabled": true
+    },
+    "grep": { "url": "https://mcp.grep.app", "enabled": true },
+    "toolbox": {
+      "command": "npx",
+      "args": ["-y", "@qsrahman/workshop-mcp@latest"],
+      "env": { "BRAVE_API_KEY": "${BRAVE_API_KEY}" },
+      "enabled": true
+    }
   }
 }
 ```
 
-Parsed with `encoding/json`. Unknown keys are ignored. `mcpServers` uses the common
-`{command, args, env}` shape so existing MCP configs can be pasted in.
+- Parsed with `encoding/json`; unknown keys are ignored. Every string value is expanded with `os.ExpandEnv`.
+- `model`, `base_url`, `api_key`: flags override env vars, which override the file. `base_url` and `api_key`
+  may be omitted (the SDK then uses `OPENAI_API_KEY` and the default endpoint).
+- Each `mcpServers` entry is either a **stdio server** (`command`, `args`, `env`) or a **remote HTTP server**
+  (`url`, `headers`). An entry with both, or with neither, is a config error. `enabled` defaults to true when
+  omitted; disabled servers are not started.
+- Approval mode is not configurable in v1: mutating tools always ask (see section 3).
 
 ## 7. Phases
 
@@ -139,7 +157,7 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 5 | `shell` | A hung command is killed on cancel and the loop recovers. |
 | 6 | `todo`, `ask_user` | The model can pause, ask and resume. |
 | 7 | `web_search`, `web_fetch` | Redirects, size limits and non-HTML handled. |
-| 8 | MCP stdio client, `mcpServers` config, namespacing | A real MCP server's tools work, including in parallel. |
+| 8 | MCP client (stdio and remote HTTP), `mcpServers` config, `enabled` flag, header/env expansion, namespacing | A real stdio server and a remote HTTP server both work, including parallel calls; a failing server is reported but does not stop the agent. |
 | 9 | Session save/resume, compaction via `responses.compact`, slash commands | A resumed session continues; a long one compacts. |
 
 ## 8. Open items
@@ -147,5 +165,10 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 - Confirm `gpt-5.4-mini` is valid for the account (Phase 1, first real call).
 - Verify `ResponseAccumulator` over SSE and `include: reasoning.encrypted_content` behaviour (Phase 1 spike).
 - Verify Bubble Tea v2 / `bubbles` v2 / `glamour` import paths and APIs (Phase 2).
+- Check which features survive a custom `base_url`. Servers that only partly implement the Responses API may
+  lack `web_search` (an OpenAI-side tool), `reasoning.encrypted_content` or `responses.compact`. Phase 1
+  should test against the real API first; then decide whether to disable those features when `base_url` is set.
+- Confirm the exact name of the MCP SDK's Streamable HTTP client transport and how to attach custom headers
+  (Phase 8).
 - Pick the HTML-to-markdown library (Phase 7).
 - Decide the session storage format and location (Phase 9).

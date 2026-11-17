@@ -25,14 +25,32 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
 ```json
 {
   "model": "gpt-5.4-mini",
-  "approval": "ask",
+  "base_url": "http://localhost:11434/v1",
+  "api_key": "${OPENAI_API_KEY}",
   "mcpServers": {
-    "name": { "command": "npx", "args": ["-y", "pkg"], "env": {} }
+    "context7": {
+      "url": "https://mcp.context7.com/mcp",
+      "headers": { "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}" },
+      "enabled": true
+    },
+    "toolbox": {
+      "command": "npx",
+      "args": ["-y", "@qsrahman/workshop-mcp@latest"],
+      "env": { "BRAVE_API_KEY": "${BRAVE_API_KEY}" },
+      "enabled": true
+    }
   }
 }
 ```
 
-Precedence: command-line flags, then environment variables (`DESK_AGENT_MODEL`, `OPENAI_API_KEY`), then the file.
+- `model`, `base_url`, `api_key`: command-line flags override environment variables (`DESK_AGENT_MODEL`,
+  `OPENAI_BASE_URL`, `OPENAI_API_KEY`), which override the file. `base_url` and `api_key` are optional.
+- `"${NAME}"` in any string value is replaced from the environment, so secrets need not live in the file.
+  If you do put a key in the file, keep it private: `chmod 600 ~/.config/desk-agent/config.json`.
+- An MCP server is either a local process (`command`, `args`, `env`) or a remote one (`url`, `headers`).
+  `enabled` defaults to true.
+- Custom `base_url` servers must implement the OpenAI Responses API; some features (such as `web_search`) are
+  OpenAI-side and may not work there.
 
 ## Planned usage
 
