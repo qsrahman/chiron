@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,7 +41,7 @@ func (m *Model) headerView() string {
 	status := ""
 	switch {
 	case m.starting:
-		status = m.sty.toolMeta.Render("connecting… · ")
+		status = m.sty.toolMeta.Render(cmp.Or(m.startLabel, "connecting…") + " · ")
 	case m.status != "":
 		status = m.sty.toolMeta.Render(m.status + " · ")
 	}

@@ -1,6 +1,7 @@
  desk-agent  /work/demo on main                                      test-model
  ──────────────────────────────────────────────────────────────────────────────
    /clear             Clear the screen; the conversation is kept
+   /compact [FOCUS]   Summarize the oldest turns; FOCUS says what to keep
    /context           Show how much of the context window is used
    /copy [code]       Copy the last answer, or its last code block, to the
                       clipboard
@@ -14,6 +15,7 @@
    /reset             Forget the conversation and start over
    /retry             Send the last prompt again
    /servers           List the MCP servers and how they are doing
+   /summary           Show the summary that stands for the oldest turns
    /tools             List the tools and which of them ask before they run
    /undo              Remove the last exchange from the conversation
 
@@ -24,8 +26,6 @@
    ctrl+c       cancel a turn, clear the input, quit
    ctrl+d       quit on an empty input
    mouse wheel  scroll the transcript (hold Shift to select text)
-
-
 
 
 

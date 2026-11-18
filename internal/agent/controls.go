@@ -9,6 +9,7 @@ import "github.com/qsrahman/desk-agent/internal/tools"
 func (a *Agent) Reset() {
 	a.history.reset()
 	a.lastInput = 0
+	a.summaryFailures = 0
 }
 
 // Undo drops the last exchange and reports whether there was one.
@@ -25,7 +26,7 @@ func (a *Agent) Rewind() (string, bool) {
 }
 
 // HasConversation reports whether there is anything to lose: the conversation only lives in memory.
-func (a *Agent) HasConversation() bool { return len(a.history.items) > 0 }
+func (a *Agent) HasConversation() bool { return len(a.history.items) > 0 || a.history.summary != "" }
 
 // SetTools replaces the tools and the instructions that describe them, when MCP servers have connected or been
 // reconnected. Like the other settings it changes only between turns.

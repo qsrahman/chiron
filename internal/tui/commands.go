@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 
 	"charm.land/bubbles/v2/key"
@@ -39,6 +41,8 @@ func commandList() []command {
 		{name: "/undo", description: "Remove the last exchange from the conversation", run: (*Model).undoCommand},
 		{name: "/retry", description: "Send the last prompt again", run: (*Model).retryCommand},
 		{name: "/copy", usage: "[code]", description: "Copy the last answer, or its last code block, to the clipboard", args: func(*Model) []string { return []string{"code"} }, run: (*Model).copyCommand},
+		{name: "/compact", usage: "[FOCUS]", description: "Summarize the oldest turns; FOCUS says what to keep", run: (*Model).compactCommand},
+		{name: "/summary", description: "Show the summary that stands for the oldest turns", run: (*Model).summaryCommand},
 		{name: "/context", description: "Show how much of the context window is used", run: (*Model).contextCommand},
 	}
 	slices.SortFunc(list, func(a, b command) int { return strings.Compare(a.name, b.name) })
@@ -311,9 +315,17 @@ func (m *Model) contextCommand(string) (tea.Cmd, error) {
 	rows := [][2]string{
 		{"instructions", "~" + count(est.Instructions) + " tokens"},
 		{fmt.Sprintf("tools (%d)", est.ToolCount), "~" + count(est.Tools) + " tokens"},
-		{"history", "~" + count(est.History) + " tokens"},
-		{"total", "~" + count(est.Total()) + " tokens"},
 	}
+	history := "history"
+	if est.Summary > 0 {
+		rows = append(rows, [2]string{"summary", "~" + count(est.Summary) + " tokens, replaces the oldest turns"})
+		history = "history after it"
+	}
+	rows = append(rows,
+		[2]string{history, "~" + count(est.History) + " tokens"},
+		[2]string{"total", "~" + count(est.Total()) + " tokens"},
+		[2]string{"budget", fmt.Sprintf("%s tokens (%d%% used)", count(est.Budget), est.Total()*100/max(est.Budget, 1))},
+	)
 	if est.LastInput > 0 {
 		rows = append(rows, [2]string{"last request", count(int(est.LastInput)) + " tokens, counted by the server"})
 	} else {
@@ -323,6 +335,33 @@ func (m *Model) contextCommand(string) (tea.Cmd, error) {
 		rows = append(rows, [2]string{"window", count(m.info.ContextWindow) + " tokens"})
 	}
 	m.sayTable(rows)
+	return nil, nil
+}
+
+// compactCommand summarizes the oldest turns. The model answers in the background; prompts typed meanwhile wait, as
+// they do while the servers start.
+func (m *Model) compactCommand(focus string) (tea.Cmd, error) {
+	if !m.agent.HasConversation() {
+		m.say("Nothing to summarize yet")
+		return nil, nil
+	}
+	m.starting, m.startLabel = true, "summarizing…"
+	a := m.agent
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		c, err := a.Compact(ctx, focus)
+		return compactedMsg{c, err}
+	}, nil
+}
+
+func (m *Model) summaryCommand(string) (tea.Cmd, error) {
+	summary := m.agent.Summary()
+	if summary == "" {
+		m.say("No summary yet: /compact makes one")
+		return nil, nil
+	}
+	m.say("Summary of the oldest turns:\n" + sanitize(summary))
 	return nil, nil
 }
 

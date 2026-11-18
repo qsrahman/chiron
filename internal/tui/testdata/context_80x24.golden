@@ -4,9 +4,9 @@
    tools (4)     ~3,400 tokens
    history       ~56,789 tokens
    total         ~61,389 tokens
+   budget        65,536 tokens (93% used)
    last request  61,000 tokens, counted by the server
    window        128,000 tokens
-
 
 
 

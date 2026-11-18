@@ -44,6 +44,12 @@ type File struct {
 	// Streaming defaults to true; false sends one request and shows the whole reply at once, for servers
 	// whose streaming is broken.
 	Streaming *bool `json:"streaming"`
+	// MaxContextTokens is the budget for a whole request: instructions, tool definitions and history. Unset uses
+	// 65,536. Keep it well below the model's real window, because the count is an estimate.
+	MaxContextTokens int `json:"max_context_tokens"`
+	// AutoCompact summarises the oldest turns before a turn that would pass 75% of the budget. Off by default:
+	// a summary is an extra model call that rewrites the history; /compact does it on request.
+	AutoCompact bool `json:"auto_compact"`
 
 	// MCPServers are the MCP servers to start, by name.
 	MCPServers map[string]MCPServer `json:"mcpServers"`
@@ -135,7 +141,11 @@ type Config struct {
 	ReasoningEffort string // "" sends none
 	MaxTurns        int    // 0 means the agent's default
 	Streaming       bool
-	MCPServers      map[string]MCPServer
+
+	MaxContextTokens int // 0 means the agent's default
+	AutoCompact      bool
+
+	MCPServers map[string]MCPServer
 }
 
 // DefaultPath returns $XDG_CONFIG_HOME/desk-agent/config.json, or ~/.config/desk-agent/config.json.
@@ -202,6 +212,9 @@ func Resolve(file File, path string, apiKeyEnv string, flags Flags) (Config, err
 	if flags.MaxTurns < 0 {
 		return Config{}, fmt.Errorf("--max-turns must be positive, not %d", flags.MaxTurns)
 	}
+	if file.MaxContextTokens < 0 {
+		return Config{}, fmt.Errorf("max_context_tokens in %s must be positive, not %d", path, file.MaxContextTokens)
+	}
 	if file.ContextWindow < 0 {
 		return Config{}, fmt.Errorf("context_window in %s must not be negative, not %d", path, file.ContextWindow)
 	}
@@ -226,6 +239,9 @@ func Resolve(file File, path string, apiKeyEnv string, flags Flags) (Config, err
 		MaxTurns:        cmp.Or(flags.MaxTurns, file.MaxTurns),
 		Streaming:       streaming,
 		MCPServers:      file.MCPServers,
+
+		MaxContextTokens: file.MaxContextTokens,
+		AutoCompact:      file.AutoCompact,
 	}, nil
 }
 

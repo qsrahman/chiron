@@ -33,6 +33,8 @@ func TestLoad(t *testing.T) {
 		"reasoning_effort": "low",
 		"max_turns": 10,
 		"streaming": false,
+		"max_context_tokens": 32000,
+		"auto_compact": true,
 		"mcpServers": {"x": {"command": "npx"}}
 	}`, 0o600)
 
@@ -42,7 +44,8 @@ func TestLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Model != "m1" || got.BaseURL != "http://localhost:11434/v1" || got.APIKey != "sk-from-env" ||
-		got.ContextWindow != 128000 || got.ReasoningEffort != "low" || got.MaxTurns != 10 {
+		got.ContextWindow != 128000 || got.ReasoningEffort != "low" || got.MaxTurns != 10 ||
+		got.MaxContextTokens != 32000 || !got.AutoCompact {
 		t.Errorf("Load() = %+v", got)
 	}
 	if got.Streaming == nil || *got.Streaming {
@@ -166,6 +169,7 @@ func TestResolveRejectsBadValues(t *testing.T) {
 		{"default is not valid in the file", File{ReasoningEffort: "default"}, Flags{}, `"default" is not one of`},
 		{"file max_turns", File{MaxTurns: -1}, Flags{}, "max_turns in cfg.json must be positive"},
 		{"flag max-turns", File{}, Flags{MaxTurns: -2}, "--max-turns must be positive"},
+		{"max_context_tokens", File{MaxContextTokens: -1}, Flags{}, "max_context_tokens in cfg.json must be positive"},
 		{"context window", File{ContextWindow: -5}, Flags{}, "context_window in cfg.json must not be negative"},
 	}
 	for _, tt := range tests {

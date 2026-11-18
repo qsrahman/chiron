@@ -31,6 +31,11 @@ type fakeAgent struct {
 	rewindPrompt string
 	conversation bool
 	tools        agent.ToolList
+
+	summary      string
+	compaction   agent.Compaction
+	compactErr   error
+	compactFocus string
 }
 
 func (f *fakeAgent) Reset()                   { f.resets++ }
@@ -44,8 +49,13 @@ func (f *fakeAgent) Settings() agent.Settings {
 	}
 	return s
 }
-func (f *fakeAgent) SetModel(model string)                  { f.settings.Model = model }
-func (f *fakeAgent) SetReasoningEffort(e string)            { f.settings.ReasoningEffort = e }
+func (f *fakeAgent) SetModel(model string)       { f.settings.Model = model }
+func (f *fakeAgent) SetReasoningEffort(e string) { f.settings.ReasoningEffort = e }
+func (f *fakeAgent) Compact(_ context.Context, focus string) (agent.Compaction, error) {
+	f.compactFocus = focus
+	return f.compaction, f.compactErr
+}
+func (f *fakeAgent) Summary() string                        { return f.summary }
 func (f *fakeAgent) ContextEstimate() agent.ContextEstimate { return f.estimate }
 func (f *fakeAgent) Rewind() (string, bool)                 { return f.rewindPrompt, f.rewindPrompt != "" }
 

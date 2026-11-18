@@ -13,6 +13,7 @@ type turnState struct {
 	items   []item
 	rounds  int  // rounds that got a response and ran its tools
 	emptied bool // a response had nothing in it, and we asked again
+	refused bool // the server refused a request as too long, and we shortened it once
 }
 
 // run executes a turn: ask the model, run the tool calls it makes, and repeat until it answers without calling
@@ -25,12 +26,19 @@ type turnState struct {
 //     the first round saves nothing, since there is no work to keep and a prompt with no reply would leave two
 //     user messages in a row.
 func (a *Agent) run(ctx context.Context, text string, events chan<- Event) error {
+	a.compactIfDue(ctx, text, func(s string) { events <- Notice{Text: s} })
 	t := &turnState{items: a.history.begin(text)}
 	var steps []string // signatures of the tool steps so far, for loop detection
 
 	for asked := 0; asked < a.settings.MaxTurns; {
 		response, err := a.respond(ctx, t.items, events)
 		if err != nil {
+			if isContextOverflow(err) && !t.refused {
+				t.refused = true
+				if a.shrink(ctx, t, text, events) {
+					continue
+				}
+			}
 			if t.rounds > 0 {
 				a.keepStopped(t, reasonOf(err))
 			}
@@ -55,6 +63,7 @@ func (a *Agent) run(ctx context.Context, text string, events chan<- Event) error
 		}
 
 		t.rounds++
+		sent := len(t.items) // what the response answered
 		t.items = append(t.items, outputItems(response.Output)...)
 		outputs := a.runCalls(ctx, calls, events)
 		for i, call := range calls {
@@ -63,6 +72,11 @@ func (a *Agent) run(ctx context.Context, text string, events chan<- Event) error
 		if err := ctx.Err(); err != nil {
 			a.keepStopped(t, reasonOf(err))
 			return err // cancelled while tools ran; the model is not asked again
+		}
+
+		if err := a.fit(t, sent, response.Usage.InputTokens, func(s string) { events <- Notice{Text: s} }); err != nil {
+			a.keepStopped(t, "its results passed the context budget")
+			return err
 		}
 
 		steps = append(steps, stepSignature(calls, outputs))
@@ -105,4 +119,32 @@ func (a *Agent) keepStopped(t *turnState, reason string) {
 func (a *Agent) save(t *turnState, note string) {
 	items := answerOpenCalls(t.items)
 	a.history.save(append(items, assistantItem("["+note+"]")))
+}
+
+// shrink makes the turn's request shorter after the server refused it as too long, and reports whether it did, so
+// the same request can be sent again. Before the first round that means summarising, whatever auto_compact says;
+// later, shortening the results of the rounds before.
+func (a *Agent) shrink(ctx context.Context, t *turnState, prompt string, events chan<- Event) bool {
+	if t.rounds == 0 {
+		events <- Notice{Text: "Summarizing earlier messages…"}
+		c, err := a.compact(ctx, "")
+		if err != nil {
+			return false
+		}
+		events <- Notice{Text: c.String()}
+		t.items = a.history.begin(prompt)
+	} else {
+		results := 0
+		for _, it := range t.items {
+			if text, ok := outputText(it); ok {
+				results += len(text) / 4
+			}
+		}
+		// Half of them: shortened first, dropped only if that is not enough.
+		if dropOutputs(t.items, len(t.items), results/2+1, true) == 0 {
+			return false
+		}
+	}
+	events <- Notice{Text: "The request was too long for the model; trying again, shorter"}
+	return true
 }

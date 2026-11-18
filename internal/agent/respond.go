@@ -86,7 +86,7 @@ func functionCalls(output []responses.ResponseOutputItemUnion) []responses.Respo
 func (a *Agent) request(items []item) responses.ResponseNewParams {
 	p := responses.ResponseNewParams{
 		Model: a.settings.Model,
-		Input: responses.ResponseNewParamsInputUnion{OfInputItemList: params(items)},
+		Input: responses.ResponseNewParamsInputUnion{OfInputItemList: a.input(items)},
 		// We keep the history ourselves (see PLAN.md), so nothing is stored server-side. Reasoning
 		// items can only be replayed in that mode when they carry their encrypted content.
 		Store:   openai.Bool(false),
@@ -103,6 +103,15 @@ func (a *Agent) request(items []item) responses.ResponseNewParams {
 		p.Reasoning = shared.ReasoningParam{Effort: shared.ReasoningEffort(effort)}
 	}
 	return p
+}
+
+// input is what the request carries as its input: the summary, if there is one, then the items.
+func (a *Agent) input(items []item) []responses.ResponseInputItemUnionParam {
+	in := params(items)
+	if a.history.summary != "" {
+		in = append([]responses.ResponseInputItemUnionParam{summaryMessage(a.history.summary)}, in...)
+	}
+	return in
 }
 
 // respond makes one request and returns the model's final response, whatever its status; the caller judges

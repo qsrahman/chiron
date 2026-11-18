@@ -142,6 +142,11 @@ text from a redraw, no leftover stand-in character, no banner.
 - **System prompt.** The text lives in `internal/agent/prompt.md.tmpl` (embedded, `text/template`); change the
   wording there, and add new facts about the session through `promptData` in `prompt.go`. Do not mention tools
   that are not registered yet.
+- **Budget and summaries.** `budget.go` holds the budget (`fit` after every round with tools, `dropOutputs`, `shorten`);
+  `compact.go` the summary: `planCompaction` cuts at a turn start, `summarize` sends the turns as labelled text with no
+  tools, `acceptSummary` refuses a bad answer. The summary is `history.summary`, **never an item**, and `Agent.input`
+  puts it first in every request; `undo`, `rewind` and `reset` need no special case for it. Anything the agent does on its
+  own is reported with `Notice`. History changes only in `save`, `undo`, `reset` and `compact`.
 - **Guards.** `guard.go` holds loop detection (window 10, more than 5 repeats); the stream idle timeout is a field
   on `Agent` so tests can shorten it. Cancelling must stay distinguishable from timeouts: only a user cancel
   satisfies `errors.Is(err, context.Canceled)`.

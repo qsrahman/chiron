@@ -101,6 +101,9 @@ func start(ctx context.Context, cfg config.Config, opts runOptions, stdout, stde
 		MaxTurns:        cfg.MaxTurns,
 		Streaming:       cfg.Streaming,
 		AutoApprove:     opts.autoApprove,
+
+		MaxContextTokens: cfg.MaxContextTokens,
+		AutoCompact:      cfg.AutoCompact,
 	}, instructions, registry)
 
 	// The servers start in the background, and the agent gets their tools once they have answered.
@@ -156,6 +159,8 @@ func runPrompt(ctx context.Context, a *agent.Agent, prompt string, w, notices io
 			fmt.Fprint(w, e.Text)
 		case agent.Retry:
 			fmt.Fprintf(notices, "\n[%s]\n", e.Reason)
+		case agent.Notice:
+			fmt.Fprintf(notices, "\n[%s]\n", e.Text)
 		case agent.ApprovalRequested:
 			fmt.Fprintf(notices, "\n[denied: %q; run with --yes to allow tool calls]\n", e.Summary)
 			e.Reply <- agent.Deny

@@ -46,9 +46,9 @@ def user_settings():
     return base or "", model or ""
 
 
-def write_config(name, servers):
+def write_config(name, servers, **extra):
     base, model = user_settings()
-    cfg = {"base_url": base, "model": model, "context_window": 65536, "mcpServers": servers}
+    cfg = {"base_url": base, "model": model, "context_window": 65536, "mcpServers": servers, **extra}
     path = os.path.join(WORK, name + ".json")
     with open(path, "w") as f:
         json.dump(cfg, f)
@@ -61,8 +61,8 @@ def local_server(**extra):
     return {"command": MCP, "env": env, **extra}
 
 
-def start(servers=None, args=(), rows=40, cols=120, config="default", cwd=None):
-    path = write_config(config, servers if servers is not None else {"local": local_server()})
+def start(servers=None, args=(), rows=40, cols=120, config="default", cwd=None, **settings):
+    path = write_config(config, servers if servers is not None else {"local": local_server()}, **settings)
     env = {"XDG_STATE_HOME": os.path.join(WORK, "state")}
     return Term([BIN, "--config", path, *args], env=env, rows=rows, cols=cols, cwd=cwd)
 
@@ -720,9 +720,48 @@ def clipboard_and_title():
         t.close()
 
 
+def compact():
+    t = start(servers={}, config="compact", max_context_tokens=900)
+    try:
+        t.wait_for("/help", 10)
+        t.type("/compact")
+        t.contains("Nothing to summarize yet")
+        t.type("/summary")
+        t.contains("No summary yet")
+        filler = " Background that matters for nothing later: " + "the weather was mild and the meeting ran long. " * 8
+        for fact in ("The code word is PINEAPPLE-42.", "The service listens on port 7731.", "Never use the word synergy.",
+                     "The database is Postgres 16."):
+            say(t, fact + filler + " Reply with just OK.", fact[:20])
+        t.type("/compact keep every number")
+        t.wait_for("Summarized", 120)
+        t.idle()
+        invariants(t, "after /compact")
+        t.type("/summary")
+        t.contains("## Goal")
+        t.type("/context")
+        t.contains("replaces the oldest turns")
+        t.contains("budget")
+        t.type("What was the code word, and which port does the service listen on? Answer briefly.")
+        t.wait_for("PINEAPPLE-42", 90)
+        t.idle()
+        t.contains("7731", "the summary lost a fact from the replaced turns")
+        invariants(t, "question after the summary")
+        t.type("/undo")
+        t.contains("Last exchange removed")
+        t.type("/retry")
+        t.wait_for("PINEAPPLE-42", 90)
+        t.idle()
+        t.type("/reset")
+        t.type("/summary")
+        t.contains("No summary yet")
+        return t
+    finally:
+        t.close()
+
+
 SCENARIOS = [startup_and_chat, clipboard_and_title, markdown, approval_and_cards, queue_and_cancel, commands, restart_after_death, scrolling,
              resize, quit_protection, multiline_input, long_output_card, failing_server_and_flags, non_interactive,
-             toolbox_startup, toolbox_files, toolbox_shell, toolbox_fetch_and_search, toolbox_large_output]
+             compact, toolbox_startup, toolbox_files, toolbox_shell, toolbox_fetch_and_search, toolbox_large_output]
 
 
 def main():

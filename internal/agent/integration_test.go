@@ -127,3 +127,37 @@ func askAgent(t *testing.T, a *Agent, prompt string) string {
 	}
 	return text.String()
 }
+
+// TestRealAPICompact checks that a summary written by the real model keeps what later questions need: facts from the
+// turns it replaced are still answered, and the history after it is a valid one to send.
+func TestRealAPICompact(t *testing.T) {
+	a := realAgent(t, &tools.Registry{})
+	facts := []string{
+		"My project is called Heron and its config file is /etc/heron/heron.toml. Reply with just OK.",
+		"The service listens on port 7731. Reply with just OK.",
+		"Never use the word 'synergy' in anything you write for me. Reply with just OK.",
+		"The database is Postgres 16 and the migration tool is dbmate. Reply with just OK.",
+		"Our deadline is the 14th of March. Reply with just OK.",
+	}
+	// Each turn carries some filler, as real ones do: a summary of a few short lines is rightly refused as longer
+	// than what it replaces.
+	filler := " For context: " + strings.Repeat("this is background that does not matter for later questions; ", 12)
+	for _, f := range facts {
+		askAgent(t, a, f+filler)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	a.settings.MaxContextTokens = 400 // keeps the newest turn or two
+	c, err := a.Compact(ctx, "")
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	t.Logf("%s\n%s", c, a.Summary())
+
+	got := askAgent(t, a, "What port does the service listen on, and what is the config file path? Answer briefly.")
+	t.Logf("answer: %q", got)
+	if !strings.Contains(got, "7731") || !strings.Contains(got, "heron.toml") {
+		t.Errorf("the summary lost facts from the replaced turns: %q", got)
+	}
+}

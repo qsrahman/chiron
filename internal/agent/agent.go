@@ -21,6 +21,9 @@ type Settings struct {
 	MaxTurns        int    // model calls for one prompt; 0 means defaultMaxTurns
 	Streaming       bool   // false sends one request and shows the whole reply at once
 	AutoApprove     bool   // allows every call without asking (--yes)
+
+	MaxContextTokens int  // budget for a whole request; 0 means defaultMaxContextTokens
+	AutoCompact      bool // summarise the oldest turns before a turn that would pass compactAt of the budget
 }
 
 // Agent holds one conversation. It is not safe for concurrent use: wait for the channel returned by Send to
@@ -34,6 +37,8 @@ type Agent struct {
 	history      history
 	grants       map[grant]bool // what the user allowed for the session; lasts until the program exits
 	lastInput    int64          // input tokens the server counted for the last request; 0 until one is known
+
+	summaryFailures int // automatic summaries in a row that were refused or failed
 }
 
 // New returns an agent with an empty history. registry holds the tools the model may call; use

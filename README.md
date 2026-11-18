@@ -41,7 +41,9 @@ Type `/` in the chat to list them; Up/Down choose, Tab completes, Esc closes. Th
 | `/undo` | Remove the last exchange from the conversation |
 | `/retry` | Send the last prompt again |
 | `/copy [code]` | Copy the last answer, or its last code block, to the clipboard (through the terminal, which must support OSC 52; control characters are removed first) |
-| `/context` | Estimated size of the instructions, tools and history |
+| `/context` | Estimated size of the instructions, tools, summary and history, and how much of the budget is used |
+| `/compact [focus]` | Summarize the oldest turns with the model to free context; `focus` says what the summary must keep |
+| `/summary` | Show the summary that stands for the oldest turns |
 
 A lone `/word` that is no command is reported and not sent; a longer line such as `/usr/bin is missing` is a prompt.
 
@@ -152,6 +154,19 @@ because tool language in such a prompt makes some models type tool calls as text
 - **Limits:** at most `max_turns` model calls (25) for one prompt; a turn that repeats the same tool call with the
   same result more than 5 times in 10 steps is stopped; a stream that goes silent for 2 minutes is abandoned; at most 8
   read-only tool calls run at once; a tool result is cut at 20 KiB with a note.
+- **Context budget:** `max_context_tokens` (default 65,536) is the size a whole request may have (instructions, tool
+  definitions and history, not the reply). It is an estimate (about 4 bytes a token), corrected with the count the
+  server sends back. Keep it well below the model's real window. When a round of tool calls would push the next
+  request over it, the results of earlier rounds are shortened first (a result over 8,000 characters keeps its first
+  4,000 and last 1,000 characters and says how much is hidden), then dropped; only if even the newest results do not
+  fit, the turn stops with a note. If the server refuses a request as too long, it is sent once more, shorter.
+- **Summaries:** `/compact` asks the model to write notes about the oldest turns and replaces them with those notes,
+  keeping the newest turns as they are. The notes go first in every request, marked as notes and not instructions;
+  there is only ever one summary (the next one builds on it). A summary that is empty, has no headings, is longer than
+  what it replaces or was cut off is refused and nothing changes. `/undo` and `/retry` work as before. With
+  `"auto_compact": true` this also happens before a turn when the request would pass 75% of the budget; it is off by
+  default because a summary is an extra model call that rewrites the history. After 3 failed automatic summaries in a
+  row they pause until `/compact` works. `/reset` forgets the summary too.
 - **Older turns** keep only their messages. The reasoning, tool calls and tool results of every turn but the newest
   are dropped from what is sent, which keeps requests small; the model can call a tool again if it needs a result.
 - **Text from the model, tools or servers** is cleaned before it is shown: control characters, escape sequences
@@ -226,6 +241,8 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
   "reasoning_effort": "low",
   "max_turns": 25,
   "streaming": true,
+  "max_context_tokens": 65536,
+  "auto_compact": false,
   "mcpServers": {
     "context7": {
       "url": "https://mcp.context7.com/mcp",
@@ -254,6 +271,7 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
 - **A key that is not a setting is an error** that names the key and the file, so a typo such as `max_turn` is not
   silently ignored. `base_url` and `api_key` are optional.
 - `reasoning_effort` (unset sends nothing), `max_turns` and `streaming` correspond to the flags above.
+- `max_context_tokens` and `auto_compact` are described under "Context budget" above.
 - `context_window` is optional. With it, the status line shows how much of the context window the conversation
   uses (for example `25.5k tokens (6%)`); without it only the token count appears.
 - `mcpServers` is described in [MCP servers](#mcp-servers). A typo in an entry is an error, like any other key.

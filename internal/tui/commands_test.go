@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"regexp"
 	"slices"
 	"strings"
@@ -201,16 +202,83 @@ func TestExitAndQuitLeaveAtOnce(t *testing.T) {
 }
 
 func TestContextRows(t *testing.T) {
-	a := &fakeAgent{estimate: agent.ContextEstimate{Instructions: 1200, Tools: 3400, ToolCount: 4, History: 56789, LastInput: 61000}}
+	a := &fakeAgent{estimate: agent.ContextEstimate{Instructions: 1200, Tools: 3400, ToolCount: 4, History: 56789, LastInput: 61000, Budget: 65536}}
 	m := newTestModel(a)
 	m.info.ContextWindow = 128000
 	m, _ = typeAndEnter(t, m, "/context")
 
 	got := said(m)
-	for _, want := range []string{"instructions", "~1,200 tokens", "tools (4)", "~3,400", "history", "~56,789", "total", "~61,389", "61,000 tokens, counted by the server", "128,000"} {
+	for _, want := range []string{"instructions", "~1,200 tokens", "tools (4)", "~3,400", "history", "~56,789", "total", "~61,389", "61,000 tokens, counted by the server", "128,000", "budget", "65,536 tokens (93% used)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("/context is missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestContextRowsWithASummary(t *testing.T) {
+	a := &fakeAgent{estimate: agent.ContextEstimate{History: 1000, Summary: 700, Budget: 65536}}
+	m, _ := typeAndEnter(t, newTestModel(a), "/context")
+
+	got := said(m)
+	for _, want := range []string{"summary", "~700 tokens", "replaces the oldest turns", "history after it"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("/context is missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestCompactRunsInTheBackgroundAndHoldsPrompts(t *testing.T) {
+	a := &fakeAgent{conversation: true, compaction: agent.Compaction{Turns: 3, Before: 9000, After: 800}}
+	m := newTestModel(a)
+
+	m, cmd := typeAndEnter(t, m, "/compact the file names")
+	if !m.starting || cmd == nil {
+		t.Fatal("the command should run in the background and hold prompts")
+	}
+	msg := cmd()
+	if a.compactFocus != "the file names" {
+		t.Errorf("focus = %q", a.compactFocus)
+	}
+	next, _ := m.Update(msg)
+	m = next.(Model)
+	if m.starting || !strings.Contains(said(m), "Summarized 3 earlier turn(s)") {
+		t.Errorf("starting = %v, said:\n%s", m.starting, said(m))
+	}
+}
+
+func TestCompactSaysWhyItFailed(t *testing.T) {
+	a := &fakeAgent{conversation: true, compactErr: errors.New("the summary is empty")}
+	m, cmd := typeAndEnter(t, newTestModel(a), "/compact")
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	if !strings.Contains(said(m), "Could not summarize: the summary is empty") {
+		t.Errorf("said:\n%s", said(m))
+	}
+}
+
+func TestCompactWithoutAConversation(t *testing.T) {
+	m, cmd := typeAndEnter(t, newTestModel(&fakeAgent{}), "/compact")
+	if cmd != nil || m.starting || !strings.Contains(said(m), "Nothing to summarize") {
+		t.Errorf("starting = %v, said:\n%s", m.starting, said(m))
+	}
+}
+
+func TestSummaryShowsTheNotes(t *testing.T) {
+	m, _ := typeAndEnter(t, newTestModel(&fakeAgent{summary: "## Goal\nbuild it"}), "/summary")
+	if got := said(m); !strings.Contains(got, "## Goal") || !strings.Contains(got, "build it") {
+		t.Errorf("said:\n%s", got)
+	}
+	m, _ = typeAndEnter(t, newTestModel(&fakeAgent{}), "/summary")
+	if !strings.Contains(said(m), "No summary yet") {
+		t.Errorf("said:\n%s", said(m))
+	}
+}
+
+func TestNoticesAreShown(t *testing.T) {
+	m := newTestModel(&fakeAgent{})
+	m.handleEvent(agent.Notice{Text: "Context full: older tool results dropped"})
+	if !strings.Contains(said(m), "Context full") {
+		t.Errorf("said:\n%s", said(m))
 	}
 }
 

@@ -81,9 +81,10 @@ func isToolWork(kind string) bool {
 }
 
 // history is the conversation as the next request starts from it. It changes in four places only: save, undo
-// (which rewind uses), reset and, from Phase 9, compact; a turn in progress works on a copy.
+// (which rewind uses), reset and compact; a turn in progress works on a copy.
 type history struct {
-	items []item
+	items   []item
+	summary string // notes standing for the turns compact replaced; sent first in every request, never an item
 
 	lastPrompt string // the prompt most recently begun, for rewind
 	lastSaved  bool   // whether that prompt's turn is in items
@@ -108,9 +109,9 @@ func (h *history) undo() bool {
 	return false
 }
 
-// reset forgets the whole conversation.
+// reset forgets the whole conversation, the summary too.
 func (h *history) reset() {
-	h.items, h.lastSaved = nil, false
+	h.items, h.summary, h.lastSaved = nil, "", false
 }
 
 // rewind gets ready to send the last prompt again: its turn is dropped if it was saved (a failed turn was not).

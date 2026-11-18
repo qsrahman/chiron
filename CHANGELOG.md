@@ -4,7 +4,21 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-18
+
 ### Added
+
+- Context budget and summaries (Phase 9a): `max_context_tokens` (default 65,536) for the whole request, estimated and
+  corrected with the server's `usage.input_tokens`. When a round of tools would push the next request over it, the
+  results of earlier rounds are shortened (first 4,000 and last 1,000 characters, with how much is hidden), then
+  dropped, and a turn that still cannot fit is kept with a note. A request the server refuses as too long is sent once
+  more, shorter (summarised before the first round, shortened results after).
+- `/compact [focus]` summarises the oldest turns with the chat model and keeps the newest as they are; `/summary` shows
+  the summary; `/context` shows the summary and the budget. The summary is kept apart from the history and goes first in
+  every request as notes, not instructions; a bad one is refused and the history stays whole. `"auto_compact": true`
+  does it before a turn at 75% of the budget (off by default; paused after 3 failures in a row). A new `Notice` event
+  reports what the agent did on its own.
+- A live scenario for `/compact` in `e2e/run.sh`, and `TestRealAPICompact` against the configured model.
 
 - The terminal gets the program's state through Bubble Tea's `View`: the window title (`● desk-agent · dir` while it works,
   `▲` while it waits for an approval), the terminal's progress indicator (running, or yellow while it waits), focus

@@ -62,6 +62,9 @@ type Usage struct{ InputTokens, OutputTokens int64 }
 // front-end should drop the text it streamed for the attempt that failed, since the reply starts over.
 type Retry struct{ Reason string }
 
+// Notice tells the user something the agent did on its own: it summarised, or shortened results to fit the budget.
+type Notice struct{ Text string }
+
 // Done marks a completed turn; it is the last event of a successful Send.
 type Done struct{}
 
@@ -75,5 +78,6 @@ func (ToolFinished) isEvent()      {}
 func (ApprovalRequested) isEvent() {}
 func (Usage) isEvent()             {}
 func (Retry) isEvent()             {}
+func (Notice) isEvent()            {}
 func (Done) isEvent()              {}
 func (Error) isEvent()             {}

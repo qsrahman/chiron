@@ -33,6 +33,8 @@ type Agent interface {
 	SetModel(model string)
 	SetReasoningEffort(effort string)
 	ContextEstimate() agent.ContextEstimate
+	Compact(ctx context.Context, focus string) (agent.Compaction, error)
+	Summary() string
 	ToolList() agent.ToolList
 }
 
@@ -79,6 +81,12 @@ type Startup struct {
 
 // startupMsg carries the result of the Startup function into Update.
 type startupMsg struct{ Startup }
+
+// compactedMsg is the end of /compact.
+type compactedMsg struct {
+	result agent.Compaction
+	err    error
+}
 
 // eventMsg carries one agent event into Update; turnClosedMsg means the channel is closed.
 type eventMsg struct{ event agent.Event }
@@ -127,7 +135,9 @@ type Model struct {
 
 	// starting is set while the Startup function runs; status is what it left for the header.
 	starting bool
-	status   string
+	// startLabel says what the header shows while starting is set, when it is not the servers connecting.
+	startLabel string
+	status     string
 
 	// focused is whether the terminal window has the focus (true until the terminal says otherwise, which it does
 	// only if it reports focus). attention marks the title when something happened while it did not.
@@ -286,6 +296,17 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		m.refresh()
 		return m, next
 
+	case compactedMsg:
+		m.starting, m.startLabel = false, ""
+		if msg.err != nil {
+			m.addEntry(entry{role: roleError, text: "Could not summarize: " + msg.err.Error()})
+		} else {
+			m.say(msg.result.String())
+		}
+		next := m.nextQueued()
+		m.refresh()
+		return m, next
+
 	case turnClosedMsg:
 		m.finishTurn()
 		next := m.nextQueued()
@@ -437,6 +458,8 @@ func (m *Model) handleEvent(event agent.Event) {
 		if m.streamView == "" {
 			m.renderStreaming() // the first text shows as markdown at once, not as plain text for a moment
 		}
+	case agent.Notice:
+		m.addEntry(entry{role: roleNotice, text: e.Text})
 	case agent.Retry:
 		// The reply starts over, so what was streamed for the failed attempt is dropped.
 		m.streaming, m.streamView = "", ""
