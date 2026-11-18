@@ -194,7 +194,7 @@ func (a *Agent) Messages() []Message {
 			}
 		case kindCall:
 			at[f.CallID] = len(out)
-			out = append(out, Message{Role: "tool", CallID: f.CallID, Name: f.Name, Arguments: f.Arguments, Title: a.titleOf(f.Name)})
+			out = append(out, Message{Role: "tool", CallID: f.CallID, Name: f.Name, Arguments: f.Arguments, Title: a.ToolTitle(f.Name)})
 		case kindCallOutput:
 			if i, ok := at[f.CallID]; ok {
 				out[i].Output = messageText(f.Output)
@@ -231,35 +231,7 @@ func (a *Agent) ListSessions(all bool) ([]SessionInfo, error) {
 	var out []SessionInfo
 	for _, i := range infos {
 		info := SessionInfo{ID: i.ID, Dir: i.Dir, Updated: i.Updated, Current: i.ID == a.saving.id, Prompt: i.Title, Turns: i.Turns}
-		if i.Turns == 0 { // written before turns were counted: count them from the file
-			info.Turns, info.Prompt = a.legacyTurns(i.ID, info.Prompt)
-		}
 		out = append(out, info)
 	}
 	return out, nil
 }
-
-// legacyTurns counts the turns of a session file that does not say, and finds its first prompt if it has no title.
-func (a *Agent) legacyTurns(id, title string) (turns int, prompt string) {
-	f, err := a.saving.store.Load(id)
-	if err != nil {
-		return 0, title
-	}
-	turns, prompt = f.Replaced, title
-	for _, si := range f.Items {
-		if si.Kind != kindUser {
-			continue
-		}
-		if prompt == "" {
-			var p fields
-			if json.Unmarshal(si.Raw, &p) == nil {
-				prompt = messageText(p.Content)
-			}
-		}
-		turns++
-	}
-	return turns, prompt
-}
-
-// ToolTitle is what to show for a call of the named tool, empty if it has no name for people or is not known.
-func (a *Agent) ToolTitle(name string) string { return a.titleOf(name) }

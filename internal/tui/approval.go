@@ -118,12 +118,6 @@ func (m Model) approvalKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// approvalView draws the dialog.
-func (m *Model) approvalView() string {
-	view, _ := m.approvalBody()
-	return view
-}
-
 // approvalBody draws the dialog and says on which row inside it the buttons are.
 func (m *Model) approvalBody() (view string, buttonRow int) {
 	a := m.approval

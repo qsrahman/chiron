@@ -42,16 +42,14 @@ func (c ContextEstimate) Total() int { return c.Instructions + c.Tools + c.Summa
 // what every request carries.
 func (a *Agent) ContextEstimate() ContextEstimate {
 	c := ContextEstimate{
-		Instructions: tools.EstimateTokens(map[string]string{"instructions": a.instructions}),
+		Instructions: a.instructionTokens(),
+		Tools:        a.toolTokens(),
 		ToolCount:    a.tools.Len(),
 		LastInput:    a.lastInput,
 		Budget:       a.maxContext(),
 	}
 	if a.history.summary != "" {
 		c.Summary = tools.EstimateTokens(summaryMessage(a.history.summary))
-	}
-	if c.ToolCount > 0 {
-		c.Tools = tools.EstimateTokens(a.tools.Specs())
 	}
 	for _, it := range a.history.items {
 		c.History += it.tokens()

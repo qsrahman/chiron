@@ -395,23 +395,6 @@ func TestAResumedSessionIsNotMistakenForAnotherWritersFile(t *testing.T) {
 	}
 }
 
-func TestAFileWrittenBeforeTurnsWereCountedStillListsItsTurns(t *testing.T) {
-	store := session.NewStore(t.TempDir())
-	if _, err := store.Save(session.File{ID: "old-1", Dir: "/work", Replaced: 2, Items: []session.Item{
-		{Kind: kindUser, Raw: []byte(`{"content":"the first prompt","role":"user"}`)},
-		{Kind: kindAssistant, Raw: []byte(`{"content":"a","role":"assistant"}`)},
-		{Kind: kindUser, Raw: []byte(`{"content":"another","role":"user"}`)},
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	a := saved(t, newFakeServer(t), store)
-
-	list, err := a.ListSessions(false)
-	if err != nil || len(list) != 1 || list[0].Turns != 4 || list[0].Prompt != "the first prompt" {
-		t.Errorf("list = %+v, %v", list, err)
-	}
-}
-
 func TestResumedCallsKeepHowTheyEnded(t *testing.T) {
 	a := newTestAgent(newFakeServer(t))
 	a.history.items = []item{

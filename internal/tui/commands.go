@@ -270,14 +270,14 @@ func (m *Model) serversCommand(string) (tea.Cmd, error) {
 	}
 	var rows [][2]string
 	for _, s := range m.info.Servers.List() {
-		rows = append(rows, [2]string{s.Name, serverText(s)})
+		rows = append(rows, [2]string{s.Name, s.Describe()})
 	}
 	m.sayTable(rows)
 	return nil, nil
 }
 
-// serverText is one line about a server: how it is doing, what it offers and what that costs.
-func serverText(s ServerInfo) string {
+// Describe is one line about a server: how it is doing, what it offers and what that costs.
+func (s ServerInfo) Describe() string {
 	var parts []string
 	switch {
 	case s.Err != "":
@@ -367,7 +367,11 @@ func (m *Model) sessionsCommand(arg string) (tea.Cmd, error) {
 		return nil, nil
 	}
 	if len(list) == 0 {
-		m.say("No saved sessions yet" + map[bool]string{false: " for this directory (/sessions all lists every directory)", true: ""}[arg == "all"])
+		note := "No saved sessions yet"
+		if arg != "all" {
+			note += " for this directory (/sessions all lists every directory)"
+		}
+		m.say(note)
 		return nil, nil
 	}
 	var rows [][2]string

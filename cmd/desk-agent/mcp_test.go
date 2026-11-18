@@ -249,7 +249,7 @@ func TestReconnectGivesTheAgentTheToolsOfAServerThatJoined(t *testing.T) {
 	t.Setenv(needed, "1") // the cause is fixed
 	second := c.Reconnect("")
 
-	if second.Status != "mcp 1/1" || second.Servers[0][1] != "connected, 1 tool" {
+	if second.Status != "mcp 1/1" || !strings.HasPrefix(second.Servers[0][1], "connected · 1 tool") {
 		t.Errorf("second = %+v", second)
 	}
 	if list := a.ToolList(); len(list.Ask) != 1 || list.Ask[0] != "late__echo" {

@@ -80,14 +80,14 @@ func interrupted() callResult { return callResult{interruptedOutput, CallCancell
 // arguments, a denial, tool errors) become that text instead of aborting the turn, so the model can recover. A
 // call that was running, or had not run yet, when the turn was cancelled is answered as interrupted.
 func (a *Agent) runCall(ctx context.Context, call responses.ResponseFunctionToolCall, events chan<- Event) string {
-	events <- ToolStarted{CallID: call.CallID, Name: call.Name, Title: a.titleOf(call.Name), Arguments: call.Arguments}
+	events <- ToolStarted{CallID: call.CallID, Name: call.Name, Title: a.ToolTitle(call.Name), Arguments: call.Arguments}
 	res := a.execute(ctx, call, events)
 	events <- ToolFinished{CallID: call.CallID, Name: call.Name, Output: res.output, Outcome: res.outcome}
 	return res.output
 }
 
-// titleOf is the name to show people for a tool, or "".
-func (a *Agent) titleOf(name string) string {
+// ToolTitle is the name to show people for a tool, or "" if it has none or is not known.
+func (a *Agent) ToolTitle(name string) string {
 	if t, ok := a.tools.Get(name); ok {
 		if titled, ok := t.(tools.Titled); ok {
 			return titled.Title()

@@ -6,6 +6,12 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Changed
 
+- Simplification, no behaviour change except the next point: the state directory function moved from `internal/mcp` to
+  `config.StateDir`; the unused `approvalView` and `mcp.Status.Source` are gone; the code that counted turns for session
+  files written before turns were stored is gone; `ToolTitle` replaces its private twin; the token estimate of the
+  instructions and tools is computed in one place.
+- The startup table of MCP servers uses the same line as `/servers` (for example `connected · 1 tool · ~120 tokens of
+  definitions`), instead of a second wording.
 - `/sessions` and `--continue` no longer read every session file in full: files are ordered by modification time, a
   list reads only the header of a file (the files carry their turn count now) and shows the newest 20, and `--continue`
   stops at the first match. `--continue` prints a warning for each damaged file newer than the session it chose.

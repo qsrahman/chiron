@@ -48,7 +48,7 @@ type Info struct {
 	Dir     string
 	Updated time.Time
 	Title   string
-	Turns   int // 0 for a file written before turns were counted
+	Turns   int
 }
 
 // Store keeps sessions in one directory, a file each.

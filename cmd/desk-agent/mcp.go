@@ -29,7 +29,7 @@ func startMCP(ctx context.Context, cfg config.Config, disabled bool) *mcp.Hub {
 		return nil
 	}
 	var logDir string
-	if dir, err := mcp.StateDir(); err == nil {
+	if dir, err := config.StateDir(); err == nil {
 		logDir = filepath.Join(dir, "mcp")
 	}
 	return mcp.Start(ctx, cfg.MCPServers, mcp.Options{LogDir: logDir, Version: version})
@@ -76,8 +76,8 @@ func (c *mcpControl) apply() tui.Startup {
 	list, notes := c.hub.Tools(nil) // there are no built-in tools yet to clash with
 
 	startup := tui.Startup{Notes: notes, Status: c.status()}
-	for _, st := range c.hub.Status() {
-		startup.Servers = append(startup.Servers, [2]string{st.Name, describeStatus(st)})
+	for _, info := range c.List() {
+		startup.Servers = append(startup.Servers, [2]string{info.Name, info.Describe()})
 	}
 
 	registry, err := tools.NewRegistry(list...)
@@ -87,7 +87,7 @@ func (c *mcpControl) apply() tui.Startup {
 	}
 	var serverNotes []agent.ServerNote
 	for _, n := range c.hub.Notes() {
-		serverNotes = append(serverNotes, agent.ServerNote{Server: n.Server, Text: n.Text})
+		serverNotes = append(serverNotes, agent.ServerNote(n))
 	}
 	instructions, err := agent.BuildInstructions(c.ctx, c.workDir, time.Now(), registry.Len() > 0, serverNotes...)
 	if err != nil {
@@ -121,26 +121,6 @@ func (c *mcpControl) List() []tui.ServerInfo {
 		out = append(out, info)
 	}
 	return out
-}
-
-func describeStatus(st mcp.Status) string {
-	var text string
-	switch {
-	case st.Err != nil:
-		return "failed: " + st.Err.Error()
-	case st.Dead:
-		return "connection lost, the next call starts it again"
-	case st.Tools == 0:
-		text = "connected, no tools"
-	case st.Tools == 1:
-		text = "connected, 1 tool"
-	default:
-		text = fmt.Sprintf("connected, %d tools", st.Tools)
-	}
-	if st.Hidden > 0 {
-		text += fmt.Sprintf(" (%d hidden)", st.Hidden)
-	}
-	return text
 }
 
 // reportMCP tells a non-interactive run which servers did not start, and what was left out.

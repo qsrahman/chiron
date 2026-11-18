@@ -19,7 +19,6 @@ import (
 
 	"github.com/qsrahman/desk-agent/internal/agent"
 	"github.com/qsrahman/desk-agent/internal/config"
-	"github.com/qsrahman/desk-agent/internal/mcp"
 	"github.com/qsrahman/desk-agent/internal/session"
 	"github.com/qsrahman/desk-agent/internal/tools"
 	"github.com/qsrahman/desk-agent/internal/tui"
@@ -146,7 +145,7 @@ func start(ctx context.Context, cfg config.Config, opts runOptions, stdout, stde
 		ContextWindow: cfg.ContextWindow,
 	}
 	// The prompts you type are kept with the sessions, and by the same switch.
-	if stateDir, err := mcp.StateDir(); err == nil && cfg.Sessions && !opts.noSave {
+	if stateDir, err := config.StateDir(); err == nil && cfg.Sessions && !opts.noSave {
 		info.HistoryPath = filepath.Join(stateDir, "history")
 	}
 	if mcpc != nil {
@@ -217,7 +216,7 @@ func newClient(cfg config.Config, extra ...option.RequestOption) openai.Client {
 // off. Without a home directory there is nowhere to keep sessions: that is an error only for a resume.
 func openSessions(a *agent.Agent, cfg config.Config, opts runOptions, workDir string, stderr io.Writer) error {
 	resuming := opts.cont || opts.resume != ""
-	stateDir, err := mcp.StateDir()
+	stateDir, err := config.StateDir()
 	if err != nil {
 		if resuming {
 			return err

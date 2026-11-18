@@ -185,7 +185,7 @@ func TestARemoteServerGetsTheConfiguredHeaders(t *testing.T) {
 
 	h := startHub(t, map[string]config.MCPServer{"web": {URL: ts.URL, Headers: map[string]string{"X-Api-Key": "${API_KEY}"}}}, Options{Lookup: lookup})
 
-	if st := statusOf(h, "web"); st.Err != nil || st.Tools != 5 || st.Source != strings.TrimPrefix(ts.URL, "http://") {
+	if st := statusOf(h, "web"); st.Err != nil || st.Tools != 5 {
 		t.Fatalf("status = %+v", st)
 	}
 	if out, err := callTool(t, h, "web__echo", `{"text":"remote"}`); err != nil || out != "echo: remote" {

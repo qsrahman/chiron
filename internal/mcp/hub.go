@@ -49,7 +49,6 @@ type Status struct {
 	Hidden   int   // how many it has that the allow-list keeps from the model
 	Tokens   int   // the estimated size of the definitions of the tools it offers
 	Restarts int   // how often a call started it again
-	Source   string
 	LogPath  string
 }
 
@@ -108,7 +107,7 @@ func (h *Hub) Status() []Status {
 	var out []Status
 	for _, s := range h.servers {
 		s.mu.Lock()
-		st := Status{Name: s.name, Err: s.err, Dead: s.dead, Restarts: s.restarts, Tools: len(s.tools), Hidden: len(s.all) - len(s.tools), Source: s.source, LogPath: s.logPath}
+		st := Status{Name: s.name, Err: s.err, Dead: s.dead, Restarts: s.restarts, Tools: len(s.tools), Hidden: len(s.all) - len(s.tools), LogPath: s.logPath}
 		s.mu.Unlock()
 		for _, remote := range s.tools {
 			if t, err := newTool(s, remote, apiName(s.name, remote.Name), false); err == nil {

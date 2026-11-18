@@ -150,15 +150,3 @@ func stdioTransport(l launch, logDir, name string, appendLog bool) (transport sd
 	cmd.Stderr = file
 	return &sdk.CommandTransport{Command: cmd, TerminateDuration: terminateDuration}, logPath, func() { file.Close() }, nil
 }
-
-// StateDir is where logs are kept: $XDG_STATE_HOME/desk-agent, or ~/.local/state/desk-agent.
-func StateDir() (string, error) {
-	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
-		return filepath.Join(dir, "desk-agent"), nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("finding home directory: %w", err)
-	}
-	return filepath.Join(home, ".local", "state", "desk-agent"), nil
-}

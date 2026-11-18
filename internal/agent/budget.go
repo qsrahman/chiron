@@ -78,12 +78,17 @@ func (a *Agent) maxContext() int {
 }
 
 // fixedTokens is what every request carries whatever the history: the instructions and the tool definitions.
-func (a *Agent) fixedTokens() int {
-	n := tools.EstimateTokens(map[string]string{"instructions": a.instructions})
-	if a.tools.Len() > 0 {
-		n += tools.EstimateTokens(a.tools.Specs())
+func (a *Agent) fixedTokens() int { return a.instructionTokens() + a.toolTokens() }
+
+func (a *Agent) instructionTokens() int {
+	return tools.EstimateTokens(map[string]string{"instructions": a.instructions})
+}
+
+func (a *Agent) toolTokens() int {
+	if a.tools.Len() == 0 {
+		return 0
 	}
-	return n
+	return tools.EstimateTokens(a.tools.Specs())
 }
 
 // requestTokens estimates the whole request for these items, summary included.

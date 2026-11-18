@@ -22,7 +22,6 @@ import (
 
 	"github.com/qsrahman/desk-agent/internal/agent"
 	"github.com/qsrahman/desk-agent/internal/config"
-	"github.com/qsrahman/desk-agent/internal/mcp"
 	"github.com/qsrahman/desk-agent/internal/session"
 	"github.com/qsrahman/desk-agent/internal/tools"
 )
@@ -385,7 +384,7 @@ func seedSession(t *testing.T, prompt string) string {
 	if real, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = real // sessions are kept by the real path of the directory
 	}
-	stateDir, err := mcp.StateDir()
+	stateDir, err := config.StateDir()
 	if err != nil {
 		t.Fatal(err)
 	}

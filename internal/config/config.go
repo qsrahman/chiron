@@ -165,6 +165,19 @@ func DefaultPath() (string, error) {
 	return filepath.Join(home, ".config", "desk-agent", "config.json"), nil
 }
 
+// StateDir is where sessions, the prompt history and server logs are kept: $XDG_STATE_HOME/desk-agent, or
+// ~/.local/state/desk-agent.
+func StateDir() (string, error) {
+	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
+		return filepath.Join(dir, "desk-agent"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("finding home directory: %w", err)
+	}
+	return filepath.Join(home, ".local", "state", "desk-agent"), nil
+}
+
 // Load reads the config file at path. A missing file returns an error that satisfies
 // errors.Is(err, fs.ErrNotExist) so callers can treat the default path as optional. A key that is not a
 // setting is an error that names the key and the file. "${NAME}" in model, base_url and api_key is replaced
