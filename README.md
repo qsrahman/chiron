@@ -89,6 +89,18 @@ and prints failures to stderr. `--no-mcp` starts none.
   `autoApprove`: a list of tool names as the server gives them (`"autoApprove": ["search"]`), or `true` for every tool
   of that server, those it adds later included (`false` is the default). `/tools` lists those as running without
   asking. MCP calls run one at a time. A call times out after 2 minutes, and Ctrl-C cancels it.
+  For example, with the three servers of the [configuration](#configuration) below:
+
+  ```json
+  "context7": { "url": "https://mcp.context7.com/mcp", "autoApprove": ["resolve-library-id", "query-docs"] },
+  "grep":     { "url": "https://mcp.grep.app", "autoApprove": true },
+  "toolbox":  { "command": "npx", "args": ["-y", "@qsrahman/workshop-mcp@latest"] }
+  ```
+
+  Calls to `context7`'s `resolve-library-id` and `query-docs` never ask, and neither does any call to `grep`. Every
+  other `context7` tool, and every `toolbox` tool, asks first (`"autoApprove": false` says the same as leaving it
+  out). A list is the safer form: `true` also trusts tools the server adds later. `/tools` shows what runs without
+  asking.
 - **Local servers** run with this program's environment plus their own `env`. They can therefore see variables such
   as `OPENAI_API_KEY`: only start servers you trust. Their error output goes to
   `~/.local/state/desk-agent/mcp/<server>.log` (`$XDG_STATE_HOME` is honoured), a private file that is emptied at each
@@ -203,8 +215,10 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
     "context7": {
       "url": "https://mcp.context7.com/mcp",
       "headers": { "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}" },
+      "autoApprove": ["resolve-library-id", "query-docs"],
       "enabled": true
     },
+    "grep": { "url": "https://mcp.grep.app", "autoApprove": true },
     "toolbox": {
       "command": "npx",
       "args": ["-y", "@qsrahman/workshop-mcp@latest"],
