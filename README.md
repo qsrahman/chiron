@@ -60,7 +60,9 @@ input.
 
 A tool that can change something (anything not marked read-only) asks before every call: a dialog in the middle
 of the screen shows what is about to happen, with **Allow** (`y`), **Allow for session** (`s`) and **Deny**
-(`n` or Esc). Deny is selected when it opens, so pressing Enter by reflex refuses. The details are never cut
+(`n` or Esc). Deny is selected when it opens, so pressing Enter by reflex refuses. The arguments are laid out as `name: value` lines in the order the model gave them (a value of several lines sits under
+its name, a short structure stays on one line) and are decoded, so what you read is what the tool receives: `&&` is
+shown as `&&`, not as `\u0026\u0026`. The details are never cut
 (long ones scroll with Up/Down and PgUp/PgDn) and control characters appear as visible escapes such as `\x1b`
 and `\r`, so what you allow is exactly what runs. A session grant covers the same tool with the same key (for
 example the same command) until you quit; `/tools` lists what is allowed. A denied call is reported to the model,

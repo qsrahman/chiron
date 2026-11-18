@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -86,12 +85,7 @@ func (t *tool) Validate(arguments string) error {
 
 // Describe is the approval prompt: which tool of which server, with what arguments, and how the server is run.
 func (t *tool) Describe(arguments string) tools.Prompt {
-	details := arguments
-	var pretty bytes.Buffer
-	if json.Indent(&pretty, []byte(arguments), "", "  ") == nil {
-		details = pretty.String()
-	}
-	return tools.Prompt{Summary: t.Title(), Details: details, Source: t.server.source}
+	return tools.Prompt{Summary: t.Title(), Details: tools.FormatArguments(arguments), Source: t.server.source}
 }
 
 func (t *tool) Run(ctx context.Context, arguments string) (string, error) {

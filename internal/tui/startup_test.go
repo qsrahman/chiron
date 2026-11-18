@@ -147,7 +147,7 @@ func TestGoldenStartup(t *testing.T) {
 }
 
 func TestGoldenMCPApproval(t *testing.T) {
-	m, _, _ := asking(t, "{\n  \"query\": \"streaming parsers\"\n}")
+	m, _, _ := asking(t, "query: streaming parsers\nlimit: 5")
 	m.approval.req.Summary = "docs → search"
 	m.approval.req.Source = "npx -y @scope/docs-mcp@latest"
 	m.layoutApproval()

@@ -6,6 +6,12 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Changed
 
+- The approval dialog shows the arguments of a call as `name: value` lines, in the order the model gave them, with the
+  values decoded (`&&`, not `\u0026\u0026`), a value of several lines under its name and a short structure on one
+  line, instead of the raw JSON. `tools.FormatArguments` does this for the generic prompt and for MCP tools.
+
+### Changed
+
 - Tool cards are closed by default: one line, with the number of lines returned and the duration at the right end
   (`cancelled` and `denied by you` also go there); a failed call also shows the first line of its error. Opening a
   card (Enter or Space) shows the whole output; the five-line preview is gone.

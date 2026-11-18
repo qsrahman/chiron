@@ -226,7 +226,7 @@ func TestPromptWithoutADescriberShowsTheArguments(t *testing.T) {
 
 	_, asked := answering(t, a.Send(context.Background(), "go"), always(Deny))
 
-	if len(asked) != 1 || asked[0].Summary != "Call write" || asked[0].GrantKey != "" || !strings.Contains(asked[0].Details, "\"name\": \"a.txt\"") {
+	if len(asked) != 1 || asked[0].Summary != "Call write" || asked[0].GrantKey != "" || asked[0].Details != "name: a.txt" {
 		t.Errorf("asked = %+v", asked)
 	}
 }

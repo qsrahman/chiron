@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -57,7 +56,7 @@ func TestAdapterIsAToolWithItsOwnPrompt(t *testing.T) {
 		t.Fatal("the adapter should describe its own calls")
 	}
 	p := a.(tools.Describer).Describe(`{"text":"hi"}`)
-	if p.Summary != "srv → echo" || !strings.Contains(p.Details, "\"text\": \"hi\"") || p.Source != "in memory" || p.GrantKey != "" {
+	if p.Summary != "srv → echo" || p.Details != "text: hi" || p.Source != "in memory" || p.GrantKey != "" {
 		t.Errorf("prompt = %+v", p)
 	}
 }
@@ -117,5 +116,16 @@ func TestAToolWithoutASchemaGetsAnEmptyObject(t *testing.T) {
 	props, ok := a.Spec().OfFunction.Parameters["properties"].(map[string]any)
 	if a.Spec().OfFunction.Parameters["type"] != "object" || !ok || len(props) != 0 {
 		t.Errorf("parameters = %v", a.Spec().OfFunction.Parameters)
+	}
+}
+
+// What the dialog shows is what the tool receives: the model's JSON escapes are decoded.
+func TestThePromptShowsTheArgumentsDecoded(t *testing.T) {
+	a := adapted(t, "echo", false)
+
+	p := a.Describe(`{"text":"pwd \u0026\u0026 ls -la","times":2}`)
+
+	if p.Details != "text: pwd && ls -la\ntimes: 2" {
+		t.Errorf("details = %q", p.Details)
 	}
 }

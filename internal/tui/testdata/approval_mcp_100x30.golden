@@ -5,16 +5,16 @@
 
    ⠋ write  a.txt
 
-   ⠋ Worki╭──────────────────────────────────────────────────────────────────────────────╮
+   ⠋ Working…
+          ╭──────────────────────────────────────────────────────────────────────────────╮
           │                                                                              │
           │ Approval needed                                                              │
           │ docs → search                                                                │
           │ Runs: npx -y @scope/docs-mcp@latest                                          │
           │                                                                              │
-          │ {                                                                            │
-          │   "query": "streaming parsers"                                               │
-          │ }                                                                            │
-          │ 34 bytes, 3 lines                                                            │
+          │ query: streaming parsers                                                     │
+          │ limit: 5                                                                     │
+          │ 33 bytes, 2 lines                                                            │
           │                                                                              │
           │  Allow   Allow for session   Deny                                            │
           │ For the session: write: a.txt                                                │

@@ -1,9 +1,7 @@
 package agent
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -52,12 +50,7 @@ func promptFor(tool tools.Tool, call responses.ResponseFunctionToolCall) tools.P
 	if d, ok := tool.(tools.Describer); ok {
 		return d.Describe(call.Arguments)
 	}
-	details := call.Arguments
-	var pretty bytes.Buffer
-	if json.Indent(&pretty, []byte(call.Arguments), "", "  ") == nil {
-		details = pretty.String()
-	}
-	return tools.Prompt{Summary: "Call " + call.Name, Details: details}
+	return tools.Prompt{Summary: "Call " + call.Name, Details: tools.FormatArguments(call.Arguments)}
 }
 
 // ToolList says how each tool is treated: which run without asking, which the user allowed, which ask first.
