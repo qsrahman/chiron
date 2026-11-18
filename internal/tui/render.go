@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ const (
 	roleNotice
 	roleError
 	roleTool // a tool call card: running, then succeeded, failed or cancelled
+	roleInfo // the answer to a slash command; never part of the conversation the model sees
 )
 
 // Layout, in terminal cells.
@@ -31,6 +33,7 @@ const (
 type entry struct {
 	role     role
 	text     string
+	rows     [][2]string // roleInfo: label and text columns, instead of text
 	rendered string
 
 	// Tool cards only.
@@ -75,6 +78,10 @@ func newMarkdownRenderer(width int, t theme) *glamour.TermRenderer {
 func (m *Model) render(e entry) string {
 	// Everything shown passes through here, so this is where text from the model, tools and servers is cleaned.
 	e.text, e.name, e.args, e.output = sanitize(e.text), sanitize(e.name), sanitize(e.args), sanitize(e.output)
+	e.rows = slices.Clone(e.rows)
+	for i, row := range e.rows {
+		e.rows[i] = [2]string{sanitize(row[0]), sanitize(row[1])}
+	}
 	width := m.contentWidth()
 	lines := strings.Split(m.renderEntry(e, width), "\n")
 	for i, line := range lines {
@@ -94,6 +101,8 @@ func (m *Model) renderEntry(e entry, width int) string {
 		return indent(m.sty.badge.Render("ERROR")+" "+m.sty.errorText.Render(ansi.Truncate(e.text, width-gutter-8, "…")), gutter)
 	case roleTool:
 		return m.renderTool(e)
+	case roleInfo:
+		return m.renderInfo(e, width)
 	}
 	return indent(m.markdownText(e.text, width-gutter), gutter)
 }
@@ -122,4 +131,24 @@ func trimBlankLines(s string) string {
 		end--
 	}
 	return strings.Join(lines[start:end], "\n")
+}
+
+// renderInfo draws a dim line, or rows in two aligned columns with long text wrapped under its column.
+func (m *Model) renderInfo(e entry, width int) string {
+	if len(e.rows) == 0 {
+		return indent(m.sty.meta.Width(width-gutter).Render(e.text), gutter)
+	}
+	labelWidth := 0
+	for _, row := range e.rows {
+		labelWidth = max(labelWidth, lipgloss.Width(row[0]))
+	}
+	labelWidth = min(labelWidth, (width-gutter)/2)
+	textWidth := width - gutter - labelWidth - 2
+	lines := make([]string, len(e.rows))
+	for i, row := range e.rows {
+		lines[i] = lipgloss.JoinHorizontal(lipgloss.Top,
+			m.sty.toolName.Width(labelWidth+2).Render(row[0]),
+			m.sty.meta.Width(textWidth).Render(row[1]))
+	}
+	return indent(strings.Join(lines, "\n"), gutter)
 }

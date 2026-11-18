@@ -1,0 +1,317 @@
+package tui
+
+import (
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/qsrahman/desk-agent/internal/agent"
+)
+
+// runLine types line and presses Enter, then returns the model and its command.
+func runLine(t *testing.T, a *fakeSender, line string) (Model, tea.Cmd) {
+	t.Helper()
+	return typeAndEnter(t, newTestModel(a), line)
+}
+
+// said is the plain text of the newest entry.
+func said(m Model) string { return strings.TrimSpace(ansi.Strip(lastEntry(m).rendered)) }
+
+func TestCommandListIsWellFormed(t *testing.T) {
+	name := regexp.MustCompile(`^/[a-z][a-z0-9-]*$`)
+	seen := map[string]bool{}
+	list := commandList()
+	for _, c := range list {
+		if !name.MatchString(c.name) || seen[c.name] {
+			t.Errorf("name %q is malformed or repeated", c.name)
+		}
+		seen[c.name] = true
+		if c.description == "" || len(c.description) >= 90 || strings.Contains(c.description, "\n") || c.run == nil {
+			t.Errorf("%s needs a one-line description under 90 characters and a handler", c.name)
+		}
+	}
+	if !slices.IsSortedFunc(list, func(a, b command) int { return strings.Compare(a.name, b.name) }) {
+		t.Error("commands are not sorted")
+	}
+}
+
+func TestHelpListsEveryCommandAndKey(t *testing.T) {
+	m, _ := runLine(t, &fakeSender{}, "/help")
+
+	var all string
+	for _, e := range m.entries {
+		all += ansi.Strip(e.rendered) + "\n"
+	}
+	for _, c := range commandList() {
+		if !strings.Contains(all, c.name) || !strings.Contains(all, c.description) {
+			t.Errorf("/help does not list %s", c.name)
+		}
+	}
+	for _, want := range []string{"enter", "ctrl+j", "pgup/pgdn", "ctrl+c", "ctrl+d"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("/help does not list the key %s", want)
+		}
+	}
+}
+
+func TestDispatchRules(t *testing.T) {
+	tests := []struct {
+		line     string
+		sent     bool   // goes to the model as a prompt
+		wantText string // what the transcript says otherwise
+	}{
+		{"/unknown", false, "Unknown command: /unknown. Type /help to list commands."},
+		{"/usr/bin is missing", true, ""},
+		{"/UNDO", false, "Nothing to undo"},
+		{"  /undo  ", false, "Nothing to undo"},
+		{"/undo now please", false, "Nothing to undo"}, // a known command takes the rest as its argument
+	}
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			a := &fakeSender{}
+			m, _ := runLine(t, a, tt.line)
+			if got := len(a.texts) == 1; got != tt.sent {
+				t.Fatalf("sent = %v, want %v (%v)", got, tt.sent, a.texts)
+			}
+			if !tt.sent && said(m) != tt.wantText {
+				t.Errorf("said %q, want %q", said(m), tt.wantText)
+			}
+		})
+	}
+}
+
+func TestCommandIsRefusedWhileATurnRuns(t *testing.T) {
+	a := &fakeSender{block: true, undoable: true}
+	m, _ := typeAndEnter(t, newTestModel(a), "slow")
+
+	m, cmd := typeAndEnter(t, m, "/undo")
+
+	if cmd != nil || len(m.entries) != 1 {
+		t.Errorf("the command ran: %d entries", len(m.entries))
+	}
+	if !strings.Contains(m.hint, "ctrl+c") || !strings.Contains(m.hint, "wait") {
+		t.Errorf("hint %q should say to wait or press ctrl+c", m.hint)
+	}
+	if m.input.Value() != "/undo" {
+		t.Error("the typed command should stay in the input")
+	}
+	m.cancel()
+}
+
+func TestHandlerErrorIsShownAndTheSessionGoesOn(t *testing.T) {
+	m, _ := runLine(t, &fakeSender{}, "/effort extreme")
+
+	e := lastEntry(m)
+	if e.role != roleError || !strings.Contains(e.text, "Command error:") || !strings.Contains(e.text, "none, minimal, low, medium, high, xhigh, max, default") {
+		t.Errorf("entry = %+v", e)
+	}
+}
+
+func TestUndoAndRetry(t *testing.T) {
+	t.Run("undo", func(t *testing.T) {
+		m, _ := runLine(t, &fakeSender{undoable: true}, "/undo")
+		if said(m) != "Last exchange removed" {
+			t.Errorf("said %q", said(m))
+		}
+	})
+	t.Run("retry sends the prompt again", func(t *testing.T) {
+		a := &fakeSender{rewindPrompt: "fix the bug"}
+		m, cmd := runLine(t, a, "/retry")
+		if len(a.texts) != 1 || a.texts[0] != "fix the bug" || m.events == nil || cmd == nil {
+			t.Errorf("sent %v, busy %v", a.texts, m.events != nil)
+		}
+	})
+	t.Run("nothing to retry", func(t *testing.T) {
+		a := &fakeSender{}
+		m, _ := runLine(t, a, "/retry")
+		if said(m) != "Nothing to retry" || len(a.texts) != 0 {
+			t.Errorf("said %q, sent %v", said(m), a.texts)
+		}
+	})
+}
+
+func TestModel(t *testing.T) {
+	a := &fakeSender{settings: agent.Settings{Model: "gpt-x"}}
+	m, _ := runLine(t, a, "/model")
+	if said(m) != "Model: gpt-x" {
+		t.Errorf("said %q", said(m))
+	}
+
+	m, _ = typeAndEnter(t, m, "/model Qwen3:8B-Instruct")
+	if a.settings.Model != "Qwen3:8B-Instruct" || m.info.Model != "Qwen3:8B-Instruct" {
+		t.Errorf("the name's case must be kept: agent %q, header %q", a.settings.Model, m.info.Model)
+	}
+
+	m, _ = typeAndEnter(t, m, "/model two words")
+	if lastEntry(m).role != roleError || a.settings.Model != "Qwen3:8B-Instruct" {
+		t.Error("a model name with a space must be rejected")
+	}
+}
+
+func TestEffort(t *testing.T) {
+	a := &fakeSender{}
+	m, _ := runLine(t, a, "/effort")
+	if said(m) != "Reasoning effort: model default" {
+		t.Errorf("said %q", said(m))
+	}
+	m, _ = typeAndEnter(t, m, "/effort HIGH")
+	if a.settings.ReasoningEffort != "high" {
+		t.Errorf("effort = %q, want high", a.settings.ReasoningEffort)
+	}
+	m, _ = typeAndEnter(t, m, "/effort default")
+	if a.settings.ReasoningEffort != "" || said(m) != "Reasoning effort: model default" {
+		t.Errorf("default must leave the setting out: %q, said %q", a.settings.ReasoningEffort, said(m))
+	}
+	typeAndEnter(t, m, "/effort extreme")
+	if a.settings.ReasoningEffort != "" {
+		t.Error("an unknown level must not be set")
+	}
+}
+
+func TestResetAndClear(t *testing.T) {
+	a := &fakeSender{events: []agent.Event{agent.TextDelta{Text: "hi"}, agent.Done{}}}
+	m, cmd := runLine(t, a, "hello")
+	m = pump(t, m, cmd)
+
+	m, _ = typeAndEnter(t, m, "/clear")
+	if len(m.entries) != 0 || a.resets != 0 {
+		t.Errorf("/clear: %d entries, %d resets; it clears the view only", len(m.entries), a.resets)
+	}
+
+	m, _ = typeAndEnter(t, m, "/reset")
+	if a.resets != 1 || said(m) != "Conversation reset" {
+		t.Errorf("/reset: resets %d, said %q", a.resets, said(m))
+	}
+}
+
+func TestExitAndQuitLeaveAtOnce(t *testing.T) {
+	for _, line := range []string{"/exit", "/quit"} {
+		a := &fakeSender{conversation: true}
+		m := newTestModel(a)
+		m.addEntry(entry{role: roleUser, text: "earlier"}) // a conversation would make Ctrl-C ask first
+		if _, cmd := typeAndEnter(t, m, line); !isQuit(cmd) {
+			t.Errorf("%s did not quit", line)
+		}
+	}
+}
+
+func TestContextRows(t *testing.T) {
+	a := &fakeSender{estimate: agent.ContextEstimate{Instructions: 1200, Tools: 3400, ToolCount: 4, History: 56789, LastInput: 61000}}
+	m := newTestModel(a)
+	m.info.ContextWindow = 128000
+	m, _ = typeAndEnter(t, m, "/context")
+
+	got := said(m)
+	for _, want := range []string{"instructions", "~1,200 tokens", "tools (4)", "~3,400", "history", "~56,789", "total", "~61,389", "61,000 tokens, counted by the server", "128,000"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("/context is missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestSuggestionsFollowTheInput(t *testing.T) {
+	labels := func(m Model) []string {
+		list, _ := m.suggestions()
+		var out []string
+		for _, s := range list {
+			out = append(out, s.label)
+		}
+		return out
+	}
+	m := newTestModel(&fakeSender{})
+
+	m.input.SetValue("hello")
+	if len(labels(m)) != 0 {
+		t.Error("plain text must not open the list")
+	}
+	m.input.SetValue("/")
+	if len(labels(m)) != len(commandList()) {
+		t.Errorf("a lone slash lists every command: %v", labels(m))
+	}
+	m.input.SetValue("/re")
+	if got := labels(m); !slices.Equal(got, []string{"/reset", "/retry"}) {
+		t.Errorf("/re lists %v", got)
+	}
+	m.input.SetValue("/effort h")
+	if got := labels(m); !slices.Equal(got, []string{"high"}) {
+		t.Errorf("/effort h lists %v", got)
+	}
+	m.input.SetValue("/model ")
+	if len(labels(m)) != 0 {
+		t.Error("a command with free text has nothing to suggest")
+	}
+	m.input.SetValue("/effort high x")
+	if len(labels(m)) != 0 {
+		t.Error("nothing is suggested once the value has more words")
+	}
+}
+
+func TestSuggestionKeys(t *testing.T) {
+	press := func(m Model, code rune) Model {
+		next, _ := update(m, tea.KeyPressMsg{Code: code})
+		return next
+	}
+	m := newTestModel(&fakeSender{})
+	m.input.SetValue("/re")
+
+	m = press(m, tea.KeyDown)
+	m = press(m, tea.KeyTab)
+	if m.input.Value() != "/retry" {
+		t.Errorf("down then tab gave %q, want /retry", m.input.Value())
+	}
+
+	m.input.SetValue("/ef")
+	m = press(m, tea.KeyEnter)
+	if m.input.Value() != "/effort " {
+		t.Errorf("enter on a partly typed command gave %q, want it completed", m.input.Value())
+	}
+
+	m.input.SetValue("/effort")
+	m = press(m, tea.KeyEnter)
+	if said(m) != "Reasoning effort: model default" {
+		t.Errorf("enter on a whole command must run it, said %q", said(m))
+	}
+
+	m.input.SetValue("/re")
+	m = press(m, tea.KeyEscape)
+	if list, _ := m.suggestions(); len(list) != 0 {
+		t.Error("esc must close the list")
+	}
+	m.input.SetValue("/res")
+	if list, _ := m.suggestions(); len(list) == 0 {
+		t.Error("typing again must open the list again")
+	}
+}
+
+func TestListShrinksTheTranscript(t *testing.T) {
+	m := sized(&fakeSender{}, 80, 24)
+	before := m.viewport.Height()
+	m.input.SetValue("/")
+	m.layout()
+	if got := m.viewport.Height(); got != before-maxSuggestions {
+		t.Errorf("viewport height %d, want %d", got, before-maxSuggestions)
+	}
+}
+
+func TestNoSuggestionsDuringATurn(t *testing.T) {
+	m, _ := typeAndEnter(t, newTestModel(&fakeSender{block: true}), "slow")
+	m.input.SetValue("/")
+
+	if list, _ := m.suggestions(); len(list) != 0 {
+		t.Error("commands are refused during a turn, so none should be suggested")
+	}
+	m.cancel()
+}
+
+// With nothing typed after the command, Enter runs it: the list is only showing what could follow.
+func TestEnterRunsACommandWhoseValueIsNotTypedYet(t *testing.T) {
+	m, _ := typeAndEnter(t, newTestModel(&fakeSender{}), "/effort ")
+
+	if said(m) != "Reasoning effort: model default" {
+		t.Errorf("said %q", said(m))
+	}
+}

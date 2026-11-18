@@ -21,7 +21,24 @@ type fakeSender struct {
 
 	texts []string
 	ctx   context.Context
+
+	// What the slash commands act on.
+	settings     agent.Settings
+	estimate     agent.ContextEstimate
+	resets       int
+	undoable     bool // whether Undo finds an exchange
+	rewindPrompt string
+	conversation bool
 }
+
+func (f *fakeSender) Reset()                                 { f.resets++ }
+func (f *fakeSender) Undo() bool                             { return f.undoable }
+func (f *fakeSender) HasConversation() bool                  { return f.conversation }
+func (f *fakeSender) Settings() agent.Settings               { return f.settings }
+func (f *fakeSender) SetModel(model string)                  { f.settings.Model = model }
+func (f *fakeSender) SetReasoningEffort(e string)            { f.settings.ReasoningEffort = e }
+func (f *fakeSender) ContextEstimate() agent.ContextEstimate { return f.estimate }
+func (f *fakeSender) Rewind() (string, bool)                 { return f.rewindPrompt, f.rewindPrompt != "" }
 
 func (f *fakeSender) Send(ctx context.Context, text string) <-chan agent.Event {
 	f.texts = append(f.texts, text)
@@ -41,7 +58,7 @@ func (f *fakeSender) Send(ctx context.Context, text string) <-chan agent.Event {
 	return ch
 }
 
-func newTestModel(s Sender) Model {
+func newTestModel(s Agent) Model {
 	return New(s, Info{Version: "v0.0.0-test", WorkDir: "/work/demo", Branch: "main", Model: "test-model"})
 }
 

@@ -45,6 +45,9 @@ func (a *Agent) run(ctx context.Context, text string, events chan<- Event) error
 		}
 		asked++
 		events <- Usage{InputTokens: response.Usage.InputTokens, OutputTokens: response.Usage.OutputTokens}
+		if response.Usage.InputTokens > 0 {
+			a.lastInput = response.Usage.InputTokens
+		}
 
 		calls := functionCalls(response.Output)
 		if problem != "" || len(calls) == 0 {

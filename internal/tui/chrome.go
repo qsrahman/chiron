@@ -114,7 +114,11 @@ func (m *Model) helpView() string {
 	if m.hint != "" {
 		return indent(ansi.Truncate(m.sty.iconRunning.Render(m.hint), m.contentWidth()-1, "…"), 1)
 	}
-	bar := m.help.ShortHelpView(m.keys.helpBindings(m.events != nil, m.cancelling))
+	bindings := m.keys.helpBindings(m.events != nil, m.cancelling)
+	if list, _ := m.suggestions(); len(list) > 0 {
+		bindings = m.keys.suggestionHelp()
+	}
+	bar := m.help.ShortHelpView(bindings)
 	// The help component still adds an item when not even its ellipsis fits, so cut the line ourselves.
 	return indent(ansi.Truncate(bar, m.contentWidth()-1, "…"), 1)
 }

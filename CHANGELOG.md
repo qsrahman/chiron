@@ -4,6 +4,21 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-18
+
+### Added
+
+- Slash commands: `/help`, `/exit`, `/quit`, `/clear`, `/reset`, `/model [NAME]`, `/effort [LEVEL]`, `/undo`,
+  `/retry` and `/context`. A lone unknown `/word` is reported and not sent; commands are refused while a turn runs.
+- An inline suggestion list while typing `/` (Up/Down, Tab, Esc), with `/effort` levels completed from a list.
+- Info entries in the transcript for command output, including aligned tables.
+- Agent: `Reset`, `Undo`, `Rewind`, `SetModel`, `SetReasoningEffort`, `Settings`, `HasConversation` and
+  `ContextEstimate` (about 4 bytes per token; encrypted reasoning is not counted).
+
+### Changed
+
+- The TUI takes a `tui.Agent` interface instead of `tui.Sender`.
+
 ## [0.3.3] - 2026-11-18
 
 ### Added

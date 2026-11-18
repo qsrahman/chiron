@@ -79,15 +79,46 @@ func isToolWork(kind string) bool {
 	return kind == "reasoning" || kind == kindCall || kind == kindCallOutput
 }
 
-// history is the conversation as the next request starts from it. It changes in a few places only
-// (save, and from Phase 3.8 undo and reset); a turn in progress works on a copy.
+// history is the conversation as the next request starts from it. It changes in four places only: save, undo
+// (which rewind uses), reset and, from Phase 9, compact; a turn in progress works on a copy.
 type history struct {
 	items []item
+
+	lastPrompt string // the prompt most recently begun, for rewind
+	lastSaved  bool   // whether that prompt's turn is in items
 }
 
-// begin returns the items of a new turn: the history and the user's message. The history is not changed.
+// begin returns the items of a new turn: the history and the user's message. The history is not changed; only
+// the prompt is remembered (as not saved yet).
 func (h *history) begin(prompt string) []item {
+	h.lastPrompt, h.lastSaved = prompt, false
 	return append(slices.Clone(h.items), userItem(prompt))
+}
+
+// undo drops the last turn: the last user message and everything after it. It reports whether there was one.
+func (h *history) undo() bool {
+	for i := len(h.items) - 1; i >= 0; i-- {
+		if h.items[i].kind == kindUser {
+			h.items = slices.Clone(h.items[:i])
+			h.lastSaved = false
+			return true
+		}
+	}
+	return false
+}
+
+// reset forgets the whole conversation.
+func (h *history) reset() {
+	h.items, h.lastSaved = nil, false
+}
+
+// rewind gets ready to send the last prompt again: its turn is dropped if it was saved (a failed turn was not).
+// It returns that prompt, or false if there has not been one.
+func (h *history) rewind() (string, bool) {
+	if h.lastSaved {
+		h.undo()
+	}
+	return h.lastPrompt, h.lastPrompt != ""
 }
 
 // save makes a finished turn the new history. The newest turn keeps everything, so a follow-up can refer to
@@ -108,6 +139,7 @@ func (h *history) save(turn []item) {
 		}
 	}
 	h.items = append(kept, turn[newest:]...)
+	h.lastSaved = true
 }
 
 // params converts items to what the API takes.

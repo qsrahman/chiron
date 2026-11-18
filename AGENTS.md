@@ -83,6 +83,11 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
   (`monokai`, `github`) via `CodeBlock.Theme`; `TestCodeColoursFollowTheTheme` guards this. Glamour also counts a
   tab as zero cells, so tabs are expanded before rendering, and it pads output with blank lines, which
   `trimBlankLines` removes so every gap between items is exactly one row.
+- **Slash commands.** A command is one entry of `commandList` in `internal/tui/commands.go` (name, usage,
+  one-line description, optional argument list, handler); adding one needs no other change, and `/help` and the
+  suggestion list pick it up. The TUI talks to the agent through the `tui.Agent` interface, so a new command that
+  needs the agent adds a method there and to the test fake. Output goes to the transcript with `say` and
+  `sayTable` (dim info entries, never in the model's history). Commands run only between turns.
 - **UI tests.** The main screens have golden files (`internal/tui/testdata/*.golden`, plain text). After an
   intended visual change run `go test ./internal/tui -update` and review the diff. The flag goes after the
   package. `TestNoLineIsWiderThanTheTerminal` guards the layout at several widths; colours are tested in

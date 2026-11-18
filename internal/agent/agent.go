@@ -31,6 +31,7 @@ type Agent struct {
 	tools        *tools.Registry
 	idleTimeout  time.Duration
 	history      history
+	lastInput    int64 // input tokens the server counted for the last request; 0 until one is known
 }
 
 // New returns an agent with an empty history. registry holds the tools the model may call; use

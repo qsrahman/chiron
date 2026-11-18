@@ -50,7 +50,7 @@ func checkGolden(t *testing.T, name, got string) {
 }
 
 // sized returns a model for a terminal of the given size, with a fixed clock.
-func sized(sender Sender, width, height int) Model {
+func sized(sender Agent, width, height int) Model {
 	m := newTestModel(sender)
 	clock := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 	m.now = func() time.Time { return clock }
@@ -142,6 +142,16 @@ func TestNoLineIsWiderThanTheTerminal(t *testing.T) {
 		for name, build := range map[string]func() Model{
 			"welcome":      func() Model { return sized(&fakeSender{}, width, 30) },
 			"conversation": func() Model { return conversation(t, width, 40) },
+			"help": func() Model {
+				m, _ := typeAndEnter(t, sized(&fakeSender{}, width, 40), "/help")
+				return m
+			},
+			"suggestions": func() Model {
+				m := sized(&fakeSender{}, width, 30)
+				m.input.SetValue("/")
+				next, _ := update(m, tea.WindowSizeMsg{Width: width, Height: 30})
+				return next
+			},
 		} {
 			m := build()
 			for i, line := range strings.Split(ansi.Strip(m.View().Content), "\n") {
@@ -160,4 +170,28 @@ func TestTextIsCappedOnWideTerminals(t *testing.T) {
 			t.Errorf("line %d is %d cells wide, want at most %d: %q", i, w, maxTextWidth+margin, line)
 		}
 	}
+}
+
+func TestGoldenHelp(t *testing.T) {
+	m, _ := typeAndEnter(t, sized(&fakeSender{}, 80, 40), "/help")
+	checkGolden(t, "help_80x40", screen(m))
+}
+
+func TestGoldenSuggestions(t *testing.T) {
+	m := sized(&fakeSender{}, 80, 24)
+	m.input.SetValue("/")
+	m, _ = update(m, tea.WindowSizeMsg{Width: 80, Height: 24}) // any message re-lays out the screen
+	checkGolden(t, "suggestions_80x24", screen(m))
+
+	m.input.SetValue("/effort ")
+	m, _ = update(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	checkGolden(t, "suggestions_effort_80x24", screen(m))
+}
+
+func TestGoldenContext(t *testing.T) {
+	a := &fakeSender{estimate: agent.ContextEstimate{Instructions: 1200, Tools: 3400, ToolCount: 4, History: 56789, LastInput: 61000}}
+	m := sized(a, 80, 24)
+	m.info.ContextWindow = 128000
+	m, _ = typeAndEnter(t, m, "/context")
+	checkGolden(t, "context_80x24", screen(m))
 }

@@ -21,9 +21,18 @@ import (
 	"github.com/qsrahman/desk-agent/internal/agent"
 )
 
-// Sender starts an agent turn. *agent.Agent implements it; tests use a fake.
-type Sender interface {
+// Agent is what the UI uses of the agent: *agent.Agent implements it, and tests use a fake. The slash commands
+// call everything but Send, and only between turns.
+type Agent interface {
 	Send(ctx context.Context, text string) <-chan agent.Event
+	Reset()
+	Undo() bool
+	Rewind() (prompt string, ok bool)
+	HasConversation() bool
+	Settings() agent.Settings
+	SetModel(model string)
+	SetReasoningEffort(effort string)
+	ContextEstimate() agent.ContextEstimate
 }
 
 // Info is what the UI shows about the session. Only the fields it displays are here.
@@ -42,8 +51,9 @@ type turnClosedMsg struct{}
 // Model is the Bubble Tea model. Like all Bubble Tea models it is copied on every Update,
 // so it holds no strings.Builder or other copy-sensitive values.
 type Model struct {
-	sender Sender
-	info   Info
+	agent    Agent
+	info     Info
+	commands []command
 
 	entries   []entry
 	streaming string // assistant text of the turn in progress, not yet markdown-rendered
@@ -71,13 +81,17 @@ type Model struct {
 	quitArmed bool
 	hint      string
 
+	// The suggestion list: the selected row, and the input text it was closed with Esc for.
+	sel       int
+	dismissed string
+
 	contextTokens int64 // size of the conversation after the latest response, 0 until known
 
 	width, height int
 }
 
-// New returns a model that sends prompts to sender.
-func New(sender Sender, info Info) Model {
+// New returns a model that sends prompts to a.
+func New(a Agent, info Info) Model {
 	keys := newKeyMap()
 	input := textarea.New()
 	input.Placeholder = "Ask something…"
@@ -92,8 +106,9 @@ func New(sender Sender, info Info) Model {
 	info.Version, info.WorkDir, info.Branch, info.Model = sanitize(info.Version), sanitize(info.WorkDir), sanitize(info.Branch), sanitize(info.Model)
 
 	m := Model{
-		sender:   sender,
+		agent:    a,
 		info:     info,
+		commands: commandList(),
 		now:      time.Now,
 		viewport: viewport.New(),
 		input:    input,
@@ -174,6 +189,9 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	busy := m.events != nil
+	if list, typed := m.suggestions(); len(list) > 0 && m.suggestKey(msg, list, typed) {
+		return m, nil
+	}
 	interrupt, eof := key.Matches(msg, m.keys.interrupt), key.Matches(msg, m.keys.eof)
 	if !interrupt && !eof {
 		m.quitArmed, m.hint = false, "" // any other key takes the warning back
@@ -203,7 +221,13 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.send):
 		text := strings.TrimSpace(m.input.Value())
-		if busy || text == "" {
+		if text == "" {
+			return m, nil
+		}
+		if cmd, handled := m.dispatch(text); handled {
+			return m, cmd
+		}
+		if busy {
 			return m, nil
 		}
 		return m.submit(text)
@@ -214,8 +238,12 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	before := m.input.Value()
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	if m.input.Value() != before {
+		m.sel = 0 // the list changed under the selection
+	}
 	return m, cmd
 }
 
@@ -231,16 +259,22 @@ func (m Model) confirmQuit(pressed string) (Model, tea.Cmd) {
 }
 
 func (m Model) submit(text string) (Model, tea.Cmd) {
+	cmd := m.startTurn(text)
+	return m, cmd
+}
+
+// startTurn shows text as the user's prompt and sends it to the agent.
+func (m *Model) startTurn(text string) tea.Cmd {
 	m.input.Reset()
 	m.addEntry(entry{role: roleUser, text: text})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
-	m.events = m.sender.Send(ctx, text)
+	m.events = m.agent.Send(ctx, text)
 	m.turnStart = m.now()
 	m.inputStyles() // the prompt dims while a turn runs
 	m.refresh()
-	return m, tea.Batch(waitForEvent(m.events), m.spin.Tick)
+	return tea.Batch(waitForEvent(m.events), m.spin.Tick)
 }
 
 // waitForEvent blocks in a command goroutine until the agent produces its next event.
@@ -322,7 +356,7 @@ func (m *Model) layout() {
 	inputHeight := m.input.Height() + 2 // plus the box border
 	m.help.SetWidth(width - 1)          // the bar drops its last hints instead of overflowing
 	m.viewport.SetWidth(width)
-	m.viewport.SetHeight(max(1, m.height-headerHeight-inputHeight-helpHeight))
+	m.viewport.SetHeight(max(1, m.height-headerHeight-inputHeight-helpHeight-m.suggestionHeight()))
 }
 
 // rerender re-styles every entry after a resize or a theme change.
@@ -369,20 +403,19 @@ func (m *Model) refresh() {
 
 // View draws the header, the transcript, the input box and the help bar.
 func (m Model) View() tea.View {
-	body := lipgloss.JoinVertical(lipgloss.Left,
-		m.headerView(),
-		m.viewport.View(),
-		m.inputView(),
-		m.helpView(),
-	)
+	parts := []string{m.headerView(), m.viewport.View()}
+	if list := m.suggestionView(); list != "" {
+		parts = append(parts, list)
+	}
+	body := lipgloss.JoinVertical(lipgloss.Left, append(parts, m.inputView(), m.helpView())...)
 	v := tea.NewView(indent(body, margin))
 	v.AltScreen = true
 	return v
 }
 
 // Run starts the interactive UI and returns when the user quits.
-func Run(sender Sender, info Info) error {
-	final, err := tea.NewProgram(New(sender, info)).Run()
+func Run(a Agent, info Info) error {
+	final, err := tea.NewProgram(New(a, info)).Run()
 	// Quitting with a turn still running (second Ctrl-C) must not leave its request open.
 	if m, ok := final.(Model); ok && m.cancel != nil {
 		m.cancel()

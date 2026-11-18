@@ -3,7 +3,7 @@
 A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI, and works on your
 machine through tools (files, shell, web, todo, questions) and optional MCP servers.
 
-> **Status: Phase 3.7 (v0.3.3).** You can chat with the model in a terminal UI or send a single prompt from the
+> **Status: Phase 3.8 (v0.3.4).** You can chat with the model in a terminal UI or send a single prompt from the
 > command line. The machinery for tool calls is in place (calls run in parallel when safe, and show up as cards
 > in the chat), but no tools ship yet, so the model still cannot touch your files. Tools and MCP arrive in the
 > next phases; see [PLAN.md](PLAN.md). This README is updated as each phase lands.
@@ -22,6 +22,24 @@ export OPENAI_API_KEY=...
 ./desk-agent                                              # interactive chat
 ./desk-agent -p "Explain what a goroutine is in two sentences"   # one prompt, answer on stdout
 ```
+
+## Slash commands
+
+Type `/` in the chat to list them; Up/Down choose, Tab completes, Esc closes. They are refused while a turn runs.
+
+| Command | What it does |
+| --- | --- |
+| `/help` | List the commands and keys |
+| `/exit`, `/quit` | Quit |
+| `/clear` | Clear the screen; the conversation is kept |
+| `/reset` | Forget the conversation and start over |
+| `/model [NAME]` | Show the model, or switch to NAME |
+| `/effort [LEVEL]` | Show the reasoning effort, or set it (`default` sends none) |
+| `/undo` | Remove the last exchange from the conversation |
+| `/retry` | Send the last prompt again |
+| `/context` | Estimated size of the instructions, tools and history |
+
+A lone `/word` that is no command is reported and not sent; a longer line such as `/usr/bin is missing` is a prompt.
 
 ## What the model is told
 
