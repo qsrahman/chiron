@@ -84,8 +84,6 @@ type styles struct {
 	iconRunning, iconOK, iconErr, iconOff lipgloss.Style
 	band, bandHint                        lipgloss.Style
 
-	welcomeTitle, welcomeText lipgloss.Style
-
 	modal, button, buttonSelected lipgloss.Style
 
 	inputBox, inputBoxBusy lipgloss.Style
@@ -124,9 +122,6 @@ func newStyles(t theme) styles {
 
 		band:     lipgloss.NewStyle().Background(t.band).Foreground(t.subtle),
 		bandHint: lipgloss.NewStyle().Background(t.band).Foreground(t.muted),
-
-		welcomeTitle: fg(t.primary).Bold(true),
-		welcomeText:  fg(t.subtle),
 
 		modal:          box.BorderForeground(t.primary).Padding(1, 1),
 		button:         lipgloss.NewStyle().Padding(0, 1).Foreground(t.subtle),

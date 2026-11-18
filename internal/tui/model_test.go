@@ -67,7 +67,7 @@ func (f *fakeAgent) Send(ctx context.Context, text string) <-chan agent.Event {
 }
 
 func newTestModel(s Agent) Model {
-	return New(s, Info{Version: "v0.0.0-test", WorkDir: "/work/demo", Branch: "main"})
+	return New(s, Info{WorkDir: "/work/demo", Branch: "main"})
 }
 
 func ctrl(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl} }
@@ -416,4 +416,29 @@ func TestShiftEnterAddsALineInsteadOfSending(t *testing.T) {
 	if got := m.input.Value(); got != "first\n" {
 		t.Errorf("input = %q, want a new line added", got)
 	}
+}
+
+// The transcript starts empty and goes back to empty after /clear: no banner either time.
+func TestThereIsNoWelcomeBannerAtStartOrAfterClear(t *testing.T) {
+	banned := []string{"Welcome", "AI coding assistant", "Describe what you want"}
+	check := func(when string, m Model) {
+		t.Helper()
+		view := ansi.Strip(m.View().Content)
+		for _, text := range banned {
+			if strings.Contains(view, text) {
+				t.Errorf("%s: the screen shows %q:\n%s", when, text, view)
+			}
+		}
+		if strings.TrimSpace(ansi.Strip(m.viewport.GetContent())) != "" {
+			t.Errorf("%s: the transcript is not empty: %q", when, m.viewport.GetContent())
+		}
+	}
+
+	m := sized(&fakeAgent{}, 100, 24)
+	check("at start", m)
+
+	m.addEntry(entry{role: roleAssistant, text: "something"})
+	m.refresh()
+	m, _ = typeAndEnter(t, m, "/clear")
+	check("after /clear", m)
 }

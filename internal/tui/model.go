@@ -38,7 +38,6 @@ type Agent interface {
 
 // Info is what the UI shows about the session. Only the fields it displays are here.
 type Info struct {
-	Version       string
 	WorkDir       string
 	Branch        string // empty outside a git repository
 	ContextWindow int    // tokens; 0 when unknown
@@ -146,7 +145,7 @@ func New(a Agent, info Info) Model {
 	input.Focus()
 
 	// Whatever the session shows may come from the environment (a directory name, say): clean it once here.
-	info.Version, info.WorkDir, info.Branch = sanitize(info.Version), sanitize(info.WorkDir), sanitize(info.Branch)
+	info.WorkDir, info.Branch = sanitize(info.WorkDir), sanitize(info.Branch)
 
 	m := Model{
 		agent:    a,
@@ -501,9 +500,6 @@ func (m *Model) refresh() {
 			content += "\n\n"
 		}
 		content += tail
-	}
-	if content == "" {
-		content = m.welcomeView()
 	}
 
 	follow := m.viewport.AtBottom()

@@ -74,23 +74,6 @@ func shortenHome(dir string) string {
 	return "~" + strings.TrimPrefix(dir, home)
 }
 
-// welcomeView is shown until the first message.
-func (m *Model) welcomeView() string {
-	title := m.sty.welcomeTitle.Render("Welcome")
-	if m.info.Version != "" {
-		title += " " + m.sty.toolMeta.Render(m.info.Version)
-	}
-	width := m.contentWidth() - gutter
-	text := m.sty.welcomeText.Width(width)
-	return indent(strings.Join([]string{
-		title,
-		text.Render("An AI coding assistant for your terminal."),
-		"",
-		text.Render("Describe what you want to do, or ask about the code in this directory."),
-		m.sty.toolMeta.Width(width).Render("Enter sends. / lists commands. Shift+Enter: new line. Ctrl+C: cancel or quit."),
-	}, "\n"), gutter)
-}
-
 // activityLine shows what the agent is doing while a turn runs: a spinner and the time since it started.
 func (m *Model) activityLine() string {
 	if m.events == nil {

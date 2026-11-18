@@ -118,7 +118,6 @@ func start(ctx context.Context, cfg config.Config, opts runOptions, stdout, stde
 		return runPrompt(ctx, a, opts.prompt, stdout, stderr)
 	}
 	info := tui.Info{
-		Version:       version,
 		WorkDir:       workDir,
 		Branch:        agent.GitBranch(ctx, workDir),
 		ContextWindow: cfg.ContextWindow,

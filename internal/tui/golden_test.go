@@ -77,10 +77,6 @@ func conversation(t *testing.T, width, height int) Model {
 	return pump(t, m, cmd)
 }
 
-func TestGoldenWelcome(t *testing.T) {
-	checkGolden(t, "welcome_80x24", screen(sized(&fakeAgent{}, 80, 24)))
-}
-
 func TestGoldenConversation(t *testing.T) {
 	for _, size := range []struct {
 		name          string
@@ -140,7 +136,7 @@ func TestGoldenMultilineInput(t *testing.T) {
 func TestNoLineIsWiderThanTheTerminal(t *testing.T) {
 	for _, width := range []int{40, 50, 80, 100, 160, 220} {
 		for name, build := range map[string]func() Model{
-			"welcome":      func() Model { return sized(&fakeAgent{}, width, 30) },
+			"empty":        func() Model { return sized(&fakeAgent{}, width, 30) },
 			"conversation": func() Model { return conversation(t, width, 40) },
 			"help": func() Model {
 				m, _ := typeAndEnter(t, sized(&fakeAgent{}, width, 40), "/help")

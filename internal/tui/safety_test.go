@@ -47,7 +47,7 @@ func TestNothingUnsafeReachesTheScreen(t *testing.T) {
 		agent.Error{Err: errors.New("failed " + evil)},
 	}}
 	sender.settings.Model = "model" + evil
-	m := New(sender, Info{Version: "v" + evil, WorkDir: "/dir" + evil, Branch: "main" + evil})
+	m := New(sender, Info{WorkDir: "/dir" + evil, Branch: "main" + evil})
 	m, _ = update(m, tea.WindowSizeMsg{Width: 120, Height: 40})
 	m, cmd := typeAndEnter(t, m, "user pasted "+evil)
 	m = pump(t, m, cmd)
