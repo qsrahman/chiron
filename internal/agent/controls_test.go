@@ -172,3 +172,26 @@ func TestCapOutputCutsOnACharacterBoundary(t *testing.T) {
 		})
 	}
 }
+
+func TestSetToolsChangesWhatTheNextRequestOffers(t *testing.T) {
+	log := &recorder{}
+	srv := newFakeServer(t, sse(completed("one")), sse(completed("two")))
+	a := newTestAgent(srv)
+	drain(t, a.Send(context.Background(), "q1"))
+
+	reg, err := tools.NewRegistry(fakeTool("later", true, 0, log))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetTools(reg, "new instructions")
+	drain(t, a.Send(context.Background(), "q2"))
+
+	if _, offered := srv.request(t, 0)["tools"]; offered {
+		t.Error("the first request offered tools that did not exist yet")
+	}
+	second := srv.request(t, 1)
+	offered, _ := second["tools"].([]any)
+	if len(offered) != 1 || second["instructions"] != "new instructions" {
+		t.Errorf("second request: tools %v, instructions %v", second["tools"], second["instructions"])
+	}
+}

@@ -3,10 +3,10 @@
 A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI, and works on your
 machine through tools (files, shell, web, todo, questions) and optional MCP servers.
 
-> **Status: Phase 4a.2 (v0.4.1).** You can chat with the model in a terminal UI or send a single prompt from the
-> command line. The machinery for tool calls is in place (calls run in parallel when safe, and show up as cards
-> in the chat), but no tools ship yet, so the model still cannot touch your files. Tools and MCP arrive in the
-> next phases; see [PLAN.md](PLAN.md). This README is updated as each phase lands.
+> **Status: Phase 4b.1 (v0.5.0).** You can chat with the model in a terminal UI or send a single prompt from the
+> command line, and give it tools by configuring MCP servers. No built-in tools ship yet, so without MCP servers the
+> model still cannot touch your files. Built-in tools, restart and `/reconnect` for MCP servers arrive in the next
+> phases; see [PLAN.md](PLAN.md). This README is updated as each phase lands.
 
 ## Requirements
 
@@ -68,6 +68,36 @@ a stray letter.
 
 With `-p` nobody can answer, so calls that would ask are denied (a notice goes to stderr) unless you pass `--yes`,
 which allows every call for that run. No built-in tool can change anything yet; they arrive in Phase 5.
+
+## MCP servers
+
+Servers listed under `mcpServers` in the config file give the model their tools. All enabled servers start in
+parallel when the program starts, with one 10-second deadline. The chat opens at once and the header says
+`connecting…`; a prompt you send meanwhile waits and goes out when the servers have answered, so the model sees their
+tools. Each server is then listed with how it started, and the header shows `mcp 2/3`. A server that fails, or is too
+slow, is reported and stays out for the session; it does not stop the others. With `-p` the run waits for the servers
+and prints failures to stderr. `--no-mcp` starts none.
+
+- **Tools** are named `server__tool` (characters the API does not allow become `_`, at most 64 characters, made
+  unique when two would clash) and appear on cards as `server → tool`. A request carries at most 128 tools; a
+  built-in tool keeps its name if one clashes.
+- **Every MCP call asks first**, because a server's own claim that a tool only reads cannot be trusted. The dialog
+  shows `server → tool`, the arguments, and a line saying where the server runs (its command, or the host of its
+  URL). Allow for session covers that tool with any arguments. To let a tool run without asking, list it under
+  `autoApprove` (`"autoApprove": ["search"]`, names as the server gives them); `/tools` lists those as running
+  without asking. MCP calls run one at a time. A call times out after 2 minutes, and Ctrl-C cancels it.
+- **Local servers** run with this program's environment plus their own `env`. They can therefore see variables such
+  as `OPENAI_API_KEY`: only start servers you trust. Their error output goes to
+  `~/.local/state/desk-agent/mcp/<server>.log` (`$XDG_STATE_HOME` is honoured), a private file that is emptied at each
+  launch; it never reaches the screen.
+- **Remote servers** need an `https` URL (`http` only for localhost) without a user name or password in it. The
+  configured headers go to that host only, and a redirect to another address is refused.
+- **`${NAME}`** in `command`, `args`, `env`, `url` and `headers` is replaced from the environment. A variable that is
+  not set fails that server (the message names the variable, never a value). Server names may use letters, digits,
+  `_` and `-`.
+- **Results:** text parts are joined, structured content is used when there is no text, images and audio become a
+  short placeholder such as `[image: image/png, 12 KB]`, and an error result is a failed tool call. Like every tool
+  result it is cut at 20 KiB.
 
 ## What the model is told
 
@@ -182,11 +212,11 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
 - `reasoning_effort` (unset sends nothing), `max_turns` and `streaming` correspond to the flags above.
 - `context_window` is optional. With it, the status line shows how much of the context window the conversation
   uses (for example `25.5k tokens (6%)`); without it only the token count appears.
-- `mcpServers` is accepted but ignored until MCP support lands (Phase 4b).
+- `mcpServers` is described in [MCP servers](#mcp-servers). A typo in an entry is an error, like any other key.
 - `"${NAME}"` in any string value is replaced from the environment, so secrets need not live in the file.
   If you do put a key in the file, keep it private: `chmod 600 ~/.config/desk-agent/config.json`.
-- An MCP server is either a local process (`command`, `args`, `env`) or a remote one (`url`, `headers`).
-  `enabled` defaults to true.
+- An MCP server is either a local process (`command`, `args`, `env`) or a remote one (`url`, `headers`), plus
+  `enabled` (default true) and `autoApprove`. Giving both `command` and `url`, or neither, is an error.
 - Custom `base_url` servers must implement the OpenAI Responses API; some OpenAI-side features may not work
   there.
 - Web search is not built in. If you want it, add a search-capable MCP server under `mcpServers`.

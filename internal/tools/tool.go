@@ -31,6 +31,17 @@ type Prompt struct {
 	Summary  string // one line: "Run a shell command"
 	Details  string // what is about to happen: a command, a diff, the parameters
 	GrantKey string // what "allow for session" covers: calls with the same key; empty covers the whole tool
+	Source   string // where the tool comes from, if not this program: for an MCP tool, how its server is run
+}
+
+// Trusted is implemented by a tool that the user's configuration allows to run without asking.
+type Trusted interface {
+	Trusted() bool
+}
+
+// Titled is implemented by a tool whose name for the API (made to fit its rules) is not the name to show people.
+type Titled interface {
+	Title() string
 }
 
 // Describer is implemented by a tool that writes its own prompt. For any other tool the agent shows the

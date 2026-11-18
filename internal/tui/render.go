@@ -42,6 +42,7 @@ type entry struct {
 	// Tool cards only.
 	callID   string
 	name     string
+	title    string // shown instead of name when set
 	args     string // raw JSON arguments
 	started  time.Time
 	elapsed  time.Duration

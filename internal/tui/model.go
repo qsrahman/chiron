@@ -42,7 +42,21 @@ type Info struct {
 	WorkDir       string
 	Branch        string // empty outside a git repository
 	ContextWindow int    // tokens; 0 when unknown
+
+	// Startup is work that finishes after the window has opened, such as connecting to MCP servers. It runs once, in
+	// the background. Prompts typed meanwhile wait, so that the model sees the tools it sets up.
+	Startup func() Startup
 }
+
+// Startup is what a Startup function reports.
+type Startup struct {
+	Servers [][2]string // one row per server: its name and how it started
+	Notes   []string    // anything else worth saying
+	Status  string      // a few words for the header; empty for none
+}
+
+// startupMsg carries the result of the Startup function into Update.
+type startupMsg struct{ Startup }
 
 // eventMsg carries one agent event into Update; turnClosedMsg means the channel is closed.
 type eventMsg struct{ event agent.Event }
@@ -89,6 +103,10 @@ type Model struct {
 
 	contextTokens int64 // size of the conversation after the latest response, 0 until known
 
+	// starting is set while the Startup function runs; status is what it left for the header.
+	starting bool
+	status   string
+
 	width, height int
 }
 
@@ -116,6 +134,7 @@ func New(a Agent, info Info) Model {
 		input:    input,
 		keys:     keys,
 		cards:    cardState{selected: -1},
+		starting: info.Startup != nil,
 		width:    80,
 		height:   24,
 	}
@@ -139,7 +158,11 @@ func (m *Model) applyTheme(t theme) {
 
 // Init asks the terminal for its background colour so the palette fits it.
 func (m Model) Init() tea.Cmd {
-	return tea.RequestBackgroundColor
+	if m.info.Startup == nil {
+		return tea.RequestBackgroundColor
+	}
+	run := m.info.Startup
+	return tea.Batch(tea.RequestBackgroundColor, func() tea.Msg { return startupMsg{run()} })
 }
 
 // Update handles one message.
@@ -169,6 +192,18 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	case eventMsg:
 		m.handleEvent(msg.event)
 		return m, waitForEvent(m.events)
+
+	case startupMsg:
+		m.starting, m.status = false, sanitize(msg.Status)
+		if len(msg.Servers) > 0 {
+			m.sayTable(msg.Servers)
+		}
+		for _, note := range msg.Notes {
+			m.say(note)
+		}
+		next := m.nextQueued() // a prompt typed while the servers started goes now
+		m.refresh()
+		return m, next
 
 	case turnClosedMsg:
 		m.finishTurn()
@@ -234,7 +269,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.send):
 		text := strings.TrimSpace(m.input.Value())
 		if text == "" {
-			if !busy && len(m.queue.prompts) > 0 { // after an error the queue waits for this
+			if !busy && !m.starting && len(m.queue.prompts) > 0 { // after an error the queue waits for this
 				return m, m.sendQueued()
 			}
 			return m, nil
@@ -242,7 +277,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		if cmd, handled := m.dispatch(text); handled {
 			return m, cmd
 		}
-		if busy {
+		if busy || m.starting {
 			m.enqueue(text)
 			return m, nil
 		}
@@ -319,7 +354,7 @@ func (m *Model) handleEvent(event agent.Event) {
 		m.addEntry(entry{role: roleNotice, text: e.Reason})
 	case agent.ToolStarted:
 		m.commitStreaming() // keep the text the model wrote before the call above its card
-		m.addEntry(entry{role: roleTool, callID: e.CallID, name: e.Name, args: e.Arguments, started: m.now()})
+		m.addEntry(entry{role: roleTool, callID: e.CallID, name: e.Name, title: e.Title, args: e.Arguments, started: m.now()})
 	case agent.ToolFinished:
 		m.finishTool(e)
 	case agent.ApprovalRequested:

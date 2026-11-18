@@ -116,7 +116,11 @@ func (m *Model) cardHeader(e entry, width int) string {
 		main = m.sty.toolParam.Render(main)
 	}
 
-	header := m.cardIcon(e) + " " + m.sty.toolName.Render(e.name)
+	shown := e.name
+	if e.title != "" {
+		shown = e.title
+	}
+	header := m.cardIcon(e) + " " + m.sty.toolName.Render(shown)
 	if main != "" {
 		header += "  " + main
 	}

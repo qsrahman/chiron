@@ -1,5 +1,7 @@
 package agent
 
+import "github.com/qsrahman/desk-agent/internal/tools"
+
 // The methods below are what the slash commands use. They are called between turns, never while one runs: the
 // agent is not safe for concurrent use.
 
@@ -24,6 +26,13 @@ func (a *Agent) Rewind() (string, bool) {
 
 // HasConversation reports whether there is anything to lose: the conversation only lives in memory.
 func (a *Agent) HasConversation() bool { return len(a.history.items) > 0 }
+
+// SetTools replaces the tools and the instructions that describe them, when MCP servers have connected or been
+// reconnected. Like the other settings it changes only between turns.
+func (a *Agent) SetTools(registry *tools.Registry, instructions string) {
+	a.tools, a.instructions = registry, instructions
+	a.lastInput = 0
+}
 
 // Settings returns the current settings.
 func (a *Agent) Settings() Settings { return a.settings }

@@ -10,7 +10,7 @@ internal/config/    config file, env and flag precedence
 internal/agent/     loop, events, history, system prompt (no UI imports)
 internal/tools/     Tool interface, MustNew, Registry (built-in tools are added from Phase 5)
 internal/tui/       Bubble Tea chat UI (model, theme, layout, cards, chrome; golden tests in testdata/)
-internal/mcp/       MCP servers adapted to tools.Tool (Phase 4b)
+internal/mcp/       MCP servers adapted to tools.Tool: connect, adapter, results, transports (Phase 4b)
 ```
 
 Packages are created in the phase that needs them; do not add empty ones.
@@ -63,6 +63,13 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
 - **Adding a tool:** define an `Args` struct (`json` tags for names, `jsonschema` tags for descriptions), write
   `func(ctx, Args) (string, error)`, wrap it with `tools.MustNew`, and add it to the registry in `main`. The
   agent loop and the TUI need no change; the TUI shows every call as a card.
+- **MCP.** `internal/mcp` is the only package that imports the MCP SDK. A `Hub` starts the servers in parallel
+  (`Start`), `Wait` blocks until they have answered, `Tools` returns the adapters with unique names, `Close` ends
+  everything. Its tools are never read-only and may be `tools.Trusted` (config `autoApprove`), `tools.Titled`
+  (`server → tool`) and `tools.Describer` (with a `Source`). The agent gets them through `Agent.SetTools`, only while
+  idle: `main` runs `connectMCP` in the TUI's `Info.Startup`, and the UI holds prompts until it is done. Secrets
+  (header and env values, URLs) never go into an error, a log or a status. Tests start the test binary itself as a
+  stdio server (`TestMain` with an environment switch) and use `httptest` with the SDK's streamable handler.
 - **Queue and cards.** Prompts typed during a turn wait in `Model.queue` (`queue.go`) and start in
   `nextQueued` when the turn closes; startTurn must never touch the input, so a draft survives. Cards are selected
   with `Model.card` (`cards.go`); anything that rewrites `entries` must keep `card` valid (`/clear` resets it).

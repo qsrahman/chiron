@@ -49,6 +49,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&given.ReasoningEffort, "reasoning-effort", "", "reasoning effort: none, minimal, low, medium, high, xhigh, max, or default to send none")
 	flags.IntVar(&given.MaxTurns, "max-turns", 0, "most model calls for one prompt (default 25)")
 	// Two flags make a three-state setting: not given, on, off.
+	noMCP := flags.Bool("no-mcp", false, "do not start the MCP servers of the config file")
 	yes := flags.Bool("yes", false, "allow every tool call without asking (in -p mode, calls that would ask are denied without it)")
 	flags.BoolFunc("streaming", "stream the reply as it arrives (the default)", func(string) error { given.Streaming = new(true); return nil })
 	flags.BoolFunc("no-streaming", "send one request and show the whole reply at once", func(string) error { given.Streaming = new(false); return nil })
@@ -63,7 +64,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	cfg, err := loadConfig(*configPath, given, stderr)
 	if err == nil {
-		err = start(ctx, cfg, *prompt, *yes, stdout, stderr)
+		err = start(ctx, cfg, runOptions{prompt: *prompt, autoApprove: *yes, noMCP: *noMCP}, stdout, stderr)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "desk-agent:", err)
@@ -72,8 +73,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// runOptions are the choices of one run that are not settings of the agent.
+type runOptions struct {
+	prompt      string // one prompt to send and print, instead of the chat UI
+	autoApprove bool   // --yes
+	noMCP       bool   // --no-mcp
+}
+
 // start builds the agent for the current directory and runs either one prompt or the chat UI.
-func start(ctx context.Context, cfg config.Config, prompt string, autoApprove bool, stdout, stderr io.Writer) error {
+func start(ctx context.Context, cfg config.Config, opts runOptions, stdout, stderr io.Writer) error {
 	// Local servers often need no key, so only insist on one for the OpenAI API.
 	if cfg.APIKey == "" && cfg.BaseURL == "" {
 		return errors.New("no API key: set OPENAI_API_KEY or api_key in the config file")
@@ -92,18 +100,31 @@ func start(ctx context.Context, cfg config.Config, prompt string, autoApprove bo
 		ReasoningEffort: cfg.ReasoningEffort,
 		MaxTurns:        cfg.MaxTurns,
 		Streaming:       cfg.Streaming,
-		AutoApprove:     autoApprove,
+		AutoApprove:     opts.autoApprove,
 	}, instructions, registry)
 
-	if prompt != "" {
-		return runPrompt(ctx, a, prompt, stdout, stderr)
+	// The servers start in the background, and the agent gets their tools once they have answered.
+	hub := startMCP(ctx, cfg, opts.noMCP)
+	if hub != nil {
+		defer hub.Close()
 	}
-	return tui.Run(a, tui.Info{
+
+	if opts.prompt != "" {
+		if hub != nil {
+			reportMCP(connectMCP(ctx, hub, a, workDir), stderr)
+		}
+		return runPrompt(ctx, a, opts.prompt, stdout, stderr)
+	}
+	info := tui.Info{
 		Version:       version,
 		WorkDir:       workDir,
 		Branch:        agent.GitBranch(ctx, workDir),
 		ContextWindow: cfg.ContextWindow,
-	})
+	}
+	if hub != nil {
+		info.Startup = func() tui.Startup { return connectMCP(ctx, hub, a, workDir) }
+	}
+	return tui.Run(a, info)
 }
 
 // loadConfig reads the config file and applies the key from the environment and the flags.

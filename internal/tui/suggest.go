@@ -31,7 +31,7 @@ type suggestion struct {
 // request to complete rather than to run. Nothing is offered during a turn, because commands are refused then.
 func (m *Model) suggestions() (list []suggestion, typed bool) {
 	v := m.input.Value()
-	if m.events != nil || !strings.HasPrefix(v, "/") || v == m.suggest.dismissed {
+	if m.events != nil || m.starting || !strings.HasPrefix(v, "/") || v == m.suggest.dismissed {
 		return nil, false
 	}
 	i := strings.IndexFunc(v, unicode.IsSpace)

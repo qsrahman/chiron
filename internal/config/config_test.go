@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -146,7 +147,7 @@ func TestResolvePrecedence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got != tt.want {
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Resolve() = %+v, want %+v", got, tt.want)
 			}
 		})
@@ -199,4 +200,48 @@ func TestDefaultPath(t *testing.T) {
 			t.Errorf("got %q, want %q", got, want)
 		}
 	})
+}
+
+func TestLoadMCPServers(t *testing.T) {
+	path := writeConfig(t, `{"mcpServers": {
+		"docs":    {"url": "https://example.com/mcp", "headers": {"X-Key": "${KEY}"}, "autoApprove": ["search"]},
+		"toolbox": {"command": "npx", "args": ["-y", "pkg"], "env": {"TOKEN": "${TOKEN}"}, "enabled": false}
+	}}`, 0o600)
+
+	f, err := Load(path, &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	docs, toolbox := f.MCPServers["docs"], f.MCPServers["toolbox"]
+	if docs.URL != "https://example.com/mcp" || docs.Headers["X-Key"] != "${KEY}" || len(docs.AutoApprove) != 1 || !docs.IsEnabled() {
+		t.Errorf("docs = %+v", docs)
+	}
+	if toolbox.Command != "npx" || len(toolbox.Args) != 2 || toolbox.Env["TOKEN"] != "${TOKEN}" || toolbox.IsEnabled() {
+		t.Errorf("toolbox = %+v", toolbox)
+	}
+}
+
+func TestLoadRejectsABadMCPServer(t *testing.T) {
+	tests := []struct {
+		name, servers, want string
+	}{
+		{"both", `{"a": {"command": "x", "url": "https://x"}}`, "either command or url"},
+		{"neither", `{"a": {"enabled": true}}`, "a command or a url"},
+		{"headers on a command", `{"a": {"command": "x", "headers": {"k": "v"}}}`, "headers go with url"},
+		{"env on a url", `{"a": {"url": "https://x", "env": {"k": "v"}}}`, "args and env go with command"},
+		{"name", `{"my server": {"command": "x"}}`, "not a usable name"},
+		{"name with the separator characters", `{"a.b": {"command": "x"}}`, "not a usable name"},
+		{"a field of a later phase", `{"a": {"command": "x", "tools": ["t"]}}`, "tools"},
+		{"a typo", `{"a": {"comand": "x"}}`, "comand"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfig(t, `{"mcpServers": `+tt.servers+`}`, 0o600)
+			_, err := Load(path, &bytes.Buffer{})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("err = %v, want it to mention %q", err, tt.want)
+			}
+		})
+	}
 }

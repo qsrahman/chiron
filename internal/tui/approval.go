@@ -58,7 +58,7 @@ type approval struct {
 
 // openApproval shows the modal for a request.
 func (m *Model) openApproval(req agent.ApprovalRequested) {
-	req.Tool, req.Summary = sanitize(req.Tool), sanitize(req.Summary)
+	req.Tool, req.Summary, req.Source = sanitize(req.Tool), sanitize(req.Summary), sanitize(req.Source)
 	m.approval = approval{open: true, req: req, openedAt: m.now(), choice: choiceDeny}
 	m.layoutApproval()
 }
@@ -71,7 +71,11 @@ func (m *Model) layoutApproval() {
 	}
 	text := ansi.Hardwrap(strings.ReplaceAll(escape(m.approval.req.Details), "\t", "    "), m.modalInnerWidth(), true)
 	rows := strings.Count(text, "\n") + 1
-	m.approval.details = viewport.New(viewport.WithWidth(m.modalInnerWidth()), viewport.WithHeight(min(rows, max(modalMinDetails, min(modalMaxDetails, m.height-modalChrome-2*modalScreenGap)))))
+	chrome := modalChrome
+	if m.approval.req.Source != "" {
+		chrome++ // the line that says where the tool comes from
+	}
+	m.approval.details = viewport.New(viewport.WithWidth(m.modalInnerWidth()), viewport.WithHeight(min(rows, max(modalMinDetails, min(modalMaxDetails, m.height-chrome-2*modalScreenGap)))))
 	m.approval.details.SetContent(text)
 }
 
@@ -137,16 +141,22 @@ func (m *Model) approvalView() string {
 		buttons[i] = style.Render(c.label)
 	}
 
-	body := strings.Join([]string{
+	rows := []string{
 		m.sty.brand.Render("Approval needed"),
 		ansi.Truncate(a.req.Summary, inner, "…"),
+	}
+	if a.req.Source != "" {
+		rows = append(rows, m.sty.toolMeta.Render(ansi.Truncate("Runs: "+a.req.Source, inner, "…")))
+	}
+	rows = append(rows,
 		"",
 		a.details.View(),
 		m.sty.toolMeta.Render(ansi.Truncate(size, inner, "…")),
 		"",
 		strings.Join(buttons, " "),
 		m.sty.toolMeta.Render(ansi.Truncate("For the session: "+covers, inner, "…")),
-	}, "\n")
+	)
+	body := strings.Join(rows, "\n")
 	return m.sty.modal.Width(inner + 4).Render(body)
 }
 

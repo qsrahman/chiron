@@ -230,3 +230,60 @@ func TestPromptWithoutADescriberShowsTheArguments(t *testing.T) {
 		t.Errorf("asked = %+v", asked)
 	}
 }
+
+// trusted is a tool the configuration allows; titled has a name for people; both keep the typed tool's validation.
+type trusted struct{ tools.Tool }
+
+func (trusted) Trusted() bool { return true }
+
+type titled struct {
+	tools.Tool
+	title string
+}
+
+func (t titled) Title() string { return t.title }
+
+// Describe and Validate pass through, since embedding the interface would hide them.
+func (t titled) Describe(arguments string) tools.Prompt {
+	return t.Tool.(tools.Describer).Describe(arguments)
+}
+func (t titled) Validate(arguments string) error { return t.Tool.(tools.Validator).Validate(arguments) }
+
+func TestATrustedToolRunsWithoutAskingAndIsListedAsFree(t *testing.T) {
+	log := &recorder{}
+	srv := newFakeServer(t, callsThenAnswer(functionCall("c1", "write", nameArgs{"a.txt"}))...)
+	a := approvalSetup(t, srv, trusted{fakeTool("write", false, 0, log)})
+
+	_, asked := answering(t, a.Send(context.Background(), "go"), always(Deny))
+
+	if len(asked) != 0 || len(log.log) != 2 {
+		t.Errorf("asked %d times, log %v: a trusted tool runs without asking", len(asked), log.log)
+	}
+	if list := a.ToolList(); len(list.Free) != 1 || len(list.Ask) != 0 {
+		t.Errorf("ToolList = %+v, want the tool listed as running without asking", list)
+	}
+}
+
+func TestToolStartedCarriesTheTitleAndTheSourceReachesThePrompt(t *testing.T) {
+	log := &recorder{}
+	inner := withPrompt{Tool: fakeTool("srv__write", false, 0, log), prompt: func(string) tools.Prompt {
+		return tools.Prompt{Summary: "srv → write", Details: "d", Source: "npx -y thing"}
+	}}
+	srv := newFakeServer(t, callsThenAnswer(functionCall("c1", "srv__write", nameArgs{"a"}))...)
+	a := approvalSetup(t, srv, titled{Tool: inner, title: "srv → write"})
+
+	events, asked := answering(t, a.Send(context.Background(), "go"), always(Allow))
+
+	var started ToolStarted
+	for _, e := range events {
+		if s, ok := e.(ToolStarted); ok {
+			started = s
+		}
+	}
+	if started.Name != "srv__write" || started.Title != "srv → write" {
+		t.Errorf("started = %+v", started)
+	}
+	if len(asked) != 1 || asked[0].Source != "npx -y thing" {
+		t.Errorf("asked = %+v", asked)
+	}
+}

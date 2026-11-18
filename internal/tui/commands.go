@@ -66,9 +66,13 @@ func (m *Model) dispatch(line string) (tea.Cmd, bool) {
 	if !known && arg != "" {
 		return nil, false
 	}
+	// Nothing is queued: a queued /reset or /model could apply a change the user no longer wants.
 	if m.events != nil {
-		// Nothing is queued: a queued /reset or /model could apply a change the user no longer wants.
 		m.hint = "A command cannot run during a turn: wait for it to finish, or press ctrl+c to cancel"
+		return nil, true
+	}
+	if m.starting {
+		m.hint = "A command cannot run while the servers are starting: wait a moment"
 		return nil, true
 	}
 	m.input.Reset()

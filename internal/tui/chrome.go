@@ -32,6 +32,12 @@ func (m *Model) headerView() string {
 	}
 
 	right := m.sty.meta.Render(sanitize(m.agent.Settings().Model)) + m.sty.toolMeta.Render(m.usageText())
+	switch {
+	case m.starting:
+		right = m.sty.toolMeta.Render("connecting… · ") + right
+	case m.status != "":
+		right = m.sty.toolMeta.Render(m.status+" · ") + right
+	}
 
 	// The left side gives way first when the terminal is narrow.
 	right = ansi.Truncate(right, width, "…")

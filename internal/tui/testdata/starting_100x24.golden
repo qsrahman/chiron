@@ -1,0 +1,24 @@
+ desk-agent  /work/demo on main                                             connecting… · test-model
+ ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+   Welcome v0.0.0-test
+   An AI coding assistant for your terminal.
+
+   Describe what you want to do, or ask about the code in this directory.
+   Enter sends. / lists commands. Shift+Enter: new line. Ctrl+C: cancel or quit.
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭─────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ ❯ Ask something…                                                                                │
+ ╰─────────────────────────────────────────────────────────────────────────────────────────────────╯
+  enter send · shift+enter new line · pgup/pgdn scroll · ctrl+c quit

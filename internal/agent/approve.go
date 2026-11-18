@@ -25,12 +25,12 @@ type grant struct{ tool, key string }
 func (a *Agent) approve(ctx context.Context, tool tools.Tool, call responses.ResponseFunctionToolCall, events chan<- Event) (Decision, error) {
 	p := promptFor(tool, call)
 	g := grant{call.Name, p.GrantKey}
-	if a.settings.AutoApprove || a.grants[g] {
+	if a.settings.AutoApprove || isTrusted(tool) || a.grants[g] {
 		return Allow, nil
 	}
 
 	reply := make(chan Decision, 1)
-	events <- ApprovalRequested{CallID: call.CallID, Tool: call.Name, Summary: p.Summary, Details: p.Details, GrantKey: p.GrantKey, Reply: reply}
+	events <- ApprovalRequested{CallID: call.CallID, Tool: call.Name, Summary: p.Summary, Details: p.Details, GrantKey: p.GrantKey, Source: p.Source, Reply: reply}
 	select {
 	case d := <-reply:
 		if d == AllowSession {
@@ -40,6 +40,11 @@ func (a *Agent) approve(ctx context.Context, tool tools.Tool, call responses.Res
 	case <-ctx.Done():
 		return Deny, ctx.Err()
 	}
+}
+
+func isTrusted(tool tools.Tool) bool {
+	t, ok := tool.(tools.Trusted)
+	return ok && t.Trusted()
 }
 
 // promptFor asks the tool to describe the call, or shows the arguments as they are.
@@ -57,7 +62,7 @@ func promptFor(tool tools.Tool, call responses.ResponseFunctionToolCall) tools.P
 
 // ToolList says how each tool is treated: which run without asking, which the user allowed, which ask first.
 type ToolList struct {
-	Free    []string // read-only tools
+	Free    []string // read-only tools, and tools the configuration allows
 	Allowed []string // allowed for the session: the tool, or "tool: key"
 	Ask     []string // tools whose calls ask, unless allowed by key
 }
@@ -68,7 +73,7 @@ func (a *Agent) ToolList() ToolList {
 	for _, name := range a.tools.Names() {
 		tool, _ := a.tools.Get(name)
 		switch {
-		case tool.ReadOnly():
+		case tool.ReadOnly() || isTrusted(tool):
 			l.Free = append(l.Free, name)
 		case !a.grants[grant{name, ""}]:
 			l.Ask = append(l.Ask, name)

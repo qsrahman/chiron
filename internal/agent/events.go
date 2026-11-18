@@ -10,6 +10,7 @@ type TextDelta struct{ Text string }
 type ToolStarted struct {
 	CallID    string
 	Name      string
+	Title     string // what to show instead of Name when the tool has a name for people; empty otherwise
 	Arguments string // raw JSON as sent by the model
 }
 
@@ -49,6 +50,7 @@ type ApprovalRequested struct {
 	Summary  string // one line
 	Details  string // what is about to happen; may hold any character, so show it with care
 	GrantKey string // what Allow for session covers besides the tool; empty covers the tool
+	Source   string // where the tool comes from when it is not built in, for the user to judge; may be empty
 	Reply    chan<- Decision
 }
 

@@ -4,6 +4,24 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-18
+
+### Added
+
+- MCP client: `mcpServers` (`command`/`args`/`env` or `url`/`headers`, `enabled`, `autoApprove`) are started in
+  parallel at launch with one 10 s deadline, over stdio or streamable HTTP. The chat opens at once ("connecting…")
+  and prompts sent meanwhile wait; each server is reported with how it started and the header shows `mcp 2/3`. A
+  server that fails or is too slow stays out and does not stop the others. `-p` waits for the servers.
+- MCP tools are named `server__tool` (unique, at most 64 characters, at most 128 per request), show on cards as
+  `server → tool`, and ask before every call unless listed in `autoApprove`; the dialog says where the server runs.
+  Results map to text (images and audio become placeholders) and go through the 20 KiB cap; a call times out after
+  2 minutes.
+- Strict `${NAME}` expansion in `command`, `args`, `env`, `url` and `headers` (an unset variable names itself, never a
+  value); `https` or loopback URLs without credentials; headers go to the configured host only and a redirect to
+  another address is refused; a local server's error output goes to a private log under the state directory.
+- `--no-mcp` starts no servers for a run.
+- `Agent.SetTools`, `tools.Trusted`, `tools.Titled`, `tools.Prompt.Source`, `ToolStarted.Title`.
+
 ### Fixed
 
 - The approval dialog ignores keys for half a second after it opens (Ctrl-C excepted): a "y" typed ahead could answer
