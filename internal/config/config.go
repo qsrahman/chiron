@@ -64,6 +64,11 @@ type MCPServer struct {
 	Enabled *bool `json:"enabled"`
 	// AutoApprove lists the server's tools (by the names the server gives them) whose calls never ask.
 	AutoApprove []string `json:"autoApprove"`
+	// Tools, when present, lists the only tools of the server that are offered; a name the server does not have is
+	// an error, so that a typo cannot offer nothing without saying so. An empty list offers none.
+	Tools []string `json:"tools"`
+	// Instructions adds the server's own usage notes to the system prompt.
+	Instructions bool `json:"instructions"`
 }
 
 // IsEnabled reports whether the server is to be started.

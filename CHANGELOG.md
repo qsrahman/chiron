@@ -4,6 +4,20 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-18
+
+### Added
+
+- MCP servers that die are started again by the next call, at most 3 times per session; a call that was already sent
+  when the connection broke fails and is not repeated. The connection is watched, and an idle one is checked every
+  30 s.
+- `/servers` (state, tools offered and hidden, the estimated cost of the definitions, restarts, log path) and
+  `/reconnect [NAME]` (start the named server, or those that failed or lost their connection, afresh; a server that
+  was too slow at launch joins this way, and the agent gets its tools for the next prompt).
+- The `tools` allow-list (a name the server lacks fails the server and lists what it offers) and the `instructions`
+  option (the server's usage notes in the system prompt, framed as notes from the server, cut to 4,000 characters).
+- `tools.EstimateTokens`, shared by `/context` and `/servers`; `agent.ServerNote`.
+
 ## [0.5.0] - 2026-11-18
 
 ### Added

@@ -58,7 +58,7 @@ func TestAStdioServerStartsInheritsTheEnvironmentAndLogsPrivately(t *testing.T) 
 	h := startHub(t, map[string]config.MCPServer{"local": stdio("serve", map[string]string{"FROM_CONFIG": "from-the-config"})}, Options{})
 
 	st := statusOf(h, "local")
-	if st.Err != nil || st.Tools != 3 {
+	if st.Err != nil || st.Tools != 5 {
 		t.Fatalf("status = %+v", st)
 	}
 	if out, err := callTool(t, h, "local__echo", `{"text":"hi"}`); err != nil || out != "echo: hi" {
@@ -100,7 +100,7 @@ func TestEveryFailureIsReportedAndNoneStopsTheOthers(t *testing.T) {
 	if took := time.Since(started); took > 6*time.Second {
 		t.Errorf("startup took %v: one slow server must not hold the others for long", took)
 	}
-	if st := statusOf(h, "good"); st.Err != nil || st.Tools != 3 {
+	if st := statusOf(h, "good"); st.Err != nil || st.Tools != 5 {
 		t.Errorf("good = %+v", st)
 	}
 	for _, name := range []string{"exits", "missing"} {
@@ -184,7 +184,7 @@ func TestARemoteServerGetsTheConfiguredHeaders(t *testing.T) {
 
 	h := startHub(t, map[string]config.MCPServer{"web": {URL: ts.URL, Headers: map[string]string{"X-Api-Key": "${API_KEY}"}}}, Options{Lookup: lookup})
 
-	if st := statusOf(h, "web"); st.Err != nil || st.Tools != 3 || st.Source != strings.TrimPrefix(ts.URL, "http://") {
+	if st := statusOf(h, "web"); st.Err != nil || st.Tools != 5 || st.Source != strings.TrimPrefix(ts.URL, "http://") {
 		t.Fatalf("status = %+v", st)
 	}
 	if out, err := callTool(t, h, "web__echo", `{"text":"remote"}`); err != nil || out != "echo: remote" {

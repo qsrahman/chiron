@@ -1,22 +1,16 @@
 package agent
 
-import "encoding/json"
+import (
+	"encoding/json"
 
-// estimateTokens counts about one token per four bytes of the JSON of v. That is tokenizer-agnostic, so it suits
-// any backend, and counting UTF-8 bytes keeps non-Latin text from being undercounted.
-func estimateTokens(v any) int {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return 0
-	}
-	return len(raw)/4 + 1
-}
+	"github.com/qsrahman/desk-agent/internal/tools"
+)
 
 // tokens estimates one history item. The opaque encrypted content of a reasoning item is left out: the API counts
 // the few tokens of reasoning it holds, not its length.
 func (it item) tokens() int {
 	if it.kind != kindReasoning {
-		return estimateTokens(it.param)
+		return tools.EstimateTokens(it.param)
 	}
 	raw, err := json.Marshal(it.param)
 	if err != nil {
@@ -24,10 +18,10 @@ func (it item) tokens() int {
 	}
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil {
-		return estimateTokens(it.param)
+		return tools.EstimateTokens(it.param)
 	}
 	delete(fields, "encrypted_content")
-	return estimateTokens(fields)
+	return tools.EstimateTokens(fields)
 }
 
 // ContextEstimate is the size of what the next request would carry, in estimated tokens.
@@ -46,12 +40,12 @@ func (c ContextEstimate) Total() int { return c.Instructions + c.Tools + c.Histo
 // what every request carries.
 func (a *Agent) ContextEstimate() ContextEstimate {
 	c := ContextEstimate{
-		Instructions: estimateTokens(map[string]string{"instructions": a.instructions}),
+		Instructions: tools.EstimateTokens(map[string]string{"instructions": a.instructions}),
 		ToolCount:    a.tools.Len(),
 		LastInput:    a.lastInput,
 	}
 	if c.ToolCount > 0 {
-		c.Tools = estimateTokens(a.tools.Specs())
+		c.Tools = tools.EstimateTokens(a.tools.Specs())
 	}
 	for _, it := range a.history.items {
 		c.History += it.tokens()

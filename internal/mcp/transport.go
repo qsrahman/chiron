@@ -130,13 +130,18 @@ func remoteTransport(l launch) (sdk.Transport, string, error) {
 }
 
 // stdioTransport starts the server as a child process. It gets this program's environment plus its own, and its
-// error output goes to a log file: the terminal belongs to the UI. The log is private and starts empty.
-func stdioTransport(l launch, logDir, name string) (transport sdk.Transport, logPath string, closeLog func(), err error) {
+// error output goes to a log file: the terminal belongs to the UI. The log is private; it starts empty, and a
+// restart appends to it.
+func stdioTransport(l launch, logDir, name string, appendLog bool) (transport sdk.Transport, logPath string, closeLog func(), err error) {
 	if err := os.MkdirAll(logDir, 0o700); err != nil {
 		return nil, "", nil, fmt.Errorf("creating the log directory: %w", err)
 	}
 	logPath = filepath.Join(logDir, name+".log")
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	if appendLog { // a restart adds to what the server said before it died
+		flags = os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	}
+	file, err := os.OpenFile(logPath, flags, 0o600)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("opening the log: %w", err)
 	}

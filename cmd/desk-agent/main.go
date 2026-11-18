@@ -105,13 +105,15 @@ func start(ctx context.Context, cfg config.Config, opts runOptions, stdout, stde
 
 	// The servers start in the background, and the agent gets their tools once they have answered.
 	hub := startMCP(ctx, cfg, opts.noMCP)
+	var mcpc *mcpControl
 	if hub != nil {
 		defer hub.Close()
+		mcpc = &mcpControl{ctx: ctx, hub: hub, agent: a, workDir: workDir}
 	}
 
 	if opts.prompt != "" {
-		if hub != nil {
-			reportMCP(connectMCP(ctx, hub, a, workDir), stderr)
+		if mcpc != nil {
+			reportMCP(mcpc.connect(), stderr)
 		}
 		return runPrompt(ctx, a, opts.prompt, stdout, stderr)
 	}
@@ -121,8 +123,8 @@ func start(ctx context.Context, cfg config.Config, opts runOptions, stdout, stde
 		Branch:        agent.GitBranch(ctx, workDir),
 		ContextWindow: cfg.ContextWindow,
 	}
-	if hub != nil {
-		info.Startup = func() tui.Startup { return connectMCP(ctx, hub, a, workDir) }
+	if mcpc != nil {
+		info.Startup, info.Servers = mcpc.connect, mcpc
 	}
 	return tui.Run(a, info)
 }

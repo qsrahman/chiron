@@ -204,7 +204,7 @@ func TestDefaultPath(t *testing.T) {
 
 func TestLoadMCPServers(t *testing.T) {
 	path := writeConfig(t, `{"mcpServers": {
-		"docs":    {"url": "https://example.com/mcp", "headers": {"X-Key": "${KEY}"}, "autoApprove": ["search"]},
+		"docs":    {"url": "https://example.com/mcp", "headers": {"X-Key": "${KEY}"}, "autoApprove": ["search"], "tools": ["search", "fetch"], "instructions": true},
 		"toolbox": {"command": "npx", "args": ["-y", "pkg"], "env": {"TOKEN": "${TOKEN}"}, "enabled": false}
 	}}`, 0o600)
 
@@ -214,7 +214,8 @@ func TestLoadMCPServers(t *testing.T) {
 	}
 
 	docs, toolbox := f.MCPServers["docs"], f.MCPServers["toolbox"]
-	if docs.URL != "https://example.com/mcp" || docs.Headers["X-Key"] != "${KEY}" || len(docs.AutoApprove) != 1 || !docs.IsEnabled() {
+	if docs.URL != "https://example.com/mcp" || docs.Headers["X-Key"] != "${KEY}" || len(docs.AutoApprove) != 1 || !docs.IsEnabled() ||
+		len(docs.Tools) != 2 || !docs.Instructions {
 		t.Errorf("docs = %+v", docs)
 	}
 	if toolbox.Command != "npx" || len(toolbox.Args) != 2 || toolbox.Env["TOKEN"] != "${TOKEN}" || toolbox.IsEnabled() {
@@ -232,7 +233,7 @@ func TestLoadRejectsABadMCPServer(t *testing.T) {
 		{"env on a url", `{"a": {"url": "https://x", "env": {"k": "v"}}}`, "args and env go with command"},
 		{"name", `{"my server": {"command": "x"}}`, "not a usable name"},
 		{"name with the separator characters", `{"a.b": {"command": "x"}}`, "not a usable name"},
-		{"a field of a later phase", `{"a": {"command": "x", "tools": ["t"]}}`, "tools"},
+		{"an unknown field", `{"a": {"command": "x", "instruction": true}}`, "instruction"},
 		{"a typo", `{"a": {"comand": "x"}}`, "comand"},
 	}
 	for _, tt := range tests {

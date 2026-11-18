@@ -46,6 +46,29 @@ type Info struct {
 	// Startup is work that finishes after the window has opened, such as connecting to MCP servers. It runs once, in
 	// the background. Prompts typed meanwhile wait, so that the model sees the tools it sets up.
 	Startup func() Startup
+
+	// Servers is what /servers and /reconnect use; nil when no MCP server is configured.
+	Servers Servers
+}
+
+// ServerInfo says how one MCP server is doing.
+type ServerInfo struct {
+	Name     string
+	Err      string // why it did not start; empty if it did
+	Lost     bool   // it started, but its connection was lost
+	Tools    int    // how many tools it offers the model
+	Hidden   int    // how many more it has, kept from the model by the allow-list
+	Tokens   int    // the estimated size of the definitions of the tools it offers
+	Restarts int    // how often a call started it again
+	LogPath  string // where a local server's error output goes; empty for a remote one
+}
+
+// Servers is what the commands need of the MCP servers.
+type Servers interface {
+	List() []ServerInfo
+	// Reconnect starts servers afresh, the named one or with no name every one that failed or lost its connection,
+	// and says how it went. It blocks until they have answered, and is called while no turn runs.
+	Reconnect(name string) Startup
 }
 
 // Startup is what a Startup function reports.

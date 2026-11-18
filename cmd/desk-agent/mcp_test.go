@@ -14,6 +14,10 @@ import (
 	"testing"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/qsrahman/desk-agent/internal/agent"
+	"github.com/qsrahman/desk-agent/internal/config"
+	"github.com/qsrahman/desk-agent/internal/tools"
 )
 
 // The test binary doubles as a stdio MCP server when this variable says so.
@@ -26,7 +30,7 @@ func TestMain(m *testing.M) {
 	type args struct {
 		Text string `json:"text"`
 	}
-	srv := sdk.NewServer(&sdk.Implementation{Name: "test", Version: "1"}, nil)
+	srv := sdk.NewServer(&sdk.Implementation{Name: "test", Version: "1"}, &sdk.ServerOptions{Instructions: "Greet politely."})
 	sdk.AddTool(srv, &sdk.Tool{Name: "echo", Description: "Repeat the text."},
 		func(_ context.Context, _ *sdk.CallToolRequest, a args) (*sdk.CallToolResult, any, error) {
 			return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: "echo: " + a.Text}}}, nil, nil
@@ -163,5 +167,102 @@ func TestAServerThatFailsIsReportedAndTheRunGoesOn(t *testing.T) {
 	}
 	if strings.Contains(errOut.String(), "mcp fine") {
 		t.Errorf("stderr mentions a server that started: %q", errOut.String())
+	}
+}
+
+func TestServerNotesReachThePromptOnlyWhenAskedFor(t *testing.T) {
+	for _, asked := range []bool{false, true} {
+		t.Run(map[bool]string{false: "not asked", true: "instructions: true"}[asked], func(t *testing.T) {
+			isolate(t)
+			t.Setenv("XDG_STATE_HOME", t.TempDir())
+			model, requests := modelServer(t)
+			extra := ""
+			if asked {
+				extra = `, "instructions": true`
+			}
+
+			var out, errOut bytes.Buffer
+			if code := run(context.Background(), []string{"-p", "go", "--config", mcpConfig(t, model.URL, localServer(extra))}, &out, &errOut); code != 0 {
+				t.Fatalf("exit code %d, stderr: %s", code, errOut.String())
+			}
+
+			first := requests()[0]
+			if got := strings.Contains(first, "Greet politely."); got != asked {
+				t.Errorf("the notes are in the prompt = %v, want %v", got, asked)
+			}
+			if asked && !strings.Contains(first, "written by the servers themselves") {
+				t.Error("the notes are not framed as coming from the server")
+			}
+		})
+	}
+}
+
+func TestTheAllowListHidesToolsAndATypoFailsTheServer(t *testing.T) {
+	isolate(t)
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	t.Run("a typo", func(t *testing.T) {
+		model, requests := modelServer(t)
+		var out, errOut bytes.Buffer
+		cfg := mcpConfig(t, model.URL, localServer(`, "tools": ["ecoh"]`))
+		if code := run(context.Background(), []string{"-p", "go", "--config", cfg}, &out, &errOut); code != 0 {
+			t.Fatalf("exit code %d, stderr: %s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), `"ecoh"`) || strings.Contains(requests()[0], "local__echo") {
+			t.Errorf("stderr %q; first request %s", errOut.String(), requests()[0])
+		}
+	})
+	t.Run("a name that exists", func(t *testing.T) {
+		model, requests := modelServer(t)
+		var out, errOut bytes.Buffer
+		cfg := mcpConfig(t, model.URL, localServer(`, "tools": ["echo"], "autoApprove": ["echo"]`))
+		if code := run(context.Background(), []string{"-p", "go", "--config", cfg}, &out, &errOut); code != 0 {
+			t.Fatalf("exit code %d, stderr: %s", code, errOut.String())
+		}
+		if !strings.Contains(requests()[0], "local__echo") {
+			t.Error("the allowed tool was not offered")
+		}
+	})
+}
+
+// A server that could not start joins when /reconnect is run after the cause is fixed, and the agent gets its tools.
+func TestReconnectGivesTheAgentTheToolsOfAServerThatJoined(t *testing.T) {
+	isolate(t)
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	const needed = "DESK_AGENT_TEST_SWITCH"
+	cfg := config.Config{
+		BaseURL: "http://127.0.0.1:1",
+		MCPServers: map[string]config.MCPServer{
+			"late": {Command: os.Args[0], Env: map[string]string{serveVar: "${" + needed + "}"}},
+		},
+	}
+	a := agent.New(newClient(cfg), agent.Settings{Model: "m"}, "", &tools.Registry{})
+	hub := startMCP(context.Background(), cfg, false)
+	t.Cleanup(hub.Close)
+	c := &mcpControl{ctx: context.Background(), hub: hub, agent: a, workDir: t.TempDir()}
+
+	first := c.connect()
+	if first.Status != "mcp 0/1" || !strings.Contains(first.Servers[0][1], "failed") || a.ToolList().Ask != nil {
+		t.Fatalf("first = %+v, tools %+v: the server should have failed", first, a.ToolList())
+	}
+
+	t.Setenv(needed, "1") // the cause is fixed
+	second := c.Reconnect("")
+
+	if second.Status != "mcp 1/1" || second.Servers[0][1] != "connected, 1 tool" {
+		t.Errorf("second = %+v", second)
+	}
+	if list := a.ToolList(); len(list.Ask) != 1 || list.Ask[0] != "late__echo" {
+		t.Errorf("the agent's tools after /reconnect: %+v", list)
+	}
+
+	if third := c.Reconnect(""); len(third.Notes) != 1 || !strings.Contains(third.Notes[0], "Nothing to reconnect") {
+		t.Errorf("with every server running: %+v", third)
+	}
+	if bad := c.Reconnect("nope"); len(bad.Notes) != 1 || !strings.Contains(bad.Notes[0], `"nope"`) {
+		t.Errorf("an unknown name: %+v", bad)
+	}
+	if infos := c.List(); len(infos) != 1 || infos[0].Name != "late" || infos[0].Tools != 1 || infos[0].Err != "" || infos[0].LogPath == "" {
+		t.Errorf("List = %+v", infos)
 	}
 }

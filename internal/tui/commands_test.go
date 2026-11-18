@@ -46,6 +46,7 @@ func TestHelpListsEveryCommandAndKey(t *testing.T) {
 	for _, e := range m.entries {
 		all += ansi.Strip(e.rendered) + "\n"
 	}
+	all = strings.Join(strings.Fields(all), " ") // long descriptions wrap
 	for _, c := range commandList() {
 		if !strings.Contains(all, c.name) || !strings.Contains(all, c.description) {
 			t.Errorf("/help does not list %s", c.name)
@@ -233,7 +234,7 @@ func TestSuggestionsFollowTheInput(t *testing.T) {
 		t.Errorf("a lone slash lists every command: %v", labels(m))
 	}
 	m.input.SetValue("/re")
-	if got := labels(m); !slices.Equal(got, []string{"/reset", "/retry"}) {
+	if got := labels(m); !slices.Equal(got, []string{"/reconnect [NAME]", "/reset", "/retry"}) {
 		t.Errorf("/re lists %v", got)
 	}
 	m.input.SetValue("/effort h")
@@ -259,9 +260,10 @@ func TestSuggestionKeys(t *testing.T) {
 	m.input.SetValue("/re")
 
 	m = press(m, tea.KeyDown)
+	m = press(m, tea.KeyDown)
 	m = press(m, tea.KeyTab)
 	if m.input.Value() != "/retry" {
-		t.Errorf("down then tab gave %q, want /retry", m.input.Value())
+		t.Errorf("down, down, tab gave %q, want /retry", m.input.Value())
 	}
 
 	m.input.SetValue("/ef")

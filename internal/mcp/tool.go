@@ -101,8 +101,15 @@ func (t *tool) Run(ctx context.Context, arguments string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	result, err := t.server.session.CallTool(ctx, &sdk.CallToolParams{Name: t.remote.Name, Arguments: args})
+	session, err := t.server.live(ctx)
 	if err != nil {
+		return "", err
+	}
+	result, err := session.CallTool(ctx, &sdk.CallToolParams{Name: t.remote.Name, Arguments: args})
+	if err != nil {
+		if t.server.lost(ctx, session, err) {
+			err = fmt.Errorf("%w: the connection to %s was lost, and the next call starts it again", err, t.server.name)
+		}
 		return "", err
 	}
 	text := resultText(result)

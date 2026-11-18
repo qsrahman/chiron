@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -12,7 +13,10 @@ import (
 
 // The test binary doubles as a stdio MCP server: a test starts it as a command with one of these modes in its
 // environment.
-const modeVar = "DESK_AGENT_TEST_MCP_MODE"
+const (
+	modeVar   = "DESK_AGENT_TEST_MCP_MODE"
+	dieLogVar = "DESK_AGENT_TEST_DIE_LOG"
+)
 
 func TestMain(m *testing.M) {
 	switch os.Getenv(modeVar) {
@@ -41,7 +45,7 @@ type nameArgs struct {
 
 // newTestServer has the tools the tests call.
 func newTestServer() *sdk.Server {
-	srv := sdk.NewServer(&sdk.Implementation{Name: "test", Version: "1"}, nil)
+	srv := sdk.NewServer(&sdk.Implementation{Name: "test", Version: "1"}, &sdk.ServerOptions{Instructions: "Use echo for greetings."})
 	text := func(s string) *sdk.CallToolResult {
 		return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: s}}}
 	}
@@ -52,6 +56,22 @@ func newTestServer() *sdk.Server {
 	sdk.AddTool(srv, &sdk.Tool{Name: "env", Description: "Read an environment variable."},
 		func(_ context.Context, _ *sdk.CallToolRequest, a nameArgs) (*sdk.CallToolResult, any, error) {
 			return text(os.Getenv(a.Name)), nil, nil
+		})
+	sdk.AddTool(srv, &sdk.Tool{Name: "pid", Description: "The process id of the server."},
+		func(context.Context, *sdk.CallToolRequest, struct{}) (*sdk.CallToolResult, any, error) {
+			return text(strconv.Itoa(os.Getpid())), nil, nil
+		})
+	// die records that it ran, if told where, and ends the process in the middle of the call.
+	sdk.AddTool(srv, &sdk.Tool{Name: "die", Description: "Ends the server."},
+		func(context.Context, *sdk.CallToolRequest, struct{}) (*sdk.CallToolResult, any, error) {
+			if path := os.Getenv(dieLogVar); path != "" {
+				if f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+					fmt.Fprintln(f, "died")
+					f.Close()
+				}
+			}
+			os.Exit(0)
+			return nil, nil, nil
 		})
 	sdk.AddTool(srv, &sdk.Tool{Name: "fail", Description: "Always reports an error."},
 		func(context.Context, *sdk.CallToolRequest, textArgs) (*sdk.CallToolResult, any, error) {

@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +25,14 @@ type Options struct {
 	Lookup  func(string) (string, bool) // reads ${NAME}; nil means the environment
 }
 
+// timeout is the startup deadline.
+func (o Options) timeout() time.Duration {
+	if o.Timeout <= 0 {
+		return defaultTimeout
+	}
+	return o.Timeout
+}
+
 func (o Options) lookup() func(string) (string, bool) {
 	if o.Lookup != nil {
 		return o.Lookup
@@ -31,34 +40,46 @@ func (o Options) lookup() func(string) (string, bool) {
 	return os.LookupEnv
 }
 
-// Status says how one server started.
+// Status says how one server is doing.
 type Status struct {
-	Name    string
-	Err     error // why it did not start; nil if it did
-	Tools   int   // how many tools it offers
-	Source  string
-	LogPath string
+	Name     string
+	Err      error // why it did not start; nil if it did
+	Dead     bool  // it started, but its connection was lost
+	Tools    int   // how many tools it offers the model
+	Hidden   int   // how many it has that the allow-list keeps from the model
+	Tokens   int   // the estimated size of the definitions of the tools it offers
+	Restarts int   // how often a call started it again
+	Source   string
+	LogPath  string
 }
+
+// Note is what a server said about its own tools, for the system prompt.
+type Note struct{ Server, Text string }
+
+// maxNoteLength is the most characters of one server's notes that are used.
+const maxNoteLength = 4000
 
 // Hub runs the configured servers.
 type Hub struct {
 	servers []*server // sorted by name
 	done    chan struct{}
 	cancel  context.CancelFunc // ends the startup of servers that are still starting
+	opts    Options
+	names   []string        // every configured server, enabled or not, for error messages
+	off     map[string]bool // the servers that are disabled
 }
 
 // Start launches every enabled server and returns at once. All of them start in parallel and share one deadline;
 // Wait says when they have all answered. A server that fails or is too slow is reported and stays out: it does not
 // stop the others.
 func Start(ctx context.Context, cfgs map[string]config.MCPServer, o Options) *Hub {
-	timeout := o.Timeout
-	if timeout <= 0 {
-		timeout = defaultTimeout
-	}
-	h := &Hub{done: make(chan struct{})}
-	for _, name := range slices.Sorted(maps.Keys(cfgs)) {
+	timeout := o.timeout()
+	h := &Hub{done: make(chan struct{}), opts: o, names: slices.Sorted(maps.Keys(cfgs)), off: map[string]bool{}}
+	for _, name := range h.names {
 		if cfgs[name].IsEnabled() {
 			h.servers = append(h.servers, &server{name: name, cfg: cfgs[name]})
+		} else {
+			h.off[name] = true
 		}
 	}
 
@@ -86,9 +107,75 @@ func (h *Hub) Wait() { <-h.done }
 func (h *Hub) Status() []Status {
 	var out []Status
 	for _, s := range h.servers {
-		out = append(out, Status{Name: s.name, Err: s.err, Tools: len(s.tools), Source: s.source, LogPath: s.logPath})
+		s.mu.Lock()
+		st := Status{Name: s.name, Err: s.err, Dead: s.dead, Restarts: s.restarts, Tools: len(s.tools), Hidden: len(s.all) - len(s.tools), Source: s.source, LogPath: s.logPath}
+		s.mu.Unlock()
+		for _, remote := range s.tools {
+			if t, err := newTool(s, remote, apiName(s.name, remote.Name), false); err == nil {
+				st.Tokens += tools.EstimateTokens(t.Spec())
+			}
+		}
+		out = append(out, st)
 	}
 	return out
+}
+
+// Notes returns the usage advice of the servers that gave some and are configured with "instructions": true, each cut
+// to a length the prompt can afford.
+func (h *Hub) Notes() []Note {
+	var notes []Note
+	for _, s := range h.servers {
+		text := strings.TrimSpace(s.notes)
+		if s.err != nil || !s.cfg.Instructions || text == "" {
+			continue
+		}
+		if runes := []rune(text); len(runes) > maxNoteLength {
+			text = string(runes[:maxNoteLength]) + "\n[cut]"
+		}
+		notes = append(notes, Note{Server: s.name, Text: text})
+	}
+	return notes
+}
+
+// Reconnect starts servers afresh, once the first start has finished (so that what failed is known): the named one,
+// whatever its state, or with no name every server that failed or lost its connection. A server that was too slow
+// the first time joins this way. How each one fared is in Status. The caller must make sure no call is running.
+func (h *Hub) Reconnect(ctx context.Context, name string) error {
+	h.Wait()
+	var targets []*server
+	if name != "" {
+		i := slices.IndexFunc(h.servers, func(s *server) bool { return s.name == name })
+		switch {
+		case i >= 0:
+			targets = h.servers[i : i+1]
+		case h.off[name]:
+			return fmt.Errorf("%s is disabled in the config file", name)
+		default:
+			return fmt.Errorf("there is no MCP server named %q (configured: %s)", name, strings.Join(h.names, ", "))
+		}
+	} else {
+		for _, s := range h.servers {
+			s.mu.Lock()
+			if s.err != nil || s.dead {
+				targets = append(targets, s)
+			}
+			s.mu.Unlock()
+		}
+	}
+
+	timeout := h.opts.timeout()
+	ctx, cancel := context.WithTimeoutCause(ctx, timeout, context.DeadlineExceeded)
+	defer cancel()
+	var wg sync.WaitGroup
+	for _, s := range targets {
+		wg.Go(func() {
+			s.reset()
+			s.start(ctx, h.opts)
+			s.err = describe(ctx, s.err, timeout.String())
+		})
+	}
+	wg.Wait()
+	return nil
 }
 
 // Tools returns the tools of the servers that started, once Wait has returned, and notices about the ones left out.

@@ -69,7 +69,9 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
   (`server → tool`) and `tools.Describer` (with a `Source`). The agent gets them through `Agent.SetTools`, only while
   idle: `main` runs `connectMCP` in the TUI's `Info.Startup`, and the UI holds prompts until it is done. Secrets
   (header and env values, URLs) never go into an error, a log or a status. Tests start the test binary itself as a
-  stdio server (`TestMain` with an environment switch) and use `httptest` with the SDK's streamable handler.
+  stdio server (`TestMain` with an environment switch; its tools include `die` and `pid` for the restart tests) and use
+  `httptest` with the SDK's streamable handler. A server restarts itself in `server.live` (called by every tool call);
+  `Hub.Reconnect` is for the commands and must only run between turns.
 - **Queue and cards.** Prompts typed during a turn wait in `Model.queue` (`queue.go`) and start in
   `nextQueued` when the turn closes; startTurn must never touch the input, so a draft survives. Cards are selected
   with `Model.card` (`cards.go`); anything that rewrites `entries` must keep `card` valid (`/clear` resets it).

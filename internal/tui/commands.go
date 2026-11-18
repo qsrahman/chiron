@@ -30,7 +30,9 @@ func commandList() []command {
 		{name: "/exit", description: "Quit", run: quitCommand},
 		{name: "/quit", description: "Quit", run: quitCommand},
 		{name: "/clear", description: "Clear the screen; the conversation is kept", run: (*Model).clearCommand},
+		{name: "/reconnect", usage: "[NAME]", description: "Start MCP servers again: the named one, or those that failed", args: serverNames, run: (*Model).reconnectCommand},
 		{name: "/reset", description: "Forget the conversation and start over", run: (*Model).resetCommand},
+		{name: "/servers", description: "List the MCP servers and how they are doing", run: (*Model).serversCommand},
 		{name: "/model", usage: "[NAME]", description: "Show the model, or switch to NAME", run: (*Model).modelCommand},
 		{name: "/effort", usage: "[LEVEL]", description: "Show the reasoning effort, or set it", args: effortLevels, run: (*Model).effortCommand},
 		{name: "/tools", description: "List the tools and which of them ask before they run", run: (*Model).toolsCommand},
@@ -198,6 +200,67 @@ func (m *Model) toolsCommand(string) (tea.Cmd, error) {
 	}
 	m.sayTable(rows)
 	return nil, nil
+}
+
+// serverNames lists the configured servers, for completing /reconnect.
+func serverNames(m *Model) []string {
+	if m.info.Servers == nil {
+		return nil
+	}
+	var names []string
+	for _, s := range m.info.Servers.List() {
+		names = append(names, s.Name)
+	}
+	return names
+}
+
+func (m *Model) serversCommand(string) (tea.Cmd, error) {
+	if m.info.Servers == nil {
+		m.say("No MCP servers are configured")
+		return nil, nil
+	}
+	var rows [][2]string
+	for _, s := range m.info.Servers.List() {
+		rows = append(rows, [2]string{s.Name, serverText(s)})
+	}
+	m.sayTable(rows)
+	return nil, nil
+}
+
+// serverText is one line about a server: how it is doing, what it offers and what that costs.
+func serverText(s ServerInfo) string {
+	var parts []string
+	switch {
+	case s.Err != "":
+		parts = append(parts, "failed: "+s.Err)
+	case s.Lost:
+		parts = append(parts, "connection lost, the next call starts it again")
+	default:
+		offered := plural(s.Tools, "tool")
+		if s.Hidden > 0 {
+			offered += fmt.Sprintf(" (%d hidden)", s.Hidden)
+		}
+		parts = append(parts, "connected", offered, "~"+count(s.Tokens)+" tokens of definitions")
+	}
+	if s.Restarts > 0 {
+		parts = append(parts, "started again "+plural(s.Restarts, "time"))
+	}
+	if s.LogPath != "" {
+		parts = append(parts, "log "+s.LogPath)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// reconnectCommand starts the servers again in the background. Prompts wait while it runs, as at startup, and the
+// result is shown the same way.
+func (m *Model) reconnectCommand(name string) (tea.Cmd, error) {
+	if m.info.Servers == nil {
+		m.say("No MCP servers are configured")
+		return nil, nil
+	}
+	servers := m.info.Servers
+	m.starting = true
+	return func() tea.Msg { return startupMsg{servers.Reconnect(name)} }, nil
 }
 
 func (m *Model) contextCommand(string) (tea.Cmd, error) {

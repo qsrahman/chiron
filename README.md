@@ -3,10 +3,10 @@
 A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI, and works on your
 machine through tools (files, shell, web, todo, questions) and optional MCP servers.
 
-> **Status: Phase 4b.1 (v0.5.0).** You can chat with the model in a terminal UI or send a single prompt from the
+> **Status: Phase 4b.2 (v0.5.1).** You can chat with the model in a terminal UI or send a single prompt from the
 > command line, and give it tools by configuring MCP servers. No built-in tools ship yet, so without MCP servers the
-> model still cannot touch your files. Built-in tools, restart and `/reconnect` for MCP servers arrive in the next
-> phases; see [PLAN.md](PLAN.md). This README is updated as each phase lands.
+> model still cannot touch your files. Built-in tools arrive in the next phases; see [PLAN.md](PLAN.md). This README
+> is updated as each phase lands.
 
 ## Requirements
 
@@ -32,9 +32,11 @@ Type `/` in the chat to list them; Up/Down choose, Tab completes, Esc closes. Th
 | `/help` | List the commands and keys |
 | `/exit`, `/quit` | Quit |
 | `/clear` | Clear the screen; the conversation is kept |
+| `/reconnect [NAME]` | Start MCP servers again: the named one, or those that failed or lost their connection |
 | `/reset` | Forget the conversation and start over |
 | `/model [NAME]` | Show the model, or switch to NAME |
 | `/effort [LEVEL]` | Show the reasoning effort, or set it (`default` sends none) |
+| `/servers` | List the MCP servers: state, tools offered (and hidden), what the definitions cost, log path |
 | `/tools` | List the tools and which of them ask before they run |
 | `/undo` | Remove the last exchange from the conversation |
 | `/retry` | Send the last prompt again |
@@ -95,6 +97,18 @@ and prints failures to stderr. `--no-mcp` starts none.
 - **`${NAME}`** in `command`, `args`, `env`, `url` and `headers` is replaced from the environment. A variable that is
   not set fails that server (the message names the variable, never a value). Server names may use letters, digits,
   `_` and `-`.
+- **A server that dies** is started again by the next call, at most 3 times per session; a call that was already
+  sent when the connection broke fails and is not repeated, since it may have done part of its work. The tools
+  offered do not change. `/servers` shows `connection lost` and how often a server was started again.
+- **`/reconnect [NAME]`** starts servers afresh (and resets their restart count): the named one, or with no name every
+  server that failed or lost its connection. This is how a server that was too slow at launch (for example `npx`
+  downloading a package on its first run) joins; the tools of a server that comes up are offered from the next
+  prompt on. It runs in the background like the first start, and prompts wait for it.
+- **`tools`** lists the only tools of a server that are offered (`"tools": ["search"]`); a name the server does not
+  have fails that server and shows what it does offer, so a typo cannot silently offer nothing. `/servers` counts
+  the hidden tools. An empty list offers none.
+- **`instructions: true`** adds the server's own usage notes to the system prompt, under a heading that says they were
+  written by the server and are information, not orders (cut to 4,000 characters). Without it they are not used.
 - **Results:** text parts are joined, structured content is used when there is no text, images and audio become a
   short placeholder such as `[image: image/png, 12 KB]`, and an error result is a failed tool call. Like every tool
   result it is cut at 20 KiB.
