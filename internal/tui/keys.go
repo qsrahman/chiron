@@ -15,6 +15,9 @@ type keyMap struct {
 
 	// Used while the approval modal is open.
 	yes, always, no, prev, next key.Binding
+
+	// Used while the input is empty: choosing a tool card, and taking a queued prompt back.
+	cardNext, cardPrev, toggle, unqueue key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -28,6 +31,10 @@ func newKeyMap() keyMap {
 		down:      key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "next")),
 		complete:  key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "complete")),
 		dismiss:   key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
+		cardNext:  key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "tool cards")),
+		cardPrev:  key.NewBinding(key.WithKeys("shift+tab")),
+		toggle:    key.NewBinding(key.WithKeys("enter", "space"), key.WithHelp("enter", "expand or collapse")),
+		unqueue:   key.NewBinding(key.WithKeys("up")),
 		yes:       key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "allow")),
 		always:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "allow for session")),
 		no:        key.NewBinding(key.WithKeys("n", "esc"), key.WithHelp("n", "deny")),
@@ -57,4 +64,13 @@ func (k keyMap) approvalHelp() []key.Binding {
 	confirm := k.send
 	confirm.SetHelp("enter", "confirm")
 	return []key.Binding{k.yes, k.always, k.no, k.prev, confirm}
+}
+
+// cardHelp is what the help bar shows while a tool card is selected.
+func (k keyMap) cardHelp() []key.Binding {
+	next := k.cardNext
+	next.SetHelp("tab", "next card")
+	done := k.dismiss
+	done.SetHelp("esc", "done")
+	return []key.Binding{k.toggle, next, done}
 }

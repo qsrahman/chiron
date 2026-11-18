@@ -88,6 +88,16 @@ type Model struct {
 
 	approval approval // the modal that asks about a tool call
 
+	// Prompts typed during a turn, and what became of the turn they were waiting for. failed is set by a turn that
+	// ended on an error of its own; dropped counts the prompts a cancel threw away, until it has been reported.
+	queue   []string
+	failed  bool
+	dropped int
+
+	// The selected tool card (an index into entries, -1 for none); reveal asks the next refresh to scroll to it.
+	card   int
+	reveal bool
+
 	contextTokens int64 // size of the conversation after the latest response, 0 until known
 
 	width, height int
@@ -116,6 +126,7 @@ func New(a Agent, info Info) Model {
 		viewport: viewport.New(),
 		input:    input,
 		keys:     keys,
+		card:     -1,
 		width:    80,
 		height:   24,
 	}
@@ -172,8 +183,9 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case turnClosedMsg:
 		m.finishTurn()
+		next := m.nextQueued()
 		m.refresh()
-		return m, nil
+		return m, next
 
 	case spinner.TickMsg:
 		if m.events == nil {
@@ -202,6 +214,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	interrupt, eof := key.Matches(msg, m.keys.interrupt), key.Matches(msg, m.keys.eof)
 	if !interrupt && !eof {
 		m.quitArmed, m.hint = false, "" // any other key takes the warning back
+		if m.input.Value() == "" && m.emptyInputKey(msg) {
+			return m, nil
+		}
 	}
 	switch {
 	case interrupt:
@@ -210,6 +225,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			m.cancelling = true
+			m.dropQueue() // what the user typed to follow this turn is not wanted once it is cancelled
 			m.cancel()
 			m.refresh()
 			return m, nil
@@ -229,12 +245,16 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.send):
 		text := strings.TrimSpace(m.input.Value())
 		if text == "" {
+			if !busy && len(m.queue) > 0 { // after an error the queue waits for this
+				return m, m.sendQueued()
+			}
 			return m, nil
 		}
 		if cmd, handled := m.dispatch(text); handled {
 			return m, cmd
 		}
 		if busy {
+			m.enqueue(text)
 			return m, nil
 		}
 		return m.submit(text)
@@ -266,14 +286,16 @@ func (m Model) confirmQuit(pressed string) (Model, tea.Cmd) {
 }
 
 func (m Model) submit(text string) (Model, tea.Cmd) {
+	m.input.Reset()
 	cmd := m.startTurn(text)
 	return m, cmd
 }
 
-// startTurn shows text as the user's prompt and sends it to the agent.
+// startTurn shows text as the user's prompt and sends it to the agent. It leaves the input alone: a prompt
+// taken from the queue must not wipe what the user is typing.
 func (m *Model) startTurn(text string) tea.Cmd {
-	m.input.Reset()
 	m.addEntry(entry{role: roleUser, text: text})
+	m.failed = false
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
@@ -322,7 +344,12 @@ func (m *Model) handleEvent(event agent.Event) {
 		m.commitStreaming()
 		if errors.Is(e.Err, context.Canceled) {
 			m.addEntry(entry{role: roleNotice, text: "Cancelled"})
+			if m.dropped > 0 {
+				m.say("Dropped " + plural(m.dropped, "queued prompt"))
+				m.dropped = 0
+			}
 		} else {
+			m.failed = true
 			m.addEntry(entry{role: roleError, text: e.Err.Error()})
 		}
 	}
@@ -369,7 +396,7 @@ func (m *Model) layout() {
 	inputHeight := m.input.Height() + 2 // plus the box border
 	m.help.SetWidth(width - 1)          // the bar drops its last hints instead of overflowing
 	m.viewport.SetWidth(width)
-	m.viewport.SetHeight(max(1, m.height-headerHeight-inputHeight-helpHeight-m.suggestionHeight()))
+	m.viewport.SetHeight(max(1, m.height-headerHeight-inputHeight-helpHeight-m.suggestionHeight()-m.queueHeight()))
 }
 
 // rerender re-styles every entry after a resize or a theme change.
@@ -422,11 +449,18 @@ func (m *Model) refresh() {
 	if follow {
 		m.viewport.GotoBottom()
 	}
+	if m.reveal && m.card >= 0 {
+		m.reveal = false
+		m.showCard()
+	}
 }
 
 // View draws the header, the transcript, the input box and the help bar.
 func (m Model) View() tea.View {
 	parts := []string{m.headerView(), m.viewport.View()}
+	if queue := m.queueView(); queue != "" {
+		parts = append(parts, queue)
+	}
 	if list := m.suggestionView(); list != "" {
 		parts = append(parts, list)
 	}

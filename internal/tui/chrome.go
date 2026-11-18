@@ -118,8 +118,13 @@ func (m *Model) helpView() string {
 	if list, _ := m.suggestions(); len(list) > 0 {
 		bindings = m.keys.suggestionHelp()
 	}
-	if m.approval.open {
+	switch {
+	case m.approval.open:
 		bindings = m.keys.approvalHelp()
+	case m.card >= 0:
+		bindings = m.keys.cardHelp()
+	case m.input.Value() == "" && len(m.toolCards()) > 0:
+		bindings = append(bindings, m.keys.cardNext)
 	}
 	bar := m.help.ShortHelpView(bindings)
 	// The help component still adds an item when not even its ellipsis fits, so cut the line ourselves.

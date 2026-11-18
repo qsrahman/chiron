@@ -4,6 +4,21 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-18
+
+### Added
+
+- Queued prompts: Enter during a turn adds the prompt to a list above the input (three shown, the rest counted); each
+  is sent when the turn before it ends without error. Ctrl-C cancels the turn and drops the queue and says how many
+  were dropped; after an error the queue is held and Enter on an empty line sends the first. Up on an empty input
+  takes the last queued prompt back. Commands are never queued.
+- Expandable tool cards: Tab and Shift+Tab select a card on an empty input, Enter or Space toggle the preview and the
+  whole output, Esc or typing returns to the input, and the screen scrolls to keep the card in view.
+
+### Changed
+
+- Enter during a turn queues the prompt; before, it left the text in the input.
+
 ## [0.4.0] - 2026-11-18
 
 ### Added

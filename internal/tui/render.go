@@ -47,6 +47,8 @@ type entry struct {
 	failed    bool
 	cancelled bool
 	denied    bool
+	selected  bool // the card chosen with Tab
+	expanded  bool // shows the whole output instead of the preview
 	output    string
 }
 

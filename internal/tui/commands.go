@@ -106,7 +106,7 @@ func (m *Model) helpCommand(string) (tea.Cmd, error) {
 }
 
 func (m *Model) clearCommand(string) (tea.Cmd, error) {
-	m.entries = nil
+	m.entries, m.card = nil, -1
 	return nil, nil
 }
 

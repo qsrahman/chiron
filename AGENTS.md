@@ -63,6 +63,9 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
 - **Adding a tool:** define an `Args` struct (`json` tags for names, `jsonschema` tags for descriptions), write
   `func(ctx, Args) (string, error)`, wrap it with `tools.MustNew`, and add it to the registry in `main`. The
   agent loop and the TUI need no change; the TUI shows every call as a card.
+- **Queue and cards.** Prompts typed during a turn wait in `Model.queue` (`queue.go`) and start in
+  `nextQueued` when the turn closes; startTurn must never touch the input, so a draft survives. Cards are selected
+  with `Model.card` (`cards.go`); anything that rewrites `entries` must keep `card` valid (`/clear` resets it).
 - **Approvals.** Every call to a tool whose `ReadOnly()` is false goes through `Agent.approve` (`approve.go`)
   unless `Settings.AutoApprove` or a session grant covers it. A tool may implement `tools.Describer` (summary,
   details, grant key) and `tools.Validator`; `MustNew` tools validate against their schema, and an invalid call is

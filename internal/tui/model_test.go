@@ -169,23 +169,10 @@ func TestPartialTextIsVisibleWhileStreaming(t *testing.T) {
 	}
 }
 
-func TestEnterIsIgnoredWhenEmptyOrBusy(t *testing.T) {
-	sender := &fakeAgent{block: true}
-	m := newTestModel(sender)
-
-	m, cmd := update(m, enter)
-	if cmd != nil || len(sender.texts) != 0 {
+func TestEnterIsIgnoredWhenEmpty(t *testing.T) {
+	sender := &fakeAgent{}
+	if _, cmd := update(newTestModel(sender), enter); cmd != nil || len(sender.texts) != 0 {
 		t.Fatal("empty input must not start a turn")
-	}
-
-	m, _ = typeAndEnter(t, m, "first")
-	t.Cleanup(func() { m.cancel() })
-	m, cmd = typeAndEnter(t, m, "second while busy")
-	if cmd != nil || len(sender.texts) != 1 {
-		t.Errorf("a prompt was sent while busy: %v", sender.texts)
-	}
-	if m.input.Value() != "second while busy" {
-		t.Error("the draft should stay in the input while busy")
 	}
 }
 

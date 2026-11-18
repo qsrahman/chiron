@@ -99,7 +99,11 @@ func (m *Model) renderTool(e entry) string {
 		body := m.cardBody(e, width-bodyIndent)
 		lines = append(lines, indent(strings.Join(body, "\n"), bodyIndent))
 	}
-	return indent(strings.Join(lines, "\n"), gutter)
+	card := indent(strings.Join(lines, "\n"), gutter)
+	if e.selected { // the marker takes the place of the first gutter column
+		card = m.sty.brand.Render("▸") + strings.TrimPrefix(card, " ")
+	}
+	return card
 }
 
 func (m *Model) cardHeader(e entry, width int) string {
@@ -142,18 +146,22 @@ func (m *Model) cardBody(e entry, width int) []string {
 	case e.denied:
 		return []string{m.sty.toolMeta.Render("denied by you")}
 	case e.failed:
-		return m.failureLines(e.output, width)
+		return m.failureLines(e.output, width, e.expanded)
 	}
-	return m.bandLines(e.output, width)
+	return m.bandLines(e.output, width, e.expanded, e.selected)
 }
 
 // failureLines shows an error as a badge followed by its first lines.
-func (m *Model) failureLines(output string, width int) []string {
+func (m *Model) failureLines(output string, width int, expanded bool) []string {
 	message := strings.TrimPrefix(strings.TrimSpace(output), "error: ")
 	badge := m.sty.badge.Render("ERROR")
 	lines := strings.Split(ansi.Strip(message), "\n")
 	out := []string{badge + " " + m.sty.errorText.Render(ansi.Truncate(lines[0], width-ansi.StringWidth(badge)-1, "…"))}
-	for _, line := range lines[1:min(len(lines), cardPreviewLines)] {
+	shown := len(lines)
+	if !expanded {
+		shown = min(shown, cardPreviewLines)
+	}
+	for _, line := range lines[1:shown] {
 		out = append(out, "  "+m.sty.errorText.Render(ansi.Truncate(line, width-2, "…")))
 	}
 	return out
@@ -161,11 +169,11 @@ func (m *Model) failureLines(output string, width int) []string {
 
 // bandLines shows output on a background band, cut to the preview size. If only one line would be hidden
 // it is shown instead, since "1 more line" saves nothing.
-func (m *Model) bandLines(output string, width int) []string {
+func (m *Model) bandLines(output string, width int, expanded, selected bool) []string {
 	text := strings.TrimRight(strings.ReplaceAll(ansi.Strip(output), "\t", "    "), "\n ")
 	all := strings.Split(text, "\n")
 	shown := all
-	if len(all) > cardPreviewLines+1 {
+	if !expanded && len(all) > cardPreviewLines+1 {
 		shown = all[:cardPreviewLines]
 	}
 
@@ -174,7 +182,11 @@ func (m *Model) bandLines(output string, width int) []string {
 		out = append(out, m.sty.band.Width(width).Render(" "+ansi.Truncate(line, width-2, "…")))
 	}
 	if hidden := len(all) - len(shown); hidden > 0 {
-		out = append(out, m.sty.bandHint.Width(width).Render(fmt.Sprintf(" … (%d more lines)", hidden)))
+		hint := fmt.Sprintf(" … (%d more lines)", hidden)
+		if selected {
+			hint += " · enter to expand"
+		}
+		out = append(out, m.sty.bandHint.Width(width).Render(hint))
 	}
 	return out
 }

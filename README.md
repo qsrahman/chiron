@@ -3,7 +3,7 @@
 A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI, and works on your
 machine through tools (files, shell, web, todo, questions) and optional MCP servers.
 
-> **Status: Phase 4a.1 (v0.4.0).** You can chat with the model in a terminal UI or send a single prompt from the
+> **Status: Phase 4a.2 (v0.4.1).** You can chat with the model in a terminal UI or send a single prompt from the
 > command line. The machinery for tool calls is in place (calls run in parallel when safe, and show up as cards
 > in the chat), but no tools ship yet, so the model still cannot touch your files. Tools and MCP arrive in the
 > next phases; see [PLAN.md](PLAN.md). This README is updated as each phase lands.
@@ -41,6 +41,18 @@ Type `/` in the chat to list them; Up/Down choose, Tab completes, Esc closes. Th
 | `/context` | Estimated size of the instructions, tools and history |
 
 A lone `/word` that is no command is reported and not sent; a longer line such as `/usr/bin is missing` is a prompt.
+
+## Queue and tool cards
+
+While the model works you can keep typing: Enter adds the prompt to a list above the input (the next three are
+shown, the rest counted), and each is sent when the turn before it ends. **Ctrl-C** cancels the turn and drops the
+queue. After a turn that fails on its own the queue is held and a notice says how many prompts are waiting: Enter on
+an empty line sends the first. **Up** on an empty input takes the last queued prompt back to edit. Commands are never
+queued; they wait for the turn to end.
+
+**Tab** (or Shift+Tab) on an empty input selects a tool card, newest first; **Enter** or **Space** switches it
+between a five-line preview and its whole output, and the screen scrolls to keep it in view. **Esc**, or typing,
+goes back to the input.
 
 ## Approvals
 
