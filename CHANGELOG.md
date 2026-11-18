@@ -4,6 +4,18 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Fixed
+
+- The approval dialog ignores keys for half a second after it opens (Ctrl-C excepted): a "y" typed ahead could answer
+  it.
+- The dialog no longer makes the screen taller than a small window, and leaves the top row free when it can.
+- The "For the session" line shows control characters as escapes, like the details.
+
+### Changed
+
+- Internal: `bandLines` and `failureLines` take the entry, the queue height comes from its rows, the dialog choices have
+  names, `/context` shares the number formatting, and a few tests were tidied.
+
 ## [0.4.1] - 2026-11-18
 
 ### Added

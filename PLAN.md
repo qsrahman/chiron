@@ -138,6 +138,8 @@ synthetic messages. Real-API checks are manual and documented in the README.
 - **What the user approves is what runs:** `Details` is shown without the usual sanitising: control characters appear as
   visible escapes (`\x1b`, `\r`), long details are never cut (the modal scrolls) and a size line says how big they are.
   The denial text is fixed; there is no note to the model.
+- **Stray keys:** the modal ignores every key but Ctrl-C for 500 ms after it opens, so type-ahead (a "y" in the middle
+  of a word) cannot answer it. A window too small for the modal gets a screen no taller than itself.
 - **Modal (TUI):** a rounded, primary-coloured dialog centered over the transcript (lipgloss `Layer`/`Compositor`),
   scrollable when the details are long. Options: Allow, Allow for session, Deny, with **Deny preselected** so an
   answer by reflex refuses; keys `y`, `s`, `n`/`Esc`, arrows and Enter. A prototype of the overlay comes first; if

@@ -62,7 +62,9 @@ of the screen shows what is about to happen, with **Allow** (`y`), **Allow for s
 (long ones scroll with Up/Down and PgUp/PgDn) and control characters appear as visible escapes such as `\x1b`
 and `\r`, so what you allow is exactly what runs. A session grant covers the same tool with the same key (for
 example the same command) until you quit; `/tools` lists what is allowed. A denied call is reported to the model,
-which is told not to try again. Ctrl-C with the dialog open cancels the turn.
+which is told not to try again. Ctrl-C with the dialog open cancels the turn. Keys pressed in the first half second
+after the dialog opens are ignored (Ctrl-C excepted), so a prompt that appears while you type cannot be answered by
+a stray letter.
 
 With `-p` nobody can answer, so calls that would ask are denied (a notice goes to stderr) unless you pass `--yes`,
 which allows every call for that run. No built-in tool can change anything yet; they arrive in Phase 5.

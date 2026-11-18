@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -11,8 +12,23 @@ import (
 	"github.com/qsrahman/desk-agent/internal/agent"
 )
 
-// asking returns a model whose turn has asked about a call, and the channel the answer arrives on.
+// asking returns a model whose turn has asked about a call, once the guard against stray keys has passed, and the
+// channel the answer arrives on.
 func asking(t *testing.T, details string) (Model, chan agent.Decision, *fakeAgent) {
+	t.Helper()
+	m, reply, a := askingNow(t, details)
+	return waitOut(m), reply, a
+}
+
+// waitOut moves the clock past the guard.
+func waitOut(m Model) Model {
+	now := m.now()
+	m.now = func() time.Time { return now.Add(answerGuard) }
+	return m
+}
+
+// askingNow is asking without the wait: the modal has just opened.
+func askingNow(t *testing.T, details string) (Model, chan agent.Decision, *fakeAgent) {
 	t.Helper()
 	a := &fakeAgent{block: true}
 	m := sized(a, 100, 30)
@@ -27,7 +43,7 @@ func letter(code rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: code, Text
 
 func TestModalOpensOnDenyAndEnterRefuses(t *testing.T) {
 	m, reply, _ := asking(t, "contents")
-	if !m.approval.open || choices[m.approval.choice].decision != agent.Deny {
+	if !m.approval.open || m.approval.choice != choiceDeny {
 		t.Fatalf("the modal should open with Deny selected: %+v", m.approval)
 	}
 
@@ -77,11 +93,35 @@ func TestModalTakesEveryKeyExceptCtrlC(t *testing.T) {
 	if m.input.Value() != "" || len(a.texts) != 1 {
 		t.Errorf("a key reached the input: %q, prompts sent %v", m.input.Value(), a.texts)
 	}
+}
 
-	m, _, a = func() (Model, chan agent.Decision, *fakeAgent) { return asking(t, "contents") }()
+func TestCtrlCWorksAtOnceWithTheModalOpen(t *testing.T) {
+	m, _, a := askingNow(t, "contents")
+
 	m, _ = update(m, ctrl('c'))
+
 	if !m.cancelling || a.ctx.Err() == nil {
-		t.Error("Ctrl-C with the modal open should cancel the turn")
+		t.Error("Ctrl-C with the modal open should cancel the turn, even inside the guard time")
+	}
+}
+
+// A prompt can appear while the user is typing; a "y" in the middle of a word must not answer it.
+func TestKeysRightAfterTheModalOpensAreIgnored(t *testing.T) {
+	m, reply, _ := askingNow(t, "rm -rf x")
+
+	for _, r := range "yes please" {
+		m, _ = update(m, letter(r))
+	}
+	m, _ = update(m, enter)
+
+	if len(reply) != 0 || !m.approval.open {
+		t.Fatalf("a key answered the prompt inside the guard time (open %v)", m.approval.open)
+	}
+
+	m = waitOut(m)
+	m, _ = update(m, letter('n'))
+	if d := <-reply; d != agent.Deny {
+		t.Errorf("answered %v", d)
 	}
 }
 
@@ -163,6 +203,39 @@ func TestLongLinesAreWrappedNotCut(t *testing.T) {
 		if ansi.StringWidth(l) > m.modalInnerWidth() {
 			t.Errorf("a details line is %d cells wide, wider than the %d of the modal", ansi.StringWidth(l), m.modalInnerWidth())
 		}
+	}
+}
+
+// The modal must never make the screen taller than the window, and must keep its buttons when it can.
+func TestModalFitsSmallWindows(t *testing.T) {
+	for _, height := range []int{8, 11, 12, 14, 16, 24, 40} {
+		m, _, _ := asking(t, strings.Repeat("line\n", 40))
+		m, _ = update(m, tea.WindowSizeMsg{Width: 100, Height: height})
+
+		out := ansi.Strip(m.View().Content)
+		if rows := strings.Count(out, "\n") + 1; rows > height {
+			t.Errorf("height %d: the screen has %d rows", height, rows)
+		}
+		// From 12 rows the whole modal fits: both of its bottom corners and the input box's are on screen.
+		if height >= 12 && strings.Count(out, "╯") < 2 {
+			t.Errorf("height %d: the modal is cut off:\n%s", height, out)
+		}
+		// From 16 rows it leaves the title row free, so the window does not look filled by the dialog alone.
+		if height >= 16 && !strings.Contains(strings.SplitN(out, "\n", 2)[0], "desk-agent") {
+			t.Errorf("height %d: the dialog covers the header:\n%s", height, out)
+		}
+	}
+}
+
+// What the session grant covers is shown as exactly as the details.
+func TestGrantKeyIsShownWithEscapes(t *testing.T) {
+	m, _, _ := asking(t, "contents")
+	m.approval.req.GrantKey = "echo hi\rrm -rf ~"
+
+	view := m.View().Content
+
+	if strings.Contains(view, "\r") || !strings.Contains(ansi.Strip(view), `echo hi\rrm -rf ~`) {
+		t.Errorf("the grant key is not shown with its escapes:\n%s", ansi.Strip(view))
 	}
 }
 

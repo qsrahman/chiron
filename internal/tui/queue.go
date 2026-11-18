@@ -51,22 +51,25 @@ func (m *Model) sendQueued() tea.Cmd {
 	return m.startTurn(prompt)
 }
 
-func (m *Model) queueHeight() int {
-	return min(len(m.queue), maxQueueRows) + min(1, max(0, len(m.queue)-maxQueueRows))
-}
-
-// queueView lists the next prompts above the input, one line each.
-func (m *Model) queueView() string {
-	if len(m.queue) == 0 {
-		return ""
-	}
-	rows := make([]string, 0, maxQueueRows+1)
+// queueRows lists the next prompts above the input, one line each, and counts the rest.
+func (m *Model) queueRows() []string {
+	var rows []string
 	for _, text := range m.queue[:min(len(m.queue), maxQueueRows)] {
 		line, _, _ := strings.Cut(strings.TrimSpace(sanitize(text)), "\n")
 		rows = append(rows, ansi.Truncate(m.sty.toolMeta.Render("› queued  "+line), m.contentWidth()-gutter, "…"))
 	}
 	if more := len(m.queue) - maxQueueRows; more > 0 {
 		rows = append(rows, m.sty.toolMeta.Render(fmt.Sprintf("  + %d more", more)))
+	}
+	return rows
+}
+
+func (m *Model) queueHeight() int { return len(m.queueRows()) }
+
+func (m *Model) queueView() string {
+	rows := m.queueRows()
+	if len(rows) == 0 {
+		return ""
 	}
 	return indent(strings.Join(rows, "\n"), gutter)
 }

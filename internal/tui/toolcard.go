@@ -146,19 +146,19 @@ func (m *Model) cardBody(e entry, width int) []string {
 	case e.denied:
 		return []string{m.sty.toolMeta.Render("denied by you")}
 	case e.failed:
-		return m.failureLines(e.output, width, e.expanded)
+		return m.failureLines(e, width)
 	}
-	return m.bandLines(e.output, width, e.expanded, e.selected)
+	return m.bandLines(e, width)
 }
 
 // failureLines shows an error as a badge followed by its first lines.
-func (m *Model) failureLines(output string, width int, expanded bool) []string {
-	message := strings.TrimPrefix(strings.TrimSpace(output), "error: ")
+func (m *Model) failureLines(e entry, width int) []string {
+	message := strings.TrimPrefix(strings.TrimSpace(e.output), "error: ")
 	badge := m.sty.badge.Render("ERROR")
 	lines := strings.Split(ansi.Strip(message), "\n")
 	out := []string{badge + " " + m.sty.errorText.Render(ansi.Truncate(lines[0], width-ansi.StringWidth(badge)-1, "…"))}
 	shown := len(lines)
-	if !expanded {
+	if !e.expanded {
 		shown = min(shown, cardPreviewLines)
 	}
 	for _, line := range lines[1:shown] {
@@ -169,11 +169,11 @@ func (m *Model) failureLines(output string, width int, expanded bool) []string {
 
 // bandLines shows output on a background band, cut to the preview size. If only one line would be hidden
 // it is shown instead, since "1 more line" saves nothing.
-func (m *Model) bandLines(output string, width int, expanded, selected bool) []string {
-	text := strings.TrimRight(strings.ReplaceAll(ansi.Strip(output), "\t", "    "), "\n ")
+func (m *Model) bandLines(e entry, width int) []string {
+	text := strings.TrimRight(strings.ReplaceAll(ansi.Strip(e.output), "\t", "    "), "\n ")
 	all := strings.Split(text, "\n")
 	shown := all
-	if !expanded && len(all) > cardPreviewLines+1 {
+	if !e.expanded && len(all) > cardPreviewLines+1 {
 		shown = all[:cardPreviewLines]
 	}
 
@@ -183,7 +183,7 @@ func (m *Model) bandLines(output string, width int, expanded, selected bool) []s
 	}
 	if hidden := len(all) - len(shown); hidden > 0 {
 		hint := fmt.Sprintf(" … (%d more lines)", hidden)
-		if selected {
+		if e.selected {
 			hint += " · enter to expand"
 		}
 		out = append(out, m.sty.bandHint.Width(width).Render(hint))

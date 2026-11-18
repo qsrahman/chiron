@@ -9,8 +9,6 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	"golang.org/x/text/language"
-	"golang.org/x/text/message"
 
 	"github.com/qsrahman/desk-agent/internal/config"
 )
@@ -200,20 +198,19 @@ func (m *Model) toolsCommand(string) (tea.Cmd, error) {
 
 func (m *Model) contextCommand(string) (tea.Cmd, error) {
 	est := m.agent.ContextEstimate()
-	p := message.NewPrinter(language.English)
 	rows := [][2]string{
-		{"instructions", p.Sprintf("~%d tokens", est.Instructions)},
-		{fmt.Sprintf("tools (%d)", est.ToolCount), p.Sprintf("~%d tokens", est.Tools)},
-		{"history", p.Sprintf("~%d tokens", est.History)},
-		{"total", p.Sprintf("~%d tokens", est.Total())},
+		{"instructions", "~" + count(est.Instructions) + " tokens"},
+		{fmt.Sprintf("tools (%d)", est.ToolCount), "~" + count(est.Tools) + " tokens"},
+		{"history", "~" + count(est.History) + " tokens"},
+		{"total", "~" + count(est.Total()) + " tokens"},
 	}
 	if est.LastInput > 0 {
-		rows = append(rows, [2]string{"last request", p.Sprintf("%d tokens, counted by the server", est.LastInput)})
+		rows = append(rows, [2]string{"last request", count(int(est.LastInput)) + " tokens, counted by the server"})
 	} else {
 		rows = append(rows, [2]string{"last request", "not known yet"})
 	}
 	if m.info.ContextWindow > 0 {
-		rows = append(rows, [2]string{"window", p.Sprintf("%d tokens", m.info.ContextWindow)})
+		rows = append(rows, [2]string{"window", count(m.info.ContextWindow) + " tokens"})
 	}
 	m.sayTable(rows)
 	return nil, nil

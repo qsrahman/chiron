@@ -14,7 +14,7 @@ import (
 var (
 	tab      = tea.KeyPressMsg{Code: tea.KeyTab}
 	shiftTab = tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
-	escape_  = tea.KeyPressMsg{Code: tea.KeyEscape}
+	escKey   = tea.KeyPressMsg{Code: tea.KeyEscape}
 	space    = tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 )
 
@@ -88,15 +88,14 @@ func TestEnterAndSpaceToggleTheWholeOutput(t *testing.T) {
 }
 
 func TestEnterOnASelectedCardDoesNotSend(t *testing.T) {
-	a := &fakeAgent{}
 	m := withCards(t, lines(20))
-	m.agent = a
+	a := m.agent.(*fakeAgent)
 	m, _ = update(m, tab)
 
 	m, cmd := update(m, enter)
 
-	if cmd != nil && len(a.texts) != 0 {
-		t.Errorf("Enter sent a prompt: %v", a.texts)
+	if cmd != nil || len(a.texts) != 0 || m.events != nil {
+		t.Errorf("Enter on a selected card started a turn: cmd %v, sent %v", cmd != nil, a.texts)
 	}
 }
 
@@ -104,7 +103,7 @@ func TestEscapeEndsTheSelection(t *testing.T) {
 	m := withCards(t, "a")
 	m, _ = update(m, tab)
 
-	m, _ = update(m, escape_)
+	m, _ = update(m, escKey)
 
 	if m.card != -1 || strings.Contains(screenText(m), "▸") {
 		t.Error("Esc should clear the selection")

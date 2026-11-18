@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
@@ -17,38 +18,48 @@ import (
 
 // The answers the modal offers, left to right. Deny is the one selected when it opens, so an answer by reflex
 // refuses.
-var choices = []struct {
+const (
+	choiceAllow = iota
+	choiceSession
+	choiceDeny
+)
+
+var choices = [...]struct {
 	label    string
 	decision agent.Decision
 }{
-	{"Allow", agent.Allow},
-	{"Allow for session", agent.AllowSession},
-	{"Deny", agent.Deny},
+	choiceAllow:   {"Allow", agent.Allow},
+	choiceSession: {"Allow for session", agent.AllowSession},
+	choiceDeny:    {"Deny", agent.Deny},
 }
 
-const denyChoice = 2
+// answerGuard is how long after the modal opens its keys are ignored (Ctrl-C excepted). A prompt can appear while
+// the user is typing, and the next keystroke, a "y" in the middle of a word, must not answer it.
+const answerGuard = 500 * time.Millisecond
 
 // Sizes of the modal, in cells.
 const (
 	modalMaxWidth    = 80
-	modalChrome      = 14 // rows around the details: border, padding, title, summary, size, buttons, session note
+	modalChrome      = 11 // rows around the details: border 2, padding 2, title, summary, gap, size, gap, buttons, session note
+	modalScreenGap   = 2  // rows left free above and below the modal when the window allows
 	modalMaxDetails  = 15
-	modalMinDetails  = 3
+	modalMinDetails  = 1
 	modalSideMargins = 4
 )
 
 // approval is the modal that asks about a call. It is open while the agent waits for the answer.
 type approval struct {
-	open    bool
-	req     agent.ApprovalRequested
-	choice  int
-	details viewport.Model
+	open     bool
+	req      agent.ApprovalRequested
+	openedAt time.Time // when the modal appeared, for answerGuard
+	choice   int
+	details  viewport.Model
 }
 
 // openApproval shows the modal for a request.
 func (m *Model) openApproval(req agent.ApprovalRequested) {
-	req.Tool, req.Summary, req.GrantKey = sanitize(req.Tool), sanitize(req.Summary), sanitize(req.GrantKey)
-	m.approval = approval{open: true, req: req, choice: denyChoice}
+	req.Tool, req.Summary = sanitize(req.Tool), sanitize(req.Summary)
+	m.approval = approval{open: true, req: req, openedAt: m.now(), choice: choiceDeny}
 	m.layoutApproval()
 }
 
@@ -60,7 +71,7 @@ func (m *Model) layoutApproval() {
 	}
 	text := ansi.Hardwrap(strings.ReplaceAll(escape(m.approval.req.Details), "\t", "    "), m.modalInnerWidth(), true)
 	rows := strings.Count(text, "\n") + 1
-	m.approval.details = viewport.New(viewport.WithWidth(m.modalInnerWidth()), viewport.WithHeight(min(rows, max(modalMinDetails, min(modalMaxDetails, m.height-modalChrome)))))
+	m.approval.details = viewport.New(viewport.WithWidth(m.modalInnerWidth()), viewport.WithHeight(min(rows, max(modalMinDetails, min(modalMaxDetails, m.height-modalChrome-2*modalScreenGap)))))
 	m.approval.details.SetContent(text)
 }
 
@@ -76,6 +87,9 @@ func (m *Model) answer(d agent.Decision) {
 
 // approvalKey handles the keys while the modal is open: every key belongs to it except Ctrl-C.
 func (m Model) approvalKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	if m.now().Sub(m.approval.openedAt) < answerGuard {
+		return m, nil
+	}
 	n := len(choices)
 	switch {
 	case key.Matches(msg, m.keys.yes):
@@ -111,7 +125,7 @@ func (m *Model) approvalView() string {
 
 	covers := "every call to " + a.req.Tool
 	if a.req.GrantKey != "" {
-		covers = a.req.Tool + ": " + a.req.GrantKey
+		covers = a.req.Tool + ": " + escape(a.req.GrantKey) // as exact as the details: it may be the command itself
 	}
 
 	buttons := make([]string, len(choices))
@@ -141,10 +155,15 @@ func (m *Model) overlay(screen string) string {
 	modal := m.approvalView()
 	x := (m.width - lipgloss.Width(modal)) / 2
 	y := (m.height - lipgloss.Height(modal)) / 2
-	return lipgloss.NewCompositor(
+	out := lipgloss.NewCompositor(
 		lipgloss.NewLayer(screen),
 		lipgloss.NewLayer(modal).X(max(0, x)).Y(max(0, y)).Z(1),
 	).Render()
+	// A window too small for the modal must not get a screen taller than itself.
+	if rows := strings.Split(out, "\n"); len(rows) > m.height {
+		out = strings.Join(rows[:m.height], "\n")
+	}
+	return out
 }
 
 // count formats a number with thousands separators.
