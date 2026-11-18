@@ -135,7 +135,7 @@ synthetic messages. Real-API checks are manual and documented in the README.
 - **Non-interactive mode:** with `-p` nobody can answer, so a mutating call is denied with the usual denial text unless
   `--yes` was given, which allows every call for that run. There is no per-tool list.
 - **Grants last until the program exits** and survive `/reset` (a reset clears context, not permissions). There is no
-  `auto_approve` list for built-in tools yet; it arrives with the tools in Phase 5 (MCP's `autoApprove` is in 4b).
+  `auto_approve` list for built-in tools yet; it arrives with the tools in Phase 5 (MCP's `autoApprove` is in 4b.1).
 - **What the user approves is what runs:** `Details` is shown without the usual sanitising: control characters appear as
   visible escapes (`\x1b`, `\r`), long details are never cut (the modal scrolls) and a size line says how big they are.
   The denial text is fixed; there is no note to the model.
@@ -154,7 +154,7 @@ synthetic messages. Real-API checks are manual and documented in the README.
   Enter or Space toggle that card; Esc clears the selection. Collapsed cards show 5 lines, expanded ones show the
   whole output (still width-clamped, at most the 20 KiB the agent keeps) and the viewport scrolls to keep the selected card in view.
 
-### 4.6 MCP client (Phase 4b)
+### 4.6 MCP client (Phases 4b.1 and 4b.2)
 
 Informed by a read of muagent's `mcp_client.py` and `mcp_hub.py` (Python; see section 9.2).
 
@@ -164,6 +164,12 @@ Informed by a read of muagent's `mcp_client.py` and `mcp_hub.py` (Python; see se
 - **Trust:** the server's own `readOnlyHint` is **ignored**: a server can claim anything about itself. Every MCP call
   asks for approval unless the tool is listed in that server's `autoApprove`. Because nothing is declared
   read-only, MCP calls run one at a time.
+- **Prompt:** the adapter describes its own calls (`tools.Describer`): the summary is `server → tool`, the details are
+  the pretty-printed arguments, and a muted line under them says where the server runs (its command, or the host of
+  its URL), so the user sees which program receives the call. The server's own description is not shown there. For
+  this `tools.Prompt` gets a `Source` field that the dialog shows. **Allow for session covers that tool with any
+  arguments** (an empty grant key), listed by `/tools`; there is no per-server grant.
+- **Descriptions** and schemas go to the model as the server gives them (only results are treated as untrusted data).
 - **Process environment:** a stdio server inherits the full environment of desk-agent plus its own `env` (a user
   decision). This means the server can see variables such as `OPENAI_API_KEY`; the README says so. Tightening it
   later is a small change (an allow-list in `internal/mcp`).
@@ -179,7 +185,8 @@ Informed by a read of muagent's `mcp_client.py` and `mcp_hub.py` (Python; see se
   again, and that server fails without stopping the others. (The three top-level fields keep the lenient
   environment fallback of section 6.) Server names may only use letters, digits, `_` and `-`.
 - **Connecting:** all enabled servers are launched before any is waited for, connect and list their tools in
-  parallel, and share one 10 s deadline counted from the launch. The chat opens at once and shows "connecting"; a
+  parallel, and share one 10 s deadline counted from the launch (not configurable per server; `--no-mcp` starts none
+  for a run, in the TUI and with `-p`). The chat opens at once and shows "connecting"; a
   prompt sent before they finish waits (up to that deadline) so the model sees the tools. Failure notices reach the
   TUI as messages, never printed over the screen. The registry is built once from the servers that connected in time;
   a late or failed server stays out for the session, and tool-list change notifications are ignored.
@@ -199,8 +206,8 @@ Informed by a read of muagent's `mcp_client.py` and `mcp_hub.py` (Python; see se
   as orders, cut to 4000 characters. Without it they are not used.
 - **Results:** text parts joined; structured content used when there is no text; images and audio become a short
   placeholder (`[image: image/png, 12 KB]`); resource links keep their URL; embedded text resources are included.
-  `isError` becomes a tool failure. Output is capped at 50 KB (cut with a note); each call has a 2-minute timeout, and
-  cancelling the turn cancels the request.
+  `isError` becomes a tool failure. Output goes through the agent's central 20 KiB cap like every tool result (cut with a
+  note); each call has a 2-minute timeout, and cancelling the turn cancels the request.
 - **Shutdown:** servers close in parallel (closing one can take seconds), including servers that failed to start.
 - **Cards:** MCP calls show as `server → tool`, not the mangled name.
 - **Built-in clash:** a built-in tool with the same name as an MCP tool is kept and the MCP tool is left out with a
@@ -302,7 +309,7 @@ From muagent's `commands.py`, the completer in `repl.py` and `tests/test_command
     when the server's count of the last request still holds), last request.
   - `/help` lists every registered command, sorted, in aligned columns wrapped to the width, then the keys that work.
   - `/tools` (4a.1): groups tools into run without asking, allowed this session, ask first; `Tools: none` when empty.
-  - `/servers` and `/reconnect` (4b): see section 4.6.
+  - `/servers` and `/reconnect` (4b.2): see section 4.6.
 - **Settings are read where used,** so `/model` and `/effort` take effect on the next request. The agent exposes
   `SetModel` and `SetReasoningEffort`, which are only called between turns.
 
@@ -353,7 +360,7 @@ From muagent's `commands.py`, the completer in `repl.py` and `tests/test_command
 - Precedence (until Phase 3.7): flags (`--model`, `--base-url`) override env vars (`DESK_AGENT_MODEL`,
   `OPENAI_BASE_URL`, `OPENAI_API_KEY`), which override the file, which overrides the built-in default model. From
   Phase 3.7: flags, then `OPENAI_API_KEY` for the key only, then the file, then the defaults. `base_url` and `api_key`
-  may be omitted. `mcpServers` is parsed from Phase 4b on; until then it is ignored.
+  may be omitted. `mcpServers` is parsed from Phase 4b.1 on; until then it is ignored.
 - New settings in Phase 3.7, each with a flag: `reasoning_effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`;
   unset sends none, because non-reasoning models reject it; the flag also takes `default`), `max_turns` (model calls
   per prompt, default 25, replaces the fixed constant) and `streaming` (default true; false makes one non-streaming
@@ -383,7 +390,8 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 3.8 (done, v0.3.4) | Slash commands (from the muagent study, section 4.8). A command list in `internal/tui` (a slice built in one place, no global map): each `Command` has a name, a one-line description, an argument source and a handler. Dispatch as in muagent: the first word is lowercased, the rest keeps its case, whitespace around the line is ignored; a **lone** unknown `/word` is reported and never sent to the model, a longer line such as `/usr/bin is missing` is sent as a prompt; a handler error is shown and the session survives. **Inline suggestion list** between the transcript and the input while typing `/` (matching commands with descriptions, Up/Down to pick, Tab to accept; Enter accepts a partly typed word and runs a whole one; Esc to close), with argument completion from a fixed list (`/effort` levels plus `default`) or from live state. **Output** as dim info entries in the transcript (aligned tables for `/help`, `/context`), never part of the model's history. **Commands refused while a turn runs** (the message says to wait or press Ctrl-C). Commands: `/help` (every command in sorted aligned columns, plus the keys that work), `/exit` and `/quit`, `/clear` (clears the transcript view; history kept), `/reset`, `/model [NAME]`, `/effort [LEVEL]`, `/undo`, `/retry`, `/context` (instructions, tool definitions and history estimated at about 4 bytes of UTF-8 per token, the server's count of the last request when known). Agent additions: `Reset`, `Undo`, `Rewind`, `SetModel`, `SetReasoningEffort`, a token estimator and `ContextEstimate`. Later phases add their own commands with their features: `/tools` (4a), `/servers` and `/reconnect` (4b), `/compact` and `/summary` (9). | Each command behaves as specified in section 4.8; names are unique and every description is one short line; `/help` lists every registered command in sorted order; a lone unknown `/word` is not sent to the model and `/usr/bin is missing` is; a command typed during a turn is refused; `/retry` after `/undo` does not remove an older exchange; `/effort` rejects an unknown level and lists the valid ones; the suggestion list filters as you type; golden screens for the list and for `/help`. Tagged v0.3.4. |
 | 4a.1 (done, v0.4.0) | Approvals (section 4.5). **Agent:** a mutating call has its arguments validated, then emits `ApprovalRequested` and waits for the answer or a cancel; an optional interface lets a tool describe its own prompt (summary, details, grant key); session grants kept on the agent by tool name plus grant key, until the program exits and surviving `/reset`; the denial text for the model. Non-interactive `-p`: mutating calls are denied (the model is told so) unless `--yes` is given, which allows every call for that run. **TUI:** centered approval modal (starts on Deny; `y`, `s`, `n`/Esc, arrows, Enter; details scroll, are never cut and show control characters as visible escapes such as `\x1b` and `\r`, with a size line), a denied card state, and `/tools` (run without asking / allowed this session / ask first). Exercised with fake mutating tools in tests; no real mutating tool exists until Phase 5. | Allow, Allow for session and Deny each behave as specified; a denied call is reported to the model and not retried; an invalid call is answered without asking; cancelling closes an open prompt and the call is reported cancelled; session grants are scoped by grant key and survive `/reset`; `-p` denies without `--yes` and allows with it; the modal shows `\r` and `\x1b` as text; golden tests for the modal and `/tools`. Tagged v0.4.0. |
 | 4a.2 (done, v0.4.1) | Queue and expandable cards. **Queue:** Enter while a turn runs adds the prompt to a list shown above the input; the next is sent when a turn ends without error; Ctrl-C cancels the turn and drops the queue (the UI says how many were dropped); after a turn that fails on its own the queue is held, a notice says N prompts are waiting and nothing is sent until the next Enter; Up on an empty input pulls the last queued prompt back into the input. Commands are still refused while a turn runs and are never queued. **Cards:** Tab / Shift+Tab select a card when the input is empty, Enter or Space toggle 5 lines versus the whole result, Esc returns to typing; the viewport scrolls so the selected card stays visible. | Queued prompts run in order; an error holds the queue and Ctrl-C drops it; Up returns the last queued prompt; cards expand and collapse and the selected one stays in view; golden tests for the queue and an expanded card. Tagged v0.4.1. |
-| 4b | MCP client (section 4.6): `mcpServers` config (`command`/`args`/`env` or `url`/`headers`, `enabled`, `autoApprove`, `tools`, `instructions`), strict `${VAR}` expansion, URL and redirect checks, parallel background connect with a shared deadline, restart after a lost connection (3 per session), tool adapter with unique names, `server → tool` cards, startup status, private stderr logs, and the `/servers` (state, tool count, hidden-tool count, token cost of the definitions, log path) and `/reconnect [name]` commands (the reconnect waits for background startup before deciding what failed, and applies its change between turns). | A real stdio server and an httptest HTTP server both work, including headers; an unapproved MCP call is refused and an `autoApprove`d one is not; a cross-origin redirect does not carry headers; a killed server is restarted by the next call (at most 3 times); a failing or slow server is reported and does not stop the agent; golden test for the startup status. Tagged v0.5.0. |
+| 4b.1 | MCP client, first part (section 4.6). `mcpServers` config typed and validated (`command`/`args`/`env` or `url`/`headers`, `enabled`, `autoApprove`; the other fields arrive in 4b.2 and are an unknown key until then), strict `${VAR}` expansion, URL and redirect checks, parallel background connect with a shared 10 s deadline (a server that misses it stays out until 4b.2's `/reconnect`), stdio and streamable HTTP transports, private stderr logs, tool adapter with unique names and its own approval prompt (server, tool, arguments, where the server runs), result mapping, the central output cap, `server → tool` cards, a startup status line per server and a count in the header, parallel shutdown, and `--no-mcp`. Registry and instructions are built when the connect finishes and handed to the agent (`SetTools`, between turns). `-p` waits for the servers. | A real stdio server and an httptest HTTP server both work, including headers; an unapproved MCP call asks and an `autoApprove`d one does not; Allow for session covers the tool; a cross-origin redirect does not carry headers; a failing or slow server is reported and does not stop the agent; no secret appears in errors, logs or status; `--no-mcp` starts nothing; golden tests for the startup status and the MCP prompt. Tagged v0.5.0. |
+| 4b.2 | MCP client, second part. Restart after a lost connection (3 per session; the call that found it dead fails and is not repeated), `/servers` (state, tool count, hidden-tool count, token cost of the definitions, log path) and `/reconnect [name]` (waits for background startup before deciding what failed, applies its change between turns through `SetTools`, and is how a late or failed server joins), the `tools` allow-list and `instructions` options. | A killed server is restarted by the next call (at most 3 times); `/reconnect` adds a server that missed the deadline and takes effect at the next turn; `tools` rejects a name the server lacks; `instructions` appear in the system prompt framed as notes from the server; golden tests for `/servers`. Tagged v0.5.1. |
 | 5 | `read_file` (line-numbered, `offset`/`limit`, default 200 lines, lines cut at 2000 characters), `list_dir`, `write_file`, `edit_file`, working-directory confinement. `edit_file` and `write_file` over an existing file require that it was read in this session and fail if it changed on disk since; a non-unique match returns a message asking for more context or `replace_all`. Edits show a unified diff in the approval prompt (`go-udiff`, already in the module graph). Tool descriptions live in embedded `.md` files. | Reads work and run in parallel; mutations go through the approval prompt; an edit without a prior read, after an outside change, or with an ambiguous match fails cleanly; paths outside the working tree are rejected. |
 | 6 | `shell`: every command asks for approval (no read-only allowlist in v1). Output is capped; the truncation marker names a file holding the full output. No background jobs in v1. | A hung command is killed on cancel and the loop recovers; long output is truncated with a pointer to the full file. |
 | 7 | `todo` (states pending/in_progress/completed, at most one in_progress, shown in the TUI), `ask_user` with typed questions (`yes_no`, `single_choice`, `multi_choice`, `free_text`; at most 5 choices; a description is required) | The model can pause, ask and resume; an invalid question is rejected with a clear error. |
@@ -412,7 +420,7 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 - Confirm the exact name of the MCP SDK's Streamable HTTP client transport and how to attach custom headers
   (Phase 4).
 - Phase 4a.1: the modal overlay was prototyped with lipgloss `Layer`/`Compositor` and works (done); no fallback needed.
-- Phase 4b: confirm OpenAI's tool-count and function-name limits for the Responses API with a real request.
+- Phase 4b.1: confirm OpenAI's tool-count and function-name limits for the Responses API with a real request.
 - Pick the HTML-to-markdown library (Phase 8).
 - Decide the session storage format and location (Phase 9).
 
