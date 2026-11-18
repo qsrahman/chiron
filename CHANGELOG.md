@@ -6,6 +6,13 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Changed (plan)
 
+- Studied muagent's slash commands. Added Phase 3.8 (slash commands, tag v0.3.4: dispatch rules, inline suggestion
+  list, info entries in the transcript, commands refused while a turn runs, and `/help`, `/exit`, `/quit`, `/clear`,
+  `/reset`, `/model`, `/effort`, `/undo`, `/retry`, `/context`). `/tools` moves to 4a, `/servers` and `/reconnect`
+  to 4b, and `/compact` and `/summary` stay in Phase 9. Details in `PLAN.md` sections 4.8 and 9.4.
+
+### Changed (plan)
+
 - Studied muagent (a Python agent) and recorded the findings in `PLAN.md` sections 4.7 and 9.3. Added Phase 3.7
   (Robustness, tag v0.3.3): keep stopped turns with a note, response classification and retries, stream retry,
   error hints, central output cap, sanitising, two prompts, Ctrl-C/Ctrl-D protection, strict config (unknown keys
