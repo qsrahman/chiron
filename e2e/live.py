@@ -137,7 +137,7 @@ def startup_and_chat():
     t = start()
     try:
         t.wait_for("mcp 1/1", 30)
-        t.contains("connected, 5 tools")
+        t.contains("connected · 5 tools")
         t.contains("beam:cloud") if "beam" in user_settings()[1] else None
         t.contains("Ask anything, or /help for commands...")
         t.lacks("Welcome")
