@@ -442,3 +442,29 @@ func TestThereIsNoWelcomeBannerAtStartOrAfterClear(t *testing.T) {
 	m, _ = typeAndEnter(t, m, "/clear")
 	check("after /clear", m)
 }
+
+// The placeholder is the one place that says commands exist, and it is not cut off in the middle of a phrase.
+func TestTheInputPlaceholderPointsToTheCommands(t *testing.T) {
+	for _, tt := range []struct {
+		width int
+		want  string
+	}{{160, placeholder}, {80, placeholder}, {50, placeholder}, {45, placeholderShort}, {40, placeholderShort}} {
+		view := ansi.Strip(sized(&fakeAgent{}, tt.width, 24).View().Content)
+		if !strings.Contains(view, tt.want) {
+			t.Errorf("width %d: the empty input does not show %q:\n%s", tt.width, tt.want, view)
+		}
+		if tt.want == placeholderShort && strings.Contains(view, placeholder) {
+			t.Errorf("width %d: the long form was used where it does not fit", tt.width)
+		}
+	}
+}
+
+// At every supported width the hint appears whole, in the long or the short form.
+func TestThePlaceholderIsNeverCutOff(t *testing.T) {
+	for width := 40; width <= 130; width++ {
+		view := ansi.Strip(sized(&fakeAgent{}, width, 24).View().Content)
+		if !strings.Contains(view, placeholder) && !strings.Contains(view, placeholderShort) {
+			t.Fatalf("width %d: neither form of the hint is on screen:\n%s", width, view)
+		}
+	}
+}

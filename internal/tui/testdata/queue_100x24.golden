@@ -19,6 +19,6 @@
    › queued  also add a test for it
    › queued  and update the docs
  ╭─────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ ❯ Ask something…                                                                                │
+ │ ❯ Ask anything, or /help for commands...                                                        │
  ╰─────────────────────────────────────────────────────────────────────────────────────────────────╯
   ctrl+c cancel · pgup/pgdn scroll

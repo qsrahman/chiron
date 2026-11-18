@@ -130,7 +130,7 @@ func (m *Model) inputStyles() {
 		state.EndOfBuffer = lipgloss.NewStyle()
 	}
 	m.input.SetStyles(s)
-	m.input.SetPromptFunc(2, func(info textarea.PromptInfo) string {
+	m.input.SetPromptFunc(promptWidth, func(info textarea.PromptInfo) string {
 		switch {
 		case info.LineNumber > 0:
 			return "  "

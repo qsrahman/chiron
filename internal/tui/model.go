@@ -132,11 +132,28 @@ type Model struct {
 	width, height int
 }
 
+// The empty input says what to do and where the commands are; in a narrow terminal the shorter form is used, since a
+// hint cut off in the middle of a phrase says less than a short one.
+const (
+	placeholder      = "Ask anything, or /help for commands..."
+	placeholderShort = "Ask anything, or /help..."
+)
+
+// promptWidth is the columns the prompt "❯ " takes in front of the text.
+const promptWidth = 2
+
+func placeholderFor(inputWidth int) string {
+	if inputWidth-promptWidth >= len([]rune(placeholder)) {
+		return placeholder
+	}
+	return placeholderShort
+}
+
 // New returns a model that sends prompts to a.
 func New(a Agent, info Info) Model {
 	keys := newKeyMap()
 	input := textarea.New()
-	input.Placeholder = "Ask something…"
+	input.Placeholder = placeholder
 	input.ShowLineNumbers = false
 	input.DynamicHeight = true
 	input.MinHeight = 1
@@ -448,6 +465,7 @@ func (m *Model) addEntry(e entry) {
 func (m *Model) layout() {
 	width := m.contentWidth()
 	m.input.SetWidth(width - boxFrame)
+	m.input.Placeholder = placeholderFor(m.input.Width())
 	inputHeight := m.input.Height() + 2 // plus the box border
 	m.help.SetWidth(width - 1)          // the bar drops its last hints instead of overflowing
 	m.viewport.SetWidth(width)

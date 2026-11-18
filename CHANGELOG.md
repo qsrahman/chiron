@@ -6,6 +6,8 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Changed
 
+- The empty input reads "Ask anything, or /help for commands..." (a shorter form in a narrow terminal, so that it is
+  never cut off), the one place that says commands exist.
 - The welcome banner is gone: the transcript is empty at start and after `/clear`. (`tui.Info.Version` went with it.)
 
 ### Changed
