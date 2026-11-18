@@ -67,7 +67,7 @@ func conversation(t *testing.T, width, height int) Model {
 		agent.ToolStarted{CallID: "c1", Name: "read_file", Arguments: `{"path":"main.go","limit":200}`},
 		agent.ToolFinished{CallID: "c1", Name: "read_file", Output: "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hi\")\n}\n\n// end"},
 		agent.ToolStarted{CallID: "c2", Name: "shell", Arguments: `{"command":"go test ./...","timeout":30}`},
-		agent.ToolFinished{CallID: "c2", Name: "shell", Output: "error: exit status 1\nFAIL desk-agent/internal/agent 0.4s", Failed: true},
+		agent.ToolFinished{CallID: "c2", Name: "shell", Output: "error: exit status 1\nFAIL desk-agent/internal/agent 0.4s", Outcome: agent.CallFailed},
 		agent.Usage{InputTokens: 2300, OutputTokens: 150},
 		agent.TextDelta{Text: "The tests fail; I'll look into it."},
 		agent.Done{},
@@ -114,7 +114,7 @@ func TestGoldenErrorAndCancelled(t *testing.T) {
 	sender := &fakeAgent{events: []agent.Event{
 		agent.TextDelta{Text: "Working on it"},
 		agent.ToolStarted{CallID: "c1", Name: "shell", Arguments: `{"command":"sleep 100"}`},
-		agent.ToolFinished{CallID: "c1", Name: "shell", Output: "error: context canceled", Failed: true, Cancelled: true},
+		agent.ToolFinished{CallID: "c1", Name: "shell", Output: "error: context canceled", Outcome: agent.CallCancelled},
 		agent.Error{Err: context.Canceled},
 	}}
 	m := sized(sender, 100, 24)

@@ -129,7 +129,7 @@ func TestCancelledTurnClosesTheModalAndMarksTheCard(t *testing.T) {
 	m, _, _ := asking(t, "contents")
 	m, _ = update(m, ctrl('c'))
 
-	m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "write", Failed: true, Cancelled: true}})
+	m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "write", Outcome: agent.CallCancelled}})
 	m, _ = update(m, eventMsg{agent.Error{Err: context.Canceled}})
 	m, _ = update(m, turnClosedMsg{})
 
@@ -140,7 +140,7 @@ func TestCancelledTurnClosesTheModalAndMarksTheCard(t *testing.T) {
 
 func TestDeniedCardSaysSo(t *testing.T) {
 	m, _, _ := asking(t, "contents")
-	m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "write", Failed: true, Denied: true, Output: "error: the user denied this call"}})
+	m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "write", Outcome: agent.CallDenied, Output: "error: the user denied this call"}})
 
 	card := ansi.Strip(m.entries[1].rendered)
 	if !strings.Contains(card, "⊘") || !strings.Contains(card, "denied by you") || strings.Contains(card, "ERROR") {

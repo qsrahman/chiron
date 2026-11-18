@@ -9,6 +9,8 @@ import (
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/qsrahman/desk-agent/internal/agent"
 )
 
 type role int
@@ -38,18 +40,16 @@ type entry struct {
 	rendered string
 
 	// Tool cards only.
-	callID    string
-	name      string
-	args      string // raw JSON arguments
-	started   time.Time
-	elapsed   time.Duration
-	done      bool
-	failed    bool
-	cancelled bool
-	denied    bool
-	selected  bool // the card chosen with Tab
-	expanded  bool // shows the whole output instead of the preview
-	output    string
+	callID   string
+	name     string
+	args     string // raw JSON arguments
+	started  time.Time
+	elapsed  time.Duration
+	done     bool
+	outcome  agent.Outcome
+	selected bool // the card chosen with Tab
+	expanded bool // shows the whole output instead of the preview
+	output   string
 }
 
 // contentWidth is the width of the transcript and the other full-width parts, excluding the left margin.

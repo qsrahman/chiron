@@ -13,17 +13,22 @@ type ToolStarted struct {
 	Arguments string // raw JSON as sent by the model
 }
 
+// Outcome is how a tool call ended.
+type Outcome int
+
+const (
+	CallOK        Outcome = iota
+	CallFailed            // an error, whose text the model read
+	CallCancelled         // the turn was cancelled while the call ran or before it ran: shown as interrupted, not as an error
+	CallDenied            // the user refused it, and the model was told so
+)
+
 // ToolFinished reports a tool call's result. Output is what the model sees, including error text.
 type ToolFinished struct {
-	CallID string
-	Name   string
-	Output string
-	Failed bool
-	// Denied is set when the user refused the call; the model was told so.
-	Denied bool
-	// Cancelled is set when the call failed because the turn was cancelled, so front-ends can show it
-	// as interrupted rather than as an error.
-	Cancelled bool
+	CallID  string
+	Name    string
+	Output  string
+	Outcome Outcome
 }
 
 // Decision is the user's answer to an approval request. The zero value refuses, so an answer that was never given

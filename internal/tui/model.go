@@ -82,21 +82,10 @@ type Model struct {
 	quitArmed bool
 	hint      string
 
-	// The suggestion list: the selected row, and the input text it was closed with Esc for.
-	sel       int
-	dismissed string
-
-	approval approval // the modal that asks about a tool call
-
-	// Prompts typed during a turn, and what became of the turn they were waiting for. failed is set by a turn that
-	// ended on an error of its own; dropped counts the prompts a cancel threw away, until it has been reported.
-	queue   []string
-	failed  bool
-	dropped int
-
-	// The selected tool card (an index into entries, -1 for none); reveal asks the next refresh to scroll to it.
-	card   int
-	reveal bool
+	suggest  suggestState // the list that opens while a command is typed
+	approval approval     // the modal that asks about a tool call
+	queue    queueState   // prompts typed during a turn
+	cards    cardState    // the tool card chosen with Tab
 
 	contextTokens int64 // size of the conversation after the latest response, 0 until known
 
@@ -126,7 +115,7 @@ func New(a Agent, info Info) Model {
 		viewport: viewport.New(),
 		input:    input,
 		keys:     keys,
-		card:     -1,
+		cards:    cardState{selected: -1},
 		width:    80,
 		height:   24,
 	}
@@ -245,7 +234,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.send):
 		text := strings.TrimSpace(m.input.Value())
 		if text == "" {
-			if !busy && len(m.queue) > 0 { // after an error the queue waits for this
+			if !busy && len(m.queue.prompts) > 0 { // after an error the queue waits for this
 				return m, m.sendQueued()
 			}
 			return m, nil
@@ -269,7 +258,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	if m.input.Value() != before {
-		m.sel = 0 // the list changed under the selection
+		m.suggest.sel = 0 // the list changed under the selection
 	}
 	return m, cmd
 }
@@ -295,7 +284,7 @@ func (m Model) submit(text string) (Model, tea.Cmd) {
 // taken from the queue must not wipe what the user is typing.
 func (m *Model) startTurn(text string) tea.Cmd {
 	m.addEntry(entry{role: roleUser, text: text})
-	m.failed = false
+	m.queue.failed = false
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
@@ -344,12 +333,12 @@ func (m *Model) handleEvent(event agent.Event) {
 		m.commitStreaming()
 		if errors.Is(e.Err, context.Canceled) {
 			m.addEntry(entry{role: roleNotice, text: "Cancelled"})
-			if m.dropped > 0 {
-				m.say("Dropped " + plural(m.dropped, "queued prompt"))
-				m.dropped = 0
+			if m.queue.dropped > 0 {
+				m.say("Dropped " + plural(m.queue.dropped, "queued prompt"))
+				m.queue.dropped = 0
 			}
 		} else {
-			m.failed = true
+			m.queue.failed = true
 			m.addEntry(entry{role: roleError, text: e.Err.Error()})
 		}
 	}
@@ -368,7 +357,7 @@ func (m *Model) finishTool(e agent.ToolFinished) {
 	for i := len(m.entries) - 1; i >= 0; i-- {
 		card := &m.entries[i]
 		if card.role == roleTool && card.callID == e.CallID {
-			card.done, card.failed, card.cancelled, card.denied, card.output = true, e.Failed, e.Cancelled, e.Denied, e.Output
+			card.done, card.outcome, card.output = true, e.Outcome, e.Output
 			card.elapsed = m.now().Sub(card.started)
 			card.rendered = m.render(*card)
 			return
@@ -449,8 +438,8 @@ func (m *Model) refresh() {
 	if follow {
 		m.viewport.GotoBottom()
 	}
-	if m.reveal && m.card >= 0 {
-		m.reveal = false
+	if m.cards.reveal && m.cards.selected >= 0 {
+		m.cards.reveal = false
 		m.showCard()
 	}
 }

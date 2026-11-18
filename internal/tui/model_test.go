@@ -272,7 +272,7 @@ func TestToolCardsShowProgressAndResult(t *testing.T) {
 		agent.ToolStarted{CallID: "c2", Name: "list_dir", Arguments: `{"path":"."}`},
 		// Parallel calls can finish in any order; each result must land on its own card.
 		agent.ToolFinished{CallID: "c2", Name: "list_dir", Output: "a.go\nb.go"},
-		agent.ToolFinished{CallID: "c1", Name: "read_file", Output: "error: no such file", Failed: true},
+		agent.ToolFinished{CallID: "c1", Name: "read_file", Output: "error: no such file", Outcome: agent.CallFailed},
 		agent.TextDelta{Text: "Done."},
 		agent.Done{},
 	}}
@@ -291,10 +291,10 @@ func TestToolCardsShowProgressAndResult(t *testing.T) {
 	}
 
 	failed, ok := m.entries[2], m.entries[3]
-	if !failed.done || !failed.failed || !strings.Contains(failed.rendered, "×") || !strings.Contains(failed.rendered, "ERROR") || !strings.Contains(failed.rendered, "no such file") {
+	if !failed.done || failed.outcome != agent.CallFailed || !strings.Contains(failed.rendered, "×") || !strings.Contains(failed.rendered, "ERROR") || !strings.Contains(failed.rendered, "no such file") {
 		t.Errorf("failed card not rendered as failed: %q", failed.rendered)
 	}
-	if !ok.done || ok.failed || !strings.Contains(ok.rendered, "✓") || !strings.Contains(ok.rendered, "b.go") {
+	if !ok.done || ok.outcome != agent.CallOK || !strings.Contains(ok.rendered, "✓") || !strings.Contains(ok.rendered, "b.go") {
 		t.Errorf("successful card not rendered as done: %q", ok.rendered)
 	}
 }

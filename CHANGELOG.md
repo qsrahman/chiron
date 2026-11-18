@@ -13,6 +13,9 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Changed
 
+- `ToolFinished` carries one `Outcome` (`CallOK`, `CallFailed`, `CallCancelled`, `CallDenied`) instead of the
+  overlapping `Failed`, `Cancelled` and `Denied` flags, and tool cards keep the same outcome.
+- The suggestion, queue and card state of the UI model are grouped into three small structs.
 - Internal: `bandLines` and `failureLines` take the entry, the queue height comes from its rows, the dialog choices have
   names, `/context` shares the number formatting, and a few tests were tidied.
 

@@ -10,6 +10,12 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// suggestState is the list's own state: the selected row, and the input text it was closed with Esc for.
+type suggestState struct {
+	sel       int
+	dismissed string
+}
+
 // maxSuggestions is the most rows the list shows at once; it scrolls with the selection.
 const maxSuggestions = 6
 
@@ -25,7 +31,7 @@ type suggestion struct {
 // request to complete rather than to run. Nothing is offered during a turn, because commands are refused then.
 func (m *Model) suggestions() (list []suggestion, typed bool) {
 	v := m.input.Value()
-	if m.events != nil || !strings.HasPrefix(v, "/") || v == m.dismissed {
+	if m.events != nil || !strings.HasPrefix(v, "/") || v == m.suggest.dismissed {
 		return nil, false
 	}
 	i := strings.IndexFunc(v, unicode.IsSpace)
@@ -59,18 +65,18 @@ func (m *Model) suggestions() (list []suggestion, typed bool) {
 
 // suggestKey handles the keys of an open list and reports whether it used the key.
 func (m *Model) suggestKey(msg tea.KeyPressMsg, list []suggestion, typed bool) bool {
-	m.sel = min(m.sel, len(list)-1)
+	m.suggest.sel = min(m.suggest.sel, len(list)-1)
 	switch {
 	case key.Matches(msg, m.keys.up):
-		m.sel = (m.sel + len(list) - 1) % len(list)
+		m.suggest.sel = (m.suggest.sel + len(list) - 1) % len(list)
 	case key.Matches(msg, m.keys.down):
-		m.sel = (m.sel + 1) % len(list)
+		m.suggest.sel = (m.suggest.sel + 1) % len(list)
 	case key.Matches(msg, m.keys.dismiss):
-		m.dismissed = m.input.Value()
+		m.suggest.dismissed = m.input.Value()
 	case key.Matches(msg, m.keys.complete):
-		m.acceptSuggestion(list[m.sel])
+		m.acceptSuggestion(list[m.suggest.sel])
 	case key.Matches(msg, m.keys.send):
-		chosen := list[m.sel]
+		chosen := list[m.suggest.sel]
 		// Complete a partly typed word; run what is typed when it is already whole (or nothing was typed).
 		if !typed || strings.EqualFold(strings.TrimSpace(chosen.accept), strings.TrimSpace(m.input.Value())) {
 			return false
@@ -85,7 +91,7 @@ func (m *Model) suggestKey(msg tea.KeyPressMsg, list []suggestion, typed bool) b
 func (m *Model) acceptSuggestion(s suggestion) {
 	m.input.SetValue(s.accept)
 	m.input.CursorEnd()
-	m.sel = 0
+	m.suggest.sel = 0
 }
 
 // suggestionHeight is the number of rows the list takes, 0 when it is closed.
@@ -99,7 +105,7 @@ func (m *Model) suggestionView() string {
 	if len(list) == 0 {
 		return ""
 	}
-	sel := min(m.sel, len(list)-1)
+	sel := min(m.suggest.sel, len(list)-1)
 	start := max(0, min(sel-maxSuggestions+1, len(list)-maxSuggestions))
 	if sel < start {
 		start = sel

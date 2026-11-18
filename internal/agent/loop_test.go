@@ -149,7 +149,7 @@ func TestToolCallRoundTrip(t *testing.T) {
 	if started.CallID != "call_1" || started.Name != "read" || started.Arguments != `{"name":"a"}` {
 		t.Errorf("ToolStarted = %+v", started)
 	}
-	if finished.Output != "result a" || finished.Failed {
+	if finished.Output != "result a" || finished.Outcome != CallOK {
 		t.Errorf("ToolFinished = %+v", finished)
 	}
 
@@ -314,7 +314,7 @@ func TestToolFailuresGoBackToTheModel(t *testing.T) {
 	failed := map[string]bool{}
 	for _, e := range events {
 		if f, ok := e.(ToolFinished); ok {
-			failed[f.CallID] = f.Failed
+			failed[f.CallID] = f.Outcome == CallFailed
 		}
 	}
 	for id, want := range map[string]bool{"c1": true, "c2": true, "c3": true, "c4": false} {
@@ -487,8 +487,8 @@ func TestCancelWhileToolRunsKeepsTheTurnAndAnswersTheCall(t *testing.T) {
 		t.Error("a call that had not run yet must not start after the cancel")
 	}
 	for _, e := range got {
-		if f, ok := e.(ToolFinished); ok && (!f.Failed || !f.Cancelled || f.Output != interruptedOutput) {
-			t.Errorf("an interrupted call should be failed, cancelled and say so: %+v", f)
+		if f, ok := e.(ToolFinished); ok && (f.Outcome != CallCancelled || f.Output != interruptedOutput) {
+			t.Errorf("an interrupted call should be cancelled and say so: %+v", f)
 		}
 	}
 	if srv.requestCount() != 1 {

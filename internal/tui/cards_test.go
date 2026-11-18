@@ -46,16 +46,16 @@ func TestTabSelectsTheNewestCardAndMovesBetweenCards(t *testing.T) {
 	cards := m.toolCards()
 
 	m, _ = update(m, tab)
-	if m.card != cards[2] {
-		t.Fatalf("first Tab selected entry %d, want the newest card %d", m.card, cards[2])
+	if m.cards.selected != cards[2] {
+		t.Fatalf("first Tab selected entry %d, want the newest card %d", m.cards.selected, cards[2])
 	}
 	m, _ = update(m, tab)
-	if m.card != cards[0] {
-		t.Errorf("Tab after the newest should wrap to the first, got %d", m.card)
+	if m.cards.selected != cards[0] {
+		t.Errorf("Tab after the newest should wrap to the first, got %d", m.cards.selected)
 	}
 	m, _ = update(m, shiftTab)
-	if m.card != cards[2] {
-		t.Errorf("Shift+Tab should go back to the newest, got %d", m.card)
+	if m.cards.selected != cards[2] {
+		t.Errorf("Shift+Tab should go back to the newest, got %d", m.cards.selected)
 	}
 	if !strings.Contains(screenText(m), "▸ ✓ read_file  f2.go") {
 		t.Errorf("the selected card has no marker:\n%s", screenText(m))
@@ -105,7 +105,7 @@ func TestEscapeEndsTheSelection(t *testing.T) {
 
 	m, _ = update(m, escKey)
 
-	if m.card != -1 || strings.Contains(screenText(m), "▸") {
+	if m.cards.selected != -1 || strings.Contains(screenText(m), "▸") {
 		t.Error("Esc should clear the selection")
 	}
 }
@@ -116,22 +116,22 @@ func TestTypingAfterSelectingGoesBackToTheInput(t *testing.T) {
 
 	m, _ = update(m, letter('h'))
 
-	if m.card != -1 || m.input.Value() != "h" {
-		t.Errorf("card %d, input %q: the key should clear the selection and be typed", m.card, m.input.Value())
+	if m.cards.selected != -1 || m.input.Value() != "h" {
+		t.Errorf("card %d, input %q: the key should clear the selection and be typed", m.cards.selected, m.input.Value())
 	}
 }
 
 func TestTabDoesNothingWithoutCardsOrWithTextTyped(t *testing.T) {
 	m := newTestModel(&fakeAgent{})
 	m, _ = update(m, tab)
-	if m.card != -1 {
+	if m.cards.selected != -1 {
 		t.Error("selected a card that does not exist")
 	}
 
 	m = withCards(t, "a")
 	m.input.SetValue("typed")
 	m, _ = update(m, tab)
-	if m.card != -1 {
+	if m.cards.selected != -1 {
 		t.Error("Tab with text in the input must not select a card")
 	}
 }
@@ -154,7 +154,7 @@ func TestCardsCanBeChosenWhileATurnRuns(t *testing.T) {
 func TestAnExpandedFailureShowsEverything(t *testing.T) {
 	m := sized(&fakeAgent{}, 100, 40)
 	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "shell", Arguments: `{"command":"make"}`}})
-	m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "shell", Failed: true, Output: "error: " + lines(12)}})
+	m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "shell", Outcome: agent.CallFailed, Output: "error: " + lines(12)}})
 	if strings.Contains(screenText(m), "row 12") {
 		t.Fatal("the preview should cut the failure")
 	}
@@ -197,7 +197,7 @@ func TestTheSelectedCardStaysInView(t *testing.T) {
 	}
 
 	// ...and one taller than the window shows its top.
-	m.entries[m.card].output = lines(40)
+	m.entries[m.cards.selected].output = lines(40)
 	m.toggleCard()
 	m.toggleCard()
 	if got := screenText(m); !strings.Contains(got, "new.go") || !strings.Contains(got, "row 1 ") || strings.Contains(got, "row 40") {
@@ -234,8 +234,8 @@ func TestClearForgetsTheSelection(t *testing.T) {
 
 	m, _ = typeAndEnter(t, m, "/clear")
 
-	if m.card != -1 {
-		t.Errorf("card = %d after /clear", m.card)
+	if m.cards.selected != -1 {
+		t.Errorf("card = %d after /clear", m.cards.selected)
 	}
 }
 

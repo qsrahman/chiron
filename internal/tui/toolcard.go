@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/qsrahman/desk-agent/internal/agent"
 )
 
 const (
@@ -79,11 +81,11 @@ func (m *Model) cardIcon(e entry) string {
 	switch {
 	case !e.done:
 		return m.sty.iconRunning.Render(m.spin.View())
-	case e.cancelled:
+	case e.outcome == agent.CallCancelled:
 		return m.sty.iconOff.Render("●")
-	case e.denied:
+	case e.outcome == agent.CallDenied:
 		return m.sty.iconOff.Render("⊘")
-	case e.failed:
+	case e.outcome == agent.CallFailed:
 		return m.sty.iconErr.Render("×")
 	default:
 		return m.sty.iconOK.Render("✓")
@@ -141,11 +143,11 @@ func (m *Model) cardElapsed(e entry) string {
 
 func (m *Model) cardBody(e entry, width int) []string {
 	switch {
-	case e.cancelled:
+	case e.outcome == agent.CallCancelled:
 		return []string{m.sty.toolMeta.Render("cancelled")}
-	case e.denied:
+	case e.outcome == agent.CallDenied:
 		return []string{m.sty.toolMeta.Render("denied by you")}
-	case e.failed:
+	case e.outcome == agent.CallFailed:
 		return m.failureLines(e, width)
 	}
 	return m.bandLines(e, width)

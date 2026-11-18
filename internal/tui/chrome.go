@@ -121,7 +121,7 @@ func (m *Model) helpView() string {
 	switch {
 	case m.approval.open:
 		bindings = m.keys.approvalHelp()
-	case m.card >= 0:
+	case m.cards.selected >= 0:
 		bindings = m.keys.cardHelp()
 	case m.input.Value() == "" && len(m.toolCards()) > 0:
 		bindings = append(bindings, m.keys.cardNext)

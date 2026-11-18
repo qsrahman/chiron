@@ -40,7 +40,7 @@ func TestEnterWhileBusyQueuesThePrompt(t *testing.T) {
 	if len(a.texts) != 1 {
 		t.Errorf("a prompt was sent while busy: %v", a.texts)
 	}
-	if got := strings.Join(m.queue, "|"); got != "second|/usr/bin is missing" {
+	if got := strings.Join(m.queue.prompts, "|"); got != "second|/usr/bin is missing" {
 		t.Errorf("queue = %q", got)
 	}
 	if m.input.Value() != "" {
@@ -56,8 +56,8 @@ func TestACommandIsNeverQueued(t *testing.T) {
 
 	m, _ = typeAndEnter(t, m, "/undo")
 
-	if len(m.queue) != 0 || m.input.Value() != "/undo" || !strings.Contains(m.hint, "ctrl+c") {
-		t.Errorf("queue %v, input %q, hint %q", m.queue, m.input.Value(), m.hint)
+	if len(m.queue.prompts) != 0 || m.input.Value() != "/undo" || !strings.Contains(m.hint, "ctrl+c") {
+		t.Errorf("queue %v, input %q, hint %q", m.queue.prompts, m.input.Value(), m.hint)
 	}
 }
 
@@ -73,7 +73,7 @@ func TestQueuedPromptsRunInOrder(t *testing.T) {
 		t.Errorf("after the second turn: sent %q", got)
 	}
 	m = endTurn(m)
-	if m.events != nil || len(m.queue) != 0 {
+	if m.events != nil || len(m.queue.prompts) != 0 {
 		t.Error("the queue should be empty and the UI idle")
 	}
 }
@@ -97,8 +97,8 @@ func TestCtrlCCancelsAndDropsTheQueue(t *testing.T) {
 	m, _ = update(m, eventMsg{agent.Error{Err: context.Canceled}})
 	m = endTurn(m)
 
-	if len(m.queue) != 0 || len(a.texts) != 1 {
-		t.Errorf("queue %v, sent %v: nothing queued may run after a cancel", m.queue, a.texts)
+	if len(m.queue.prompts) != 0 || len(a.texts) != 1 {
+		t.Errorf("queue %v, sent %v: nothing queued may run after a cancel", m.queue.prompts, a.texts)
 	}
 	if got := said(m); got != "Dropped 2 queued prompts" {
 		t.Errorf("said %q", got)
@@ -111,8 +111,8 @@ func TestAnErrorHoldsTheQueue(t *testing.T) {
 	m, _ = update(m, eventMsg{agent.Error{Err: errors.New("connection refused")}})
 	m = endTurn(m)
 
-	if len(a.texts) != 1 || len(m.queue) != 2 || m.events != nil {
-		t.Fatalf("sent %v, queue %v: after an error nothing is sent", a.texts, m.queue)
+	if len(a.texts) != 1 || len(m.queue.prompts) != 2 || m.events != nil {
+		t.Fatalf("sent %v, queue %v: after an error nothing is sent", a.texts, m.queue.prompts)
 	}
 	if got := said(m); !strings.Contains(got, "2 queued prompts waiting") {
 		t.Errorf("said %q", got)
@@ -120,8 +120,8 @@ func TestAnErrorHoldsTheQueue(t *testing.T) {
 
 	// Enter on an empty line sends the first.
 	m, _ = update(m, enter)
-	if got := strings.Join(a.texts, "|"); got != "first|a" || len(m.queue) != 1 {
-		t.Errorf("sent %q, queue %v", got, m.queue)
+	if got := strings.Join(a.texts, "|"); got != "first|a" || len(m.queue.prompts) != 1 {
+		t.Errorf("sent %q, queue %v", got, m.queue.prompts)
 	}
 }
 
@@ -131,8 +131,8 @@ func TestTypedPromptAfterAnErrorKeepsTheQueueForLater(t *testing.T) {
 	m = endTurn(m)
 
 	m, _ = typeAndEnter(t, m, "use the other file")
-	if got := strings.Join(a.texts, "|"); got != "first|use the other file" || len(m.queue) != 1 {
-		t.Fatalf("sent %q, queue %v", got, m.queue)
+	if got := strings.Join(a.texts, "|"); got != "first|use the other file" || len(m.queue.prompts) != 1 {
+		t.Fatalf("sent %q, queue %v", got, m.queue.prompts)
 	}
 
 	m = endTurn(m) // that turn succeeded, so the held prompt goes now
@@ -145,13 +145,13 @@ func TestUpTakesTheLastQueuedPromptBack(t *testing.T) {
 	m, _ := busyWith(t, "a", "b")
 
 	m, _ = update(m, tea.KeyPressMsg{Code: tea.KeyUp})
-	if m.input.Value() != "b" || len(m.queue) != 1 {
-		t.Fatalf("input %q, queue %v", m.input.Value(), m.queue)
+	if m.input.Value() != "b" || len(m.queue.prompts) != 1 {
+		t.Fatalf("input %q, queue %v", m.input.Value(), m.queue.prompts)
 	}
 
 	m, _ = update(m, tea.KeyPressMsg{Code: tea.KeyUp}) // the input is not empty now: Up belongs to it
-	if len(m.queue) != 1 {
-		t.Errorf("queue %v: Up with text typed must not take another prompt", m.queue)
+	if len(m.queue.prompts) != 1 {
+		t.Errorf("queue %v: Up with text typed must not take another prompt", m.queue.prompts)
 	}
 }
 

@@ -88,7 +88,7 @@ func TestAllowRunsTheCallAfterAsking(t *testing.T) {
 	if req.CallID != "c1" || req.Tool != "write" || req.Summary != "Write a.txt" || req.Details != "details of a.txt" || req.GrantKey != "a.txt" {
 		t.Errorf("request = %+v", req)
 	}
-	if f := finished(events, "c1"); f.Failed || f.Denied || f.Output != "result a.txt" {
+	if f := finished(events, "c1"); f.Outcome != CallOK || f.Output != "result a.txt" {
 		t.Errorf("finished = %+v", f)
 	}
 	if len(a.grants) != 0 {
@@ -106,7 +106,7 @@ func TestDenyDoesNotRunTheCallAndTellsTheModel(t *testing.T) {
 	if len(log.log) != 0 {
 		t.Errorf("the tool ran although the call was denied: %v", log.log)
 	}
-	if f := finished(events, "c1"); !f.Denied || !f.Failed || f.Cancelled {
+	if f := finished(events, "c1"); f.Outcome != CallDenied {
 		t.Errorf("finished = %+v, want a denied call", f)
 	}
 	outs := outputsOf(t, srv.request(t, 1))
@@ -163,10 +163,10 @@ func TestInvalidAndUnknownCallsAreNotPutToTheUser(t *testing.T) {
 	if len(asked) != 0 {
 		t.Errorf("the user was asked %d times about calls that could not run", len(asked))
 	}
-	if f := finished(events, "c1"); !f.Failed || !strings.Contains(f.Output, "invalid arguments") {
+	if f := finished(events, "c1"); f.Outcome != CallFailed || !strings.Contains(f.Output, "invalid arguments") {
 		t.Errorf("invalid call: %+v", f)
 	}
-	if f := finished(events, "c2"); !f.Failed || !strings.Contains(f.Output, "unknown tool") {
+	if f := finished(events, "c2"); f.Outcome != CallFailed || !strings.Contains(f.Output, "unknown tool") {
 		t.Errorf("unknown call: %+v", f)
 	}
 }
@@ -211,7 +211,7 @@ func TestCancelClosesAnOpenPromptAndReportsTheCallCancelled(t *testing.T) {
 	}
 
 	f := finished(all, "c1")
-	if !f.Cancelled || f.Denied || len(log.log) != 0 {
+	if f.Outcome != CallCancelled || len(log.log) != 0 {
 		t.Errorf("finished = %+v, log %v: want cancelled, not denied, and not run", f, log.log)
 	}
 	if !isCancel(lastError(t, all)) {

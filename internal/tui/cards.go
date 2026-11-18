@@ -7,6 +7,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+// cardState is the selected tool card: an index into the entries, -1 for none. reveal asks the next refresh to
+// scroll to it.
+type cardState struct {
+	selected int
+	reveal   bool
+}
+
 // toolCards returns the indexes of the entries that are tool cards.
 func (m *Model) toolCards() []int {
 	var cards []int
@@ -26,7 +33,7 @@ func (m *Model) moveCard(delta int) {
 	}
 	pos := len(cards) - 1
 	for i, c := range cards {
-		if c == m.card {
+		if c == m.cards.selected {
 			pos = (i + delta + len(cards)) % len(cards)
 		}
 	}
@@ -35,25 +42,25 @@ func (m *Model) moveCard(delta int) {
 
 // selectCard marks one card as selected, or none with -1, and asks the next refresh to bring it into view.
 func (m *Model) selectCard(i int) {
-	if m.card >= 0 && m.card < len(m.entries) {
-		m.entries[m.card].selected = false
-		m.entries[m.card].rendered = m.render(m.entries[m.card])
+	if m.cards.selected >= 0 && m.cards.selected < len(m.entries) {
+		m.entries[m.cards.selected].selected = false
+		m.entries[m.cards.selected].rendered = m.render(m.entries[m.cards.selected])
 	}
-	m.card = i
+	m.cards.selected = i
 	if i >= 0 {
 		m.entries[i].selected = true
 		m.entries[i].rendered = m.render(m.entries[i])
-		m.reveal = true
+		m.cards.reveal = true
 	}
 	m.refresh()
 }
 
 // toggleCard switches the selected card between its preview and its whole output.
 func (m *Model) toggleCard() {
-	card := &m.entries[m.card]
+	card := &m.entries[m.cards.selected]
 	card.expanded = !card.expanded
 	card.rendered = m.render(*card)
-	m.reveal = true
+	m.cards.reveal = true
 	m.refresh()
 }
 
@@ -65,14 +72,14 @@ func (m *Model) emptyInputKey(msg tea.KeyPressMsg) bool {
 		m.moveCard(1)
 	case key.Matches(msg, m.keys.cardPrev) && len(m.toolCards()) > 0:
 		m.moveCard(-1)
-	case m.card >= 0 && key.Matches(msg, m.keys.toggle):
+	case m.cards.selected >= 0 && key.Matches(msg, m.keys.toggle):
 		m.toggleCard()
-	case m.card >= 0 && key.Matches(msg, m.keys.dismiss):
+	case m.cards.selected >= 0 && key.Matches(msg, m.keys.dismiss):
 		m.selectCard(-1)
-	case len(m.queue) > 0 && key.Matches(msg, m.keys.unqueue):
+	case len(m.queue.prompts) > 0 && key.Matches(msg, m.keys.unqueue):
 		m.unqueue()
 	default:
-		if m.card >= 0 && !key.Matches(msg, m.keys.scroll) {
+		if m.cards.selected >= 0 && !key.Matches(msg, m.keys.scroll) {
 			m.selectCard(-1) // typing goes back to the input
 		}
 		return false
@@ -95,7 +102,7 @@ func (m *Model) cardOffset(index int) (top, height int) {
 // showCard scrolls the transcript just enough to bring the selected card into view, or its top if it is taller
 // than the window.
 func (m *Model) showCard() {
-	top, height := m.cardOffset(m.card)
+	top, height := m.cardOffset(m.cards.selected)
 	y, window := m.viewport.YOffset(), m.viewport.Height()
 	switch {
 	case top < y:

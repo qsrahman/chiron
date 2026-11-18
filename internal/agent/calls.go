@@ -55,15 +55,13 @@ func (a *Agent) isReadOnly(call responses.ResponseFunctionToolCall) bool {
 
 // callResult is how one call ended: the text the model reads, and how the front-end should show it.
 type callResult struct {
-	output                    string
-	failed, cancelled, denied bool
+	output  string
+	outcome Outcome
 }
 
-func failure(text string) callResult { return callResult{output: text, failed: true} }
+func failure(text string) callResult { return callResult{text, CallFailed} }
 
-func interrupted() callResult {
-	return callResult{output: interruptedOutput, failed: true, cancelled: true}
-}
+func interrupted() callResult { return callResult{interruptedOutput, CallCancelled} }
 
 // runCall runs one call and returns the text to give back to the model. Failures (unknown tool, bad
 // arguments, a denial, tool errors) become that text instead of aborting the turn, so the model can recover. A
@@ -71,7 +69,7 @@ func interrupted() callResult {
 func (a *Agent) runCall(ctx context.Context, call responses.ResponseFunctionToolCall, events chan<- Event) string {
 	events <- ToolStarted{CallID: call.CallID, Name: call.Name, Arguments: call.Arguments}
 	res := a.execute(ctx, call, events)
-	events <- ToolFinished{CallID: call.CallID, Name: call.Name, Output: res.output, Failed: res.failed, Cancelled: res.cancelled, Denied: res.denied}
+	events <- ToolFinished{CallID: call.CallID, Name: call.Name, Output: res.output, Outcome: res.outcome}
 	return res.output
 }
 
@@ -95,7 +93,7 @@ func (a *Agent) execute(ctx context.Context, call responses.ResponseFunctionTool
 		case err != nil:
 			return interrupted()
 		case decision == Deny:
-			return callResult{output: deniedOutput, failed: true, denied: true}
+			return callResult{deniedOutput, CallDenied}
 		}
 	}
 
@@ -106,9 +104,9 @@ func (a *Agent) execute(ctx context.Context, call responses.ResponseFunctionTool
 	case err != nil:
 		return failure("error: " + err.Error())
 	case result == "":
-		return callResult{output: "(no output)"}
+		return callResult{"(no output)", CallOK}
 	}
-	return callResult{output: capOutput(result)}
+	return callResult{capOutput(result), CallOK}
 }
 
 // unknownToolText tells the model which tools exist, so it can correct the call.
