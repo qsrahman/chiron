@@ -81,7 +81,7 @@ func (m *Model) welcomeView() string {
 		text.Render("An AI coding assistant for your terminal."),
 		"",
 		text.Render("Describe what you want to do, or ask about the code in this directory."),
-		m.sty.toolMeta.Width(width).Render("Enter sends. / lists commands. Ctrl+J: new line. Ctrl+C: cancel or quit."),
+		m.sty.toolMeta.Width(width).Render("Enter sends. / lists commands. Shift+Enter: new line. Ctrl+C: cancel or quit."),
 	}, "\n"), gutter)
 }
 

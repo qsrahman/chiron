@@ -12,11 +12,11 @@
    /retry           Send the last prompt again
    /undo            Remove the last exchange from the conversation
 
-   enter      send
-   ctrl+j     new line
-   pgup/pgdn  scroll
-   ctrl+c     cancel a turn, clear the input, quit
-   ctrl+d     quit on an empty input
+   enter        send
+   shift+enter  new line
+   pgup/pgdn    scroll
+   ctrl+c       cancel a turn, clear the input, quit
+   ctrl+d       quit on an empty input
 
 
 
@@ -37,4 +37,4 @@
  ╭─────────────────────────────────────────────────────────────────────────────╮
  │ ❯ Ask something…                                                            │
  ╰─────────────────────────────────────────────────────────────────────────────╯
-  enter send · ctrl+j new line · pgup/pgdn scroll · ctrl+c quit
+  enter send · shift+enter new line · pgup/pgdn scroll · ctrl+c quit

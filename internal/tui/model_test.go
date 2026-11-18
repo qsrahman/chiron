@@ -416,3 +416,19 @@ func TestStreamedTextIsRenderedAsMarkdownBeforeTheTurnEnds(t *testing.T) {
 	}
 	m.cancel()
 }
+
+func TestShiftEnterAddsALineInsteadOfSending(t *testing.T) {
+	a := &fakeAgent{}
+	m := newTestModel(a)
+	m.input.SetValue("first")
+	m.input.CursorEnd()
+
+	m, _ = update(m, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift})
+
+	if len(a.texts) != 0 || m.events != nil {
+		t.Error("shift+enter sent the prompt")
+	}
+	if got := m.input.Value(); got != "first\n" {
+		t.Errorf("input = %q, want a new line added", got)
+	}
+}

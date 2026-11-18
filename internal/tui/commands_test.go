@@ -51,7 +51,7 @@ func TestHelpListsEveryCommandAndKey(t *testing.T) {
 			t.Errorf("/help does not list %s", c.name)
 		}
 	}
-	for _, want := range []string{"enter", "ctrl+j", "pgup/pgdn", "ctrl+c", "ctrl+d"} {
+	for _, want := range []string{"enter", "shift+enter", "pgup/pgdn", "ctrl+c", "ctrl+d"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("/help does not list the key %s", want)
 		}

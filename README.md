@@ -78,7 +78,7 @@ conversation keeps its history for the whole session. Terminals narrower than 40
 | Key | Action |
 |---|---|
 | `Enter` | Send the message (ignored while an answer is streaming; your draft stays) |
-| `Ctrl-J` or `Alt-Enter` | New line in the message |
+| `Shift-Enter` | New line in the message (`Alt-Enter` and `Ctrl-J` also work, for terminals that cannot tell Shift-Enter from Enter) |
 | `PgUp` / `PgDn` | Scroll the transcript |
 | `Ctrl-C` | While an answer is streaming: cancel it (press again to quit). When idle: clears what you typed; on an empty input it asks you to press it again, since the conversation is not saved, and quits at once if there is no conversation yet. |
 | `Ctrl-D` | On an empty input: quit, with the same second-press protection as `Ctrl-C` (the two count together) |
