@@ -1,12 +1,14 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"os/signal"
 	"time"
@@ -16,6 +18,8 @@ import (
 
 	"github.com/qsrahman/desk-agent/internal/agent"
 	"github.com/qsrahman/desk-agent/internal/config"
+	"github.com/qsrahman/desk-agent/internal/mcp"
+	"github.com/qsrahman/desk-agent/internal/session"
 	"github.com/qsrahman/desk-agent/internal/tools"
 	"github.com/qsrahman/desk-agent/internal/tui"
 )
@@ -50,6 +54,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.IntVar(&given.MaxTurns, "max-turns", 0, "most model calls for one prompt (default 25)")
 	// Two flags make a three-state setting: not given, on, off.
 	noMCP := flags.Bool("no-mcp", false, "do not start the MCP servers of the config file")
+	noSave := flags.Bool("no-save", false, "do not save this conversation")
+	cont := flags.Bool("continue", false, "resume the latest saved conversation of this directory")
+	resume := flags.String("resume", "", "resume the saved conversation named `ID` (or the start of its name)")
 	yes := flags.Bool("yes", false, "allow every tool call without asking (in -p mode, calls that would ask are denied without it)")
 	flags.BoolFunc("streaming", "stream the reply as it arrives (the default)", func(string) error { given.Streaming = new(true); return nil })
 	flags.BoolFunc("no-streaming", "send one request and show the whole reply at once", func(string) error { given.Streaming = new(false); return nil })
@@ -62,9 +69,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
+	if *cont && *resume != "" {
+		fmt.Fprintln(stderr, "desk-agent: use --continue or --resume, not both")
+		return 2
+	}
+
 	cfg, err := loadConfig(*configPath, given, stderr)
 	if err == nil {
-		err = start(ctx, cfg, runOptions{prompt: *prompt, autoApprove: *yes, noMCP: *noMCP}, stdout, stderr)
+		err = start(ctx, cfg, runOptions{prompt: *prompt, autoApprove: *yes, noMCP: *noMCP, noSave: *noSave, cont: *cont, resume: *resume}, stdout, stderr)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "desk-agent:", err)
@@ -78,6 +90,9 @@ type runOptions struct {
 	prompt      string // one prompt to send and print, instead of the chat UI
 	autoApprove bool   // --yes
 	noMCP       bool   // --no-mcp
+	noSave      bool   // --no-save
+	cont        bool   // --continue
+	resume      string // --resume
 }
 
 // start builds the agent for the current directory and runs either one prompt or the chat UI.
@@ -105,6 +120,10 @@ func start(ctx context.Context, cfg config.Config, opts runOptions, stdout, stde
 		MaxContextTokens: cfg.MaxContextTokens,
 		AutoCompact:      cfg.AutoCompact,
 	}, instructions, registry)
+
+	if err := openSessions(a, cfg, opts, workDir); err != nil {
+		return err
+	}
 
 	// The servers start in the background, and the agent gets their tools once they have answered.
 	hub := startMCP(ctx, cfg, opts.noMCP)
@@ -187,4 +206,45 @@ func newClient(cfg config.Config, extra ...option.RequestOption) openai.Client {
 		opts = append(opts, option.WithAPIKey(cfg.APIKey))
 	}
 	return openai.NewClient(append(opts, extra...)...)
+}
+
+// openSessions turns on saving, and resumes a saved conversation when asked to. Resuming works even when saving is
+// off. Without a home directory there is nowhere to keep sessions: that is an error only for a resume.
+func openSessions(a *agent.Agent, cfg config.Config, opts runOptions, workDir string) error {
+	resuming := opts.cont || opts.resume != ""
+	stateDir, err := mcp.StateDir()
+	if err != nil {
+		if resuming {
+			return err
+		}
+		return nil
+	}
+	store := session.NewStore(stateDir)
+	endpoint := endpointOf(cfg.BaseURL)
+	if cfg.Sessions && !opts.noSave {
+		a.EnableSessions(store, workDir, endpoint)
+	}
+	if !resuming {
+		return nil
+	}
+	var f session.File
+	if opts.cont {
+		f, err = store.Latest(workDir)
+	} else {
+		f, err = store.Load(opts.resume)
+	}
+	if err != nil {
+		return err
+	}
+	return a.Resume(f, endpoint)
+}
+
+// endpointOf is the scheme and host of the server, which says whose reasoning items a saved session holds. The
+// path and anything else in the URL is left out of the file.
+func endpointOf(baseURL string) string {
+	u, err := url.Parse(cmp.Or(baseURL, openAIBaseURL))
+	if err != nil {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }

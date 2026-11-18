@@ -116,6 +116,7 @@ func (a *Agent) Compact(ctx context.Context, focus string) (Compaction, error) {
 	c, err := a.compact(ctx, focus)
 	if err == nil {
 		a.summaryFailures = 0
+		_ = a.persist()
 	}
 	return c, err
 }
@@ -208,28 +209,41 @@ func acceptSummary(answer string, replaces int) (string, error) {
 	return answer, nil
 }
 
+// fields is what the code reads from an item's JSON: the item can be one we built or one the API sent.
+type fields struct {
+	Type      string          `json:"type"`
+	Role      string          `json:"role"`
+	Content   json.RawMessage `json:"content"`
+	CallID    string          `json:"call_id"`
+	Name      string          `json:"name"`
+	Arguments string          `json:"arguments"`
+	Output    json.RawMessage `json:"output"`
+}
+
+// parse reads an item's JSON.
+func parse(it item) (fields, bool) {
+	raw, err := json.Marshal(it.param)
+	if err != nil {
+		return fields{}, false
+	}
+	var f fields
+	if json.Unmarshal(raw, &f) != nil {
+		return fields{}, false
+	}
+	if f.Type == "" && f.Role != "" {
+		f.Type = "message" // a message we built ourselves leaves its type out
+	}
+	return f, true
+}
+
 // transcript writes items as labelled text for the summariser. Reasoning is left out, and long arguments and
 // results are cut: the summary only needs to know what was done and found.
 func transcript(items []item) string {
 	var lines []string
 	for _, it := range items {
-		raw, err := json.Marshal(it.param)
-		if err != nil {
+		f, ok := parse(it)
+		if !ok {
 			continue
-		}
-		var f struct {
-			Type      string          `json:"type"`
-			Role      string          `json:"role"`
-			Content   json.RawMessage `json:"content"`
-			Name      string          `json:"name"`
-			Arguments string          `json:"arguments"`
-			Output    json.RawMessage `json:"output"`
-		}
-		if json.Unmarshal(raw, &f) != nil {
-			continue
-		}
-		if f.Type == "" && f.Role != "" {
-			f.Type = "message" // a message we built ourselves leaves its type out
 		}
 		switch f.Type {
 		case "message":

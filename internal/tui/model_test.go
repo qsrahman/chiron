@@ -36,6 +36,12 @@ type fakeAgent struct {
 	compaction   agent.Compaction
 	compactErr   error
 	compactFocus string
+
+	messages    []agent.Message
+	sessionID   string
+	sessions    []agent.SessionInfo
+	sessionsErr error
+	listedAll   bool
 }
 
 func (f *fakeAgent) Reset()                   { f.resets++ }
@@ -54,6 +60,12 @@ func (f *fakeAgent) SetReasoningEffort(e string) { f.settings.ReasoningEffort = 
 func (f *fakeAgent) Compact(_ context.Context, focus string) (agent.Compaction, error) {
 	f.compactFocus = focus
 	return f.compaction, f.compactErr
+}
+func (f *fakeAgent) Messages() []agent.Message { return f.messages }
+func (f *fakeAgent) SessionID() string         { return f.sessionID }
+func (f *fakeAgent) ListSessions(all bool) ([]agent.SessionInfo, error) {
+	f.listedAll = all
+	return f.sessions, f.sessionsErr
 }
 func (f *fakeAgent) Summary() string                        { return f.summary }
 func (f *fakeAgent) ContextEstimate() agent.ContextEstimate { return f.estimate }

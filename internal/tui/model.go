@@ -35,6 +35,9 @@ type Agent interface {
 	ContextEstimate() agent.ContextEstimate
 	Compact(ctx context.Context, focus string) (agent.Compaction, error)
 	Summary() string
+	Messages() []agent.Message
+	ListSessions(all bool) ([]agent.SessionInfo, error)
+	SessionID() string
 	ToolList() agent.ToolList
 }
 
@@ -195,9 +198,33 @@ func New(a Agent, info Info) Model {
 		height:   24,
 	}
 	m.applyTheme(newTheme(true, nil)) // replaced when the terminal reports its background
+	m.restore()
 	m.layout()
 	m.refresh()
 	return m
+}
+
+// restore shows a resumed conversation again: its messages, and its tool calls with what they returned.
+func (m *Model) restore() {
+	messages := m.agent.Messages()
+	if len(messages) == 0 && m.agent.Summary() == "" {
+		return
+	}
+	for _, msg := range messages {
+		switch msg.Role {
+		case "user":
+			m.addEntry(entry{role: roleUser, text: msg.Text})
+		case "assistant":
+			m.addEntry(entry{role: roleAssistant, text: msg.Text})
+		default:
+			m.addEntry(entry{role: roleTool, callID: msg.CallID, name: msg.Name, args: msg.Arguments, output: msg.Output, done: true})
+		}
+	}
+	note := "Resumed session " + m.agent.SessionID()
+	if m.agent.Summary() != "" {
+		note += "; the oldest turns are summarized (/summary)"
+	}
+	m.addEntry(entry{role: roleNotice, text: note})
 }
 
 // applyTheme (re)builds everything that depends on the palette.

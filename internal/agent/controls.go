@@ -10,19 +10,26 @@ func (a *Agent) Reset() {
 	a.history.reset()
 	a.lastInput = 0
 	a.summaryFailures = 0
+	if a.saving != nil {
+		a.saving.id = "" // the old file stays; the next conversation gets its own
+	}
 }
 
 // Undo drops the last exchange and reports whether there was one.
 func (a *Agent) Undo() bool {
 	a.lastInput = 0 // what the server counted no longer holds
-	return a.history.undo()
+	undone := a.history.undo()
+	_ = a.persist()
+	return undone
 }
 
 // Rewind drops the last turn if it was saved and returns its prompt to send again; false if there has not been
 // one. A turn that failed before any tool ran was never saved, so only the prompt comes back.
 func (a *Agent) Rewind() (string, bool) {
 	a.lastInput = 0
-	return a.history.rewind()
+	prompt, ok := a.history.rewind()
+	_ = a.persist()
+	return prompt, ok
 }
 
 // HasConversation reports whether there is anything to lose: the conversation only lives in memory.

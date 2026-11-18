@@ -4,6 +4,24 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-18
+
+### Added
+
+- Sessions (Phase 9b): every conversation is saved after each turn (and after `/undo`, `/retry`, `/compact`) in
+  `$XDG_STATE_HOME/desk-agent/sessions/`, a private directory of private files written atomically. `--continue` resumes
+  the latest session of the directory, `--resume ID` a named one (a unique prefix is enough), `--no-save` and
+  `"sessions": false` turn saving off, and `/sessions [all]` lists them. A resumed conversation shows its messages and
+  the newest turn's tool cards again and goes on in the same file; reasoning items are dropped when the model or the
+  server differs from the one that wrote them; a file whose results have no calls is refused. New package
+  `internal/session` and a `Notice` when a save fails.
+- A live scenario for sessions in `e2e/run.sh`.
+
+### Fixed
+
+- The test helper of `cmd/desk-agent` now points `XDG_STATE_HOME` at a temporary directory, so tests cannot write
+  sessions or logs into the real one.
+
 ## [0.6.0] - 2026-11-18
 
 ### Added

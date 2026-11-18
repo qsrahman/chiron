@@ -38,6 +38,8 @@ type Agent struct {
 	grants       map[grant]bool // what the user allowed for the session; lasts until the program exits
 	lastInput    int64          // input tokens the server counted for the last request; 0 until one is known
 
+	saving *saving // nil when sessions are off
+
 	summaryFailures int // automatic summaries in a row that were refused or failed
 }
 
@@ -59,7 +61,12 @@ func (a *Agent) Send(ctx context.Context, text string) <-chan Event {
 	events := make(chan Event)
 	go func() {
 		defer close(events)
-		if err := a.run(ctx, text, events); err != nil {
+		err := a.run(ctx, text, events)
+		// Saved before the last event, so a user who quits as soon as the turn ends loses nothing.
+		if saveErr := a.persist(); saveErr != nil {
+			events <- Notice{Text: "Could not save the session: " + saveErr.Error()}
+		}
+		if err != nil {
 			events <- Error{Err: err}
 			return
 		}

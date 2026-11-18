@@ -42,6 +42,7 @@ func commandList() []command {
 		{name: "/retry", description: "Send the last prompt again", run: (*Model).retryCommand},
 		{name: "/copy", usage: "[code]", description: "Copy the last answer, or its last code block, to the clipboard", args: func(*Model) []string { return []string{"code"} }, run: (*Model).copyCommand},
 		{name: "/compact", usage: "[FOCUS]", description: "Summarize the oldest turns; FOCUS says what to keep", run: (*Model).compactCommand},
+		{name: "/sessions", usage: "[all]", description: "List saved sessions (resume with --resume ID)", args: func(*Model) []string { return []string{"all"} }, run: (*Model).sessionsCommand},
 		{name: "/summary", description: "Show the summary that stands for the oldest turns", run: (*Model).summaryCommand},
 		{name: "/context", description: "Show how much of the context window is used", run: (*Model).contextCommand},
 	}
@@ -353,6 +354,35 @@ func (m *Model) compactCommand(focus string) (tea.Cmd, error) {
 		c, err := a.Compact(ctx, focus)
 		return compactedMsg{c, err}
 	}, nil
+}
+
+func (m *Model) sessionsCommand(arg string) (tea.Cmd, error) {
+	if arg != "" && arg != "all" {
+		return nil, fmt.Errorf("unknown argument %q: use /sessions or /sessions all", arg)
+	}
+	list, err := m.agent.ListSessions(arg == "all")
+	if err != nil {
+		m.say(err.Error())
+		return nil, nil
+	}
+	if len(list) == 0 {
+		m.say("No saved sessions yet" + map[bool]string{false: " for this directory (/sessions all lists every directory)", true: ""}[arg == "all"])
+		return nil, nil
+	}
+	var rows [][2]string
+	for _, s := range list {
+		label := s.ID
+		if s.Current {
+			label += " (this one)"
+		}
+		detail := fmt.Sprintf("%s · %s · %s", s.Updated.Local().Format("2006-01-02 15:04"), plural(s.Turns, "turn"), sanitize(singleLine(s.Prompt)))
+		if arg == "all" {
+			detail = sanitize(s.Dir) + " · " + detail
+		}
+		rows = append(rows, [2]string{label, detail})
+	}
+	m.sayTable(rows)
+	return nil, nil
 }
 
 func (m *Model) summaryCommand(string) (tea.Cmd, error) {

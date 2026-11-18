@@ -403,3 +403,73 @@ func TestWhatACommandSaysIsInTheTranscriptOnScreen(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionsListsThemAndMarksTheCurrentOne(t *testing.T) {
+	a := &fakeAgent{sessions: []agent.SessionInfo{
+		{ID: "20261118-100000-abcd", Turns: 3, Prompt: "fix the\nbuild", Current: true},
+		{ID: "20261117-090000-wxyz", Turns: 1, Prompt: "hello"},
+	}}
+	m, _ := typeAndEnter(t, newTestModel(a), "/sessions")
+	got := said(m)
+	for _, want := range []string{"20261118-100000-abcd (this one)", "3 turns", "fix the …", "20261117-090000-wxyz", "1 turn"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("/sessions is missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestSessionsAllShowsTheDirectory(t *testing.T) {
+	a := &fakeAgent{sessions: []agent.SessionInfo{{ID: "a-1", Dir: "/work/demo", Turns: 1, Prompt: "hi"}}}
+	m, _ := typeAndEnter(t, newTestModel(a), "/sessions all")
+	if !a.listedAll || !strings.Contains(said(m), "/work/demo") {
+		t.Errorf("listedAll = %v, said:\n%s", a.listedAll, said(m))
+	}
+	m, _ = typeAndEnter(t, newTestModel(a), "/sessions")
+	if a.listedAll || strings.Contains(said(m), "/work/demo") {
+		t.Errorf("the plain list must not ask for every directory")
+	}
+	m, _ = typeAndEnter(t, newTestModel(a), "/sessions bogus")
+	if !strings.Contains(said(m), "unknown argument") {
+		t.Errorf("said:\n%s", said(m))
+	}
+}
+
+func TestSessionsWhenOffOrEmpty(t *testing.T) {
+	m, _ := typeAndEnter(t, newTestModel(&fakeAgent{sessionsErr: agent.ErrSessionsOff}), "/sessions")
+	if !strings.Contains(said(m), "sessions are off") {
+		t.Errorf("said:\n%s", said(m))
+	}
+	m, _ = typeAndEnter(t, newTestModel(&fakeAgent{}), "/sessions")
+	if !strings.Contains(said(m), "No saved sessions yet") {
+		t.Errorf("said:\n%s", said(m))
+	}
+}
+
+func TestAResumedConversationIsShownAgain(t *testing.T) {
+	a := &fakeAgent{sessionID: "20261118-100000-abcd", summary: "## Goal", messages: []agent.Message{
+		{Role: "user", Text: "list the files"},
+		{Role: "tool", CallID: "c1", Name: "shell", Arguments: `{"command":"ls"}`, Output: "main.go"},
+		{Role: "assistant", Text: "There is one file."},
+	}}
+	m := newTestModel(a)
+
+	var roles []role
+	for _, e := range m.entries {
+		roles = append(roles, e.role)
+	}
+	if !slices.Equal(roles, []role{roleUser, roleTool, roleAssistant, roleNotice}) {
+		t.Fatalf("entries = %v", roles)
+	}
+	if card := m.entries[1]; !card.done || card.output != "main.go" || card.outcome != agent.CallOK {
+		t.Errorf("card = %+v", card)
+	}
+	if note := m.entries[3].text; !strings.Contains(note, "Resumed session 20261118-100000-abcd") || !strings.Contains(note, "/summary") {
+		t.Errorf("note = %q", note)
+	}
+}
+
+func TestANewConversationShowsNothingExtra(t *testing.T) {
+	if m := newTestModel(&fakeAgent{}); len(m.entries) != 0 {
+		t.Errorf("entries = %d", len(m.entries))
+	}
+}

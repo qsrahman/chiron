@@ -11,6 +11,7 @@ internal/agent/     loop, events, history, system prompt (no UI imports)
 internal/tools/     Tool interface, MustNew, Registry (built-in tools are added from Phase 5)
 internal/tui/       Bubble Tea chat UI (model, theme, layout, cards, chrome; golden tests in testdata/)
 internal/mcp/       MCP servers adapted to tools.Tool: connect, adapter, results, transports (Phase 4b)
+internal/session/   saved conversations: private files, atomic writes, list and load (Phase 9b)
 ```
 
 Packages are created in the phase that needs them; do not add empty ones.
@@ -146,7 +147,14 @@ text from a redraw, no leftover stand-in character, no banner.
   `compact.go` the summary: `planCompaction` cuts at a turn start, `summarize` sends the turns as labelled text with no
   tools, `acceptSummary` refuses a bad answer. The summary is `history.summary`, **never an item**, and `Agent.input`
   puts it first in every request; `undo`, `rewind` and `reset` need no special case for it. Anything the agent does on its
-  own is reported with `Notice`. History changes only in `save`, `undo`, `reset` and `compact`.
+  own is reported with `Notice`. History changes only in `save`, `undo`, `reset`, `compact` and `Resume`.
+- **Sessions.** `internal/session` knows files, not meaning: `File{Items []Item{Kind, CallID, Raw}}`, atomic `Save`
+  (temporary file in the same directory, then rename), `Load` by name or unique prefix, `List`, `Latest(dir)`. The agent
+  turns its history into items (`persist`) and back (`Resume`, `itemFromFile`); messages and results are rebuilt from
+  their text so shortening and summaries treat them like new ones, and the rest is replayed raw. `persist` runs at the
+  end of `Send`, before the last event, and after `Undo`, `Rewind` and `Compact` (their errors are ignored: the next save
+  writes everything again). The file is named when there is first something to save. **Tests must never touch the real
+  state directory:** set `XDG_STATE_HOME` (the `isolate` helper does) or use a temporary `session.Store`.
 - **Guards.** `guard.go` holds loop detection (window 10, more than 5 repeats); the stream idle timeout is a field
   on `Agent` so tests can shorten it. Cancelling must stay distinguishable from timeouts: only a user cancel
   satisfies `errors.Is(err, context.Canceled)`.

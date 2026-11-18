@@ -132,17 +132,19 @@ func TestResolvePrecedence(t *testing.T) {
 		flags  Flags
 		want   Config
 	}{
-		{"defaults only", File{}, "", Flags{}, Config{Model: DefaultModel, Streaming: true}},
+		{"defaults only", File{}, "", Flags{}, Config{Sessions: true, Model: DefaultModel, Streaming: true}},
 		{"file wins over default", file, "", Flags{},
-			Config{Model: "file-model", BaseURL: "file-url", APIKey: "file-key", ReasoningEffort: "low", MaxTurns: 7}},
+			Config{Sessions: true, Model: "file-model", BaseURL: "file-url", APIKey: "file-key", ReasoningEffort: "low", MaxTurns: 7}},
 		{"the key from the environment wins over the file", file, "env-key", Flags{},
-			Config{Model: "file-model", BaseURL: "file-url", APIKey: "env-key", ReasoningEffort: "low", MaxTurns: 7}},
+			Config{Sessions: true, Model: "file-model", BaseURL: "file-url", APIKey: "env-key", ReasoningEffort: "low", MaxTurns: 7}},
 		{"flags win over the file", file, "", Flags{Model: "flag-model", BaseURL: "flag-url", ReasoningEffort: "high", MaxTurns: 3, Streaming: new(true)},
-			Config{Model: "flag-model", BaseURL: "flag-url", APIKey: "file-key", ReasoningEffort: "high", MaxTurns: 3, Streaming: true}},
+			Config{Sessions: true, Model: "flag-model", BaseURL: "flag-url", APIKey: "file-key", ReasoningEffort: "high", MaxTurns: 3, Streaming: true}},
+		{"sessions can be turned off in the file", File{Sessions: new(false)}, "", Flags{},
+			Config{Model: DefaultModel, Streaming: true}},
 		{"default leaves the effort out", file, "", Flags{ReasoningEffort: "default"},
-			Config{Model: "file-model", BaseURL: "file-url", APIKey: "file-key", MaxTurns: 7}},
+			Config{Sessions: true, Model: "file-model", BaseURL: "file-url", APIKey: "file-key", MaxTurns: 7}},
 		{"streaming defaults to true when only the effort is set", File{ReasoningEffort: "none"}, "", Flags{},
-			Config{Model: DefaultModel, ReasoningEffort: "none", Streaming: true}},
+			Config{Sessions: true, Model: DefaultModel, ReasoningEffort: "none", Streaming: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

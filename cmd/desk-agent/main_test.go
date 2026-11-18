@@ -44,6 +44,7 @@ func TestRunBadFlag(t *testing.T) {
 func isolate(t *testing.T) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir()) // sessions and logs must never reach the real ones
 	for _, k := range []string{"OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_CUSTOM_HEADERS"} {
 		t.Setenv(k, "")
 	}
@@ -364,5 +365,96 @@ func TestRunPromptDeniesCallsThatNeedApprovalUnlessYes(t *testing.T) {
 				t.Errorf("the second request should carry %q: %v", wantInSecondRequest, requests)
 			}
 		})
+	}
+}
+
+func sessionFiles(t *testing.T) []string {
+	t.Helper()
+	files, _ := filepath.Glob(filepath.Join(os.Getenv("XDG_STATE_HOME"), "desk-agent", "sessions", "*.json"))
+	return files
+}
+
+func TestAPromptIsSavedAndContinued(t *testing.T) {
+	isolate(t)
+	srv, requests := recordingServer(t)
+
+	runOK(t, "-p", "first question", "--base-url", srv.URL)
+	if len(sessionFiles(t)) != 1 {
+		t.Fatalf("session files = %v", sessionFiles(t))
+	}
+	runOK(t, "-p", "second question", "--continue", "--base-url", srv.URL)
+
+	got, _ := json.Marshal(requests()[1]["input"])
+	if !strings.Contains(string(got), "first question") || !strings.Contains(string(got), "second question") {
+		t.Errorf("the continued request = %s", got)
+	}
+	if len(sessionFiles(t)) != 1 {
+		t.Errorf("--continue must go on in the same file: %v", sessionFiles(t))
+	}
+}
+
+func TestResumeByNameAndByPrefix(t *testing.T) {
+	isolate(t)
+	srv, requests := recordingServer(t)
+	runOK(t, "-p", "remember kiwi", "--base-url", srv.URL)
+	id := strings.TrimSuffix(filepath.Base(sessionFiles(t)[0]), ".json")
+
+	runOK(t, "-p", "again", "--resume", id[:8], "--base-url", srv.URL)
+
+	if got, _ := json.Marshal(requests()[1]["input"]); !strings.Contains(string(got), "remember kiwi") {
+		t.Errorf("request = %s", got)
+	}
+}
+
+func TestNoSaveAndSessionsFalseWriteNothing(t *testing.T) {
+	isolate(t)
+	srv, _ := recordingServer(t)
+	runOK(t, "-p", "hi", "--no-save", "--base-url", srv.URL)
+
+	cfg := filepath.Join(t.TempDir(), "c.json")
+	if err := os.WriteFile(cfg, []byte(`{"base_url": "`+srv.URL+`", "sessions": false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runOK(t, "-p", "hi", "--config", cfg)
+
+	if files := sessionFiles(t); len(files) != 0 {
+		t.Errorf("files written: %v", files)
+	}
+}
+
+func TestResumeProblemsAreReported(t *testing.T) {
+	isolate(t)
+	srv, _ := recordingServer(t)
+	tests := []struct {
+		name string
+		args []string
+		code int
+		want string
+	}{
+		{"nothing to continue", []string{"--continue"}, 1, "no saved session"},
+		{"unknown name", []string{"--resume", "nope"}, 1, "no session"},
+		{"not an id", []string{"--resume", "../x"}, 1, "not a session id"},
+		{"both flags", []string{"--continue", "--resume", "a"}, 2, "not both"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			args := append([]string{"-p", "hi", "--base-url", srv.URL}, tt.args...)
+			if code := run(context.Background(), args, &out, &errOut); code != tt.code || !strings.Contains(errOut.String(), tt.want) {
+				t.Errorf("code = %d, stderr = %q", code, errOut.String())
+			}
+		})
+	}
+}
+
+func TestEndpointKeepsOnlySchemeAndHost(t *testing.T) {
+	for in, want := range map[string]string{
+		"http://localhost:11434/v1":            "http://localhost:11434",
+		"https://user:secret@example.com/v1?k": "https://example.com",
+		"":                                     "https://api.openai.com",
+	} {
+		if got := endpointOf(in); got != want {
+			t.Errorf("endpointOf(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

@@ -43,6 +43,7 @@ Type `/` in the chat to list them; Up/Down choose, Tab completes, Esc closes. Th
 | `/copy [code]` | Copy the last answer, or its last code block, to the clipboard (through the terminal, which must support OSC 52; control characters are removed first) |
 | `/context` | Estimated size of the instructions, tools, summary and history, and how much of the budget is used |
 | `/compact [focus]` | Summarize the oldest turns with the model to free context; `focus` says what the summary must keep |
+| `/sessions [all]` | List the saved conversations of this directory, or of every directory with `all` |
 | `/summary` | Show the summary that stands for the oldest turns |
 
 A lone `/word` that is no command is reported and not sent; a longer line such as `/usr/bin is missing` is a prompt.
@@ -222,6 +223,9 @@ Flags:
 | `--reasoning-effort level` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; `default` sends none even if the file sets one. Models that do not reason reject the setting, so it is only sent when you set it. |
 | `--max-turns n` | Most model calls for one prompt (default 25). |
 | `--streaming`, `--no-streaming` | Stream the reply as it arrives (the default), or send one request and show the whole reply at once, for servers whose streaming is broken. |
+| `--continue` | Resume the latest saved conversation of this directory. |
+| `--resume id` | Resume the saved conversation named `id`, or the only one whose name starts with it (`/sessions all` lists them). |
+| `--no-save` | Do not save this conversation. |
 | `--config path` | Config file (default below). A missing explicit file is an error. |
 | `--version` | Print the version. |
 
@@ -243,6 +247,7 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
   "streaming": true,
   "max_context_tokens": 65536,
   "auto_compact": false,
+  "sessions": true,
   "mcpServers": {
     "context7": {
       "url": "https://mcp.context7.com/mcp",
@@ -271,7 +276,7 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
 - **A key that is not a setting is an error** that names the key and the file, so a typo such as `max_turn` is not
   silently ignored. `base_url` and `api_key` are optional.
 - `reasoning_effort` (unset sends nothing), `max_turns` and `streaming` correspond to the flags above.
-- `max_context_tokens` and `auto_compact` are described under "Context budget" above.
+- `max_context_tokens` and `auto_compact` are described under "Context budget" above, `sessions` under [Sessions](#sessions).
 - `context_window` is optional. With it, the status line shows how much of the context window the conversation
   uses (for example `25.5k tokens (6%)`); without it only the token count appears.
 - `mcpServers` is described in [MCP servers](#mcp-servers). A typo in an entry is an error, like any other key.
@@ -285,7 +290,25 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
 
 ## Notes
 
-`-p` starts a fresh conversation each time; only the interactive mode keeps history between messages.
+`-p` starts a fresh conversation each time unless you pass `--continue` or `--resume`. Every conversation, `-p` ones
+included, is saved (see [Sessions](#sessions)).
+
+## Sessions
+
+Every conversation is saved after each turn, and after `/undo`, `/retry` and `/compact`, in
+`$XDG_STATE_HOME/desk-agent/sessions/` (`~/.local/state/desk-agent/sessions/`), one JSON file each, named by its start
+time (`20261118-153012-k3f9`). The directory is private (`0700`), so are the files (`0600`), and a file is replaced
+atomically: a failed write leaves the previous one. A conversation that never got an answer writes nothing, and
+`/reset` starts a new file and keeps the old one.
+
+- **Resume** with `--continue` (the latest of the current directory) or `--resume ID`. The messages and the tool calls
+  of the newest turn are shown again, the model sees the whole saved history, and the conversation goes on in the
+  same file. `/sessions` lists the ones of this directory, `/sessions all` every directory.
+- **Reasoning items** are dropped when you resume with another model or server than the one that wrote them; they
+  only make sense to the model that produced them. Everything else is kept.
+- **Opt out** with `"sessions": false` in the config file or `--no-save` for one run. Resuming still works with
+  saving off. The files hold your prompts, the answers and tool results, and the working directory; they are not
+  pruned, so delete old ones by hand.
 
 ## Safety
 

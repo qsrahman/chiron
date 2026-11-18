@@ -50,6 +50,9 @@ type File struct {
 	// AutoCompact summarises the oldest turns before a turn that would pass 75% of the budget. Off by default:
 	// a summary is an extra model call that rewrites the history; /compact does it on request.
 	AutoCompact bool `json:"auto_compact"`
+	// Sessions defaults to true: every conversation is saved after each turn, so it can be resumed. false turns
+	// that off.
+	Sessions *bool `json:"sessions"`
 
 	// MCPServers are the MCP servers to start, by name.
 	MCPServers map[string]MCPServer `json:"mcpServers"`
@@ -144,6 +147,7 @@ type Config struct {
 
 	MaxContextTokens int // 0 means the agent's default
 	AutoCompact      bool
+	Sessions         bool
 
 	MCPServers map[string]MCPServer
 }
@@ -242,6 +246,7 @@ func Resolve(file File, path string, apiKeyEnv string, flags Flags) (Config, err
 
 		MaxContextTokens: file.MaxContextTokens,
 		AutoCompact:      file.AutoCompact,
+		Sessions:         file.Sessions == nil || *file.Sessions,
 	}, nil
 }
 
