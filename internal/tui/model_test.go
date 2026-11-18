@@ -394,3 +394,25 @@ func TestUsageIsShownWhileBusyAndLatestWins(t *testing.T) {
 		t.Errorf("activity = %q, want a working indicator", activity)
 	}
 }
+
+// The reply is drawn as markdown while it streams, not only once the turn is over.
+func TestStreamedTextIsRenderedAsMarkdownBeforeTheTurnEnds(t *testing.T) {
+	a := &fakeAgent{block: true}
+	m, _ := typeAndEnter(t, newTestModel(a), "hi")
+	m, _ = update(m, eventMsg{agent.TextDelta{Text: "Some **bold** words\n\n- item one\n"}})
+
+	view := m.viewport.GetContent()
+	if strings.Contains(view, "**") || strings.Contains(view, "- item") {
+		t.Errorf("markdown syntax is still visible mid-stream:\n%q", view)
+	}
+	if !strings.Contains(view, "\x1b[1mbold") || !strings.Contains(view, "• item one") {
+		t.Errorf("bold and the bullet are not rendered:\n%q", view)
+	}
+
+	m, _ = update(m, eventMsg{agent.TextDelta{Text: "- item two\n"}})
+	m, _ = update(m, spinner.TickMsg{})
+	if !strings.Contains(m.viewport.GetContent(), "item two") {
+		t.Error("a spinner tick should redraw the streamed text")
+	}
+	m.cancel()
+}

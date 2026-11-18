@@ -54,8 +54,9 @@ type Model struct {
 	info     Info
 	commands []command
 
-	entries   []entry
-	streaming string // assistant text of the turn in progress, not yet markdown-rendered
+	entries    []entry
+	streaming  string // assistant text of the turn in progress
+	streamView string // streaming as markdown: redrawn on each spinner tick, since rendering on every token is too slow
 
 	// events is non-nil while a turn is running. cancel stops it; cancelling is set after the
 	// first Ctrl-C so that a second one quits instead of waiting.
@@ -291,9 +292,12 @@ func (m *Model) handleEvent(event agent.Event) {
 	switch e := event.(type) {
 	case agent.TextDelta:
 		m.streaming += e.Text
+		if m.streamView == "" {
+			m.renderStreaming() // the first text shows as markdown at once, not as plain text for a moment
+		}
 	case agent.Retry:
 		// The reply starts over, so what was streamed for the failed attempt is dropped.
-		m.streaming = ""
+		m.streaming, m.streamView = "", ""
 		m.addEntry(entry{role: roleNotice, text: e.Reason})
 	case agent.ToolStarted:
 		m.commitStreaming() // keep the text the model wrote before the call above its card
@@ -319,7 +323,7 @@ func (m *Model) handleEvent(event agent.Event) {
 func (m *Model) commitStreaming() {
 	if m.streaming != "" {
 		m.addEntry(entry{role: roleAssistant, text: m.streaming})
-		m.streaming = ""
+		m.streaming, m.streamView = "", ""
 	}
 }
 
@@ -360,6 +364,7 @@ func (m *Model) layout() {
 
 // rerender re-styles every entry after a resize or a theme change.
 func (m *Model) rerender() {
+	m.renderStreaming()
 	for i := range m.entries {
 		m.entries[i].rendered = m.render(m.entries[i])
 	}
@@ -368,6 +373,7 @@ func (m *Model) rerender() {
 
 // rerenderRunning redraws the cards still waiting for a result, so their spinner moves.
 func (m *Model) rerenderRunning() {
+	m.renderStreaming()
 	for i := range m.entries {
 		if m.entries[i].role == roleTool && !m.entries[i].done {
 			m.entries[i].rendered = m.render(m.entries[i])
@@ -376,14 +382,22 @@ func (m *Model) rerenderRunning() {
 	m.refresh()
 }
 
+// renderStreaming draws the reply in progress the way it will look when finished.
+func (m *Model) renderStreaming() {
+	m.streamView = ""
+	if m.streaming != "" {
+		m.streamView = m.render(entry{role: roleAssistant, text: m.streaming})
+	}
+}
+
 // refresh rebuilds the viewport content, following new output only if the user is at the bottom.
 func (m *Model) refresh() {
 	var parts []string
 	for _, e := range m.entries {
 		parts = append(parts, e.rendered)
 	}
-	if m.streaming != "" {
-		parts = append(parts, indent(wrap(sanitize(m.streaming), m.contentWidth()-gutter), gutter))
+	if m.streamView != "" {
+		parts = append(parts, m.streamView)
 	}
 	if line := m.activityLine(); line != "" {
 		parts = append(parts, line)

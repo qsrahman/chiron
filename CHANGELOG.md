@@ -6,6 +6,8 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Fixed
 
+- A reply is drawn as markdown while it streams (bold, lists, code); before, the raw `**` and `-` were visible until
+  the turn ended. It is redrawn on each spinner tick, not on every token.
 - Ctrl-C and Ctrl-D ask before quitting whenever a conversation is in memory: `/clear` no longer lets a quit through
   and `/reset` no longer asks.
 - A tool result with invalid UTF-8 near its start is no longer cut to a few bytes.
