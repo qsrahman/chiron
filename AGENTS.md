@@ -90,7 +90,7 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
   returns a message. The TUI depends on the small `tui.Sender` interface, not on `*agent.Agent`, so tests drive
   it with a fake and synthetic messages (see `internal/tui/model_test.go`). Bubble Tea v2 APIs: `View()`
   returns `tea.View`, keys are `tea.KeyPressMsg`.
-- **UI look.** Colours come only from the palette in `theme.go`; never hard-code a colour or an ANSI index
+- **UI look.** There is a margin of one column on each side. Colours come only from the palette in `theme.go`; never hard-code a colour or an ANSI index
   elsewhere, and never paint the terminal background (bands are derived from it). Everything in the transcript
   shares the `gutter` indent and is capped at `maxTextWidth`; `render` clamps every line to the content width,
   because a line wider than the terminal wraps and wrecks the layout. Tool cards show parsed arguments, never raw
@@ -99,7 +99,11 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
   the first theme to render wins for the whole process. Code colours therefore use named chroma styles
   (`monokai`, `github`) via `CodeBlock.Theme`; `TestCodeColoursFollowTheTheme` guards this. Glamour also counts a
   tab as zero cells, so tabs are expanded before rendering, and it pads output with blank lines, which
-  `trimBlankLines` removes so every gap between items is exactly one row.
+  `trimBlankLines` removes so every gap between items is exactly one row. Fenced code blocks at the left edge are
+  not glamour's: `splitFences` cuts them out and `codeBand` draws them on a shaded band (the highlighter resets its
+  colours after every token, so the band colour is put back after each reset). Fences inside list items stay with
+  glamour. Lines are wrapped after a hyphen, which splits `--config`: `keepHyphenated` swaps the hyphens inside words
+  for a stand-in before rendering and they are swapped back last (after the list items are re-wrapped).
 - **Slash commands.** A command is one entry of `commandList` in `internal/tui/commands.go` (name, usage,
   one-line description, optional argument list, handler); adding one needs no other change, and `/help` and the
   suggestion list pick it up. The TUI talks to the agent through the `tui.Agent` interface, so a new command that

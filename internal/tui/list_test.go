@@ -16,7 +16,7 @@ func renderPlain(m *Model, markdown string, width int) []string {
 }
 
 func TestWrappedListItemsHangUnderTheirText(t *testing.T) {
-	m := sized(&fakeAgent{}, 43, 24) // glamour wraps at 40 here
+	m := sized(&fakeAgent{}, 44, 24) // glamour wraps at 40 here (44 columns, a margin on each side and the gutter)
 	md := "- A long first item with **bold words that wrap** across several lines of text here\n" +
 		"- second\n" +
 		"  - nested item that is also long enough to need wrapping across two lines okay\n\n" +
@@ -45,7 +45,7 @@ func TestWrappedListItemsHangUnderTheirText(t *testing.T) {
 }
 
 func TestListHangLeavesOtherLinesAlone(t *testing.T) {
-	m := sized(&fakeAgent{}, 43, 24)
+	m := sized(&fakeAgent{}, 44, 24)
 	md := "Plain paragraph that is long enough to wrap onto a second line at this width of forty.\n\n" +
 		"1. Step with code:\n\n   ```\n   run this\n   ```\n\n2. next step\n"
 

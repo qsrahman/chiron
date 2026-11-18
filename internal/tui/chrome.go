@@ -13,7 +13,7 @@ import (
 
 // Fixed heights of the parts around the transcript.
 const (
-	headerHeight = 3 // title row, a rule and a blank row of breathing space
+	headerHeight = 2 // title row and a rule
 	helpHeight   = 1
 	boxFrame     = 4 // columns taken by the input box: border and padding on both sides
 )
@@ -43,7 +43,7 @@ func (m *Model) headerView() string {
 	right = ansi.Truncate(right, width, "…")
 	left = ansi.Truncate(left, max(0, width-lipgloss.Width(right)-2), "…")
 	gap := strings.Repeat(" ", max(1, width-lipgloss.Width(left)-lipgloss.Width(right)))
-	return left + gap + right + "\n" + m.sty.rule.Render(strings.Repeat("─", width)) + "\n"
+	return left + gap + right + "\n" + m.sty.rule.Render(strings.Repeat("─", width))
 }
 
 // usageText shows how much context the conversation uses, with a percentage when the window is known.
@@ -116,8 +116,20 @@ func (m *Model) helpView() string {
 		bindings = append(bindings, m.keys.cardNext)
 	}
 	bar := m.help.ShortHelpView(bindings)
+	width := m.contentWidth() - 1
+	if below := m.linesBelow(); below > 0 {
+		// Output that is out of sight matters more than the last key hints, which give way to it.
+		hint := m.sty.iconRunning.Render("↓ " + plural(below, "line") + " below")
+		bar = ansi.Truncate(bar, max(0, width-ansi.StringWidth(hint)-2), "…")
+		bar += strings.Repeat(" ", max(2, width-ansi.StringWidth(bar)-ansi.StringWidth(hint))) + hint
+	}
 	// The help component still adds an item when not even its ellipsis fits, so cut the line ourselves.
-	return indent(ansi.Truncate(bar, m.contentWidth()-1, "…"), 1)
+	return indent(ansi.Truncate(bar, width, "…"), 1)
+}
+
+// linesBelow is how many lines of the transcript are below the window, when it has been scrolled up.
+func (m *Model) linesBelow() int {
+	return max(0, m.viewport.TotalLineCount()-m.viewport.YOffset()-m.viewport.Height())
 }
 
 // inputStyles adapts the textarea to the theme: no highlighted cursor line, a muted placeholder, and a

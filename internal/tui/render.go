@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
@@ -26,7 +27,7 @@ const (
 
 // Layout, in terminal cells.
 const (
-	margin       = 1   // empty columns on the left of everything
+	margin       = 1   // empty columns on the left and on the right of everything
 	gutter       = 2   // indent shared by assistant text, tool cards and notices
 	maxTextWidth = 120 // wider terminals do not get longer lines: they are harder to read
 )
@@ -55,7 +56,7 @@ type entry struct {
 
 // contentWidth is the width of the transcript and the other full-width parts, excluding the left margin.
 func (m *Model) contentWidth() int {
-	return max(20, min(m.width-margin, maxTextWidth))
+	return max(20, min(m.width-2*margin, maxTextWidth))
 }
 
 // indent shifts every line of s to the right.
@@ -112,16 +113,34 @@ func (m *Model) renderEntry(e entry, width int) string {
 	return indent(m.markdownText(e.text, width-gutter), gutter)
 }
 
-// markdownText renders assistant text, or wraps it as plain text if markdown rendering is unavailable.
+// markdownText renders assistant text: fenced code blocks as shaded bands, the rest as markdown, or as wrapped plain
+// text if markdown rendering is unavailable.
 func (m *Model) markdownText(text string, width int) string {
 	// Glamour pads lines as if a tab were zero cells wide, which makes code lines too wide. Expand tabs first.
 	text = strings.ReplaceAll(text, "\t", "    ")
-	if m.markdown != nil {
-		if out, err := m.markdown.Render(text); err == nil {
-			return trimBlankLines(hangListItems(out, width))
+	var parts []string
+	for _, seg := range splitFences(text) {
+		switch {
+		case seg.code:
+			parts = append(parts, strings.Join(m.codeBand(seg, width), "\n"))
+		case strings.TrimSpace(seg.text) != "":
+			parts = append(parts, m.prose(seg.text, width))
 		}
 	}
-	return wrap(text, width)
+	return strings.Join(parts, "\n\n")
+}
+
+// prose renders markdown without fenced code blocks.
+func (m *Model) prose(text string, width int) string {
+	if m.markdown == nil {
+		return wrap(text, width)
+	}
+	out, err := m.markdown.Render(keepHyphenated(text))
+	if err != nil {
+		return wrap(text, width)
+	}
+	// The hyphens go back last: the re-wrapping of list items must not break at them either.
+	return trimBlankLines(strings.ReplaceAll(hangListItems(out, width), unbreakable, "-"))
 }
 
 // trimBlankLines drops empty or whitespace-only lines at both ends. Glamour pads its output with them, which
@@ -215,4 +234,97 @@ func separator(prev, next entry) string {
 		return "\n"
 	}
 	return "\n\n"
+}
+
+// unbreakable stands in for a hyphen inside a word while the text is wrapped: the wrapper breaks lines after a hyphen,
+// which splits a flag such as --config or a name such as read-only. It is a private-use character of the width of a
+// hyphen, and it is turned back after wrapping, so the text on screen and the text copied are the original.
+const unbreakable = "\ue000"
+
+// keepHyphenated makes the hyphens inside words unbreakable. A word with no letter or digit (a list marker, a rule,
+// the separator row of a table) is left alone because they mean something to markdown, and so are fenced code blocks,
+// where a hyphen is an operator the highlighter needs to see.
+func keepHyphenated(markdown string) string {
+	if strings.Contains(markdown, unbreakable) {
+		return markdown
+	}
+	lines := strings.Split(markdown, "\n")
+	inFence := false
+	for i, line := range lines {
+		if fence := strings.TrimLeft(line, " "); strings.HasPrefix(fence, "```") || strings.HasPrefix(fence, "~~~") {
+			inFence = !inFence
+			continue
+		}
+		if !inFence {
+			lines[i] = wordPattern.ReplaceAllStringFunc(line, func(word string) string {
+				if strings.ContainsFunc(word, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+					return strings.ReplaceAll(word, "-", unbreakable)
+				}
+				return word
+			})
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+var wordPattern = regexp.MustCompile(`\S+`)
+
+// fenceSegment is a stretch of markdown: prose, or the inside of a fenced code block.
+type fenceSegment struct {
+	code bool
+	lang string // of a code block: the word after the opening fence
+	text string
+}
+
+var fencePattern = regexp.MustCompile("^(`{3,}|~{3,})[ \\t]*([^ \\t`]*)")
+
+// splitFences cuts the markdown at fenced code blocks that start at the left edge. A fence inside a list item is
+// indented, and taking it out would end the item, so those stay with glamour. A block that is not closed yet (the
+// reply is still streaming) runs to the end.
+func splitFences(markdown string) []fenceSegment {
+	var segments []fenceSegment
+	var prose, code []string
+	var fence, lang string
+	flush := func() {
+		if len(prose) > 0 {
+			segments = append(segments, fenceSegment{text: strings.Join(prose, "\n")})
+			prose = nil
+		}
+	}
+	for _, line := range strings.Split(markdown, "\n") {
+		switch {
+		case fence == "":
+			if m := fencePattern.FindStringSubmatch(line); m != nil {
+				flush()
+				fence, lang = m[1], m[2]
+				continue
+			}
+			prose = append(prose, line)
+		case strings.HasPrefix(line, fence[:1]) && strings.TrimRight(line, " ") == strings.Repeat(fence[:1], len(strings.TrimRight(line, " "))) && len(strings.TrimRight(line, " ")) >= len(fence):
+			segments = append(segments, fenceSegment{code: true, lang: lang, text: strings.Join(code, "\n")})
+			code, fence = nil, ""
+		default:
+			code = append(code, line)
+		}
+	}
+	if fence != "" {
+		segments = append(segments, fenceSegment{code: true, lang: lang, text: strings.Join(code, "\n")})
+	}
+	flush()
+	return segments
+}
+
+// codeBand draws a code block on a shaded band, as wide as the text, with a space of padding on each side. Lines are
+// not wrapped: a line that is too long is cut with an ellipsis. The highlighter resets its colours after every token,
+// which would end the band, so the band's colour is put back after each reset.
+func (m *Model) codeBand(seg fenceSegment, width int) []string {
+	bg, _, _ := strings.Cut(lipgloss.NewStyle().Background(m.th.band).Render("x"), "x")
+	var rows []string
+	for _, line := range strings.Split(highlight(strings.TrimRight(seg.text, "\n"), seg.lang, m.th.dark), "\n") {
+		line = ansi.Truncate(line, width-2, "…")
+		line = strings.ReplaceAll(strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+bg), "\x1b[m", "\x1b[m"+bg)
+		pad := strings.Repeat(" ", max(0, width-2-ansi.StringWidth(line)))
+		rows = append(rows, bg+" "+line+pad+" \x1b[m")
+	}
+	return rows
 }

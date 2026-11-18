@@ -6,6 +6,16 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Changed
 
+- A margin of one column on the right as well as the left: nothing touches the last column of the terminal.
+- When the transcript is scrolled up, the help bar says how much is below (`↓ 42 lines below`), ahead of the key hints.
+- Fenced code blocks are drawn on a shaded band (as wide as the text, with padding), not as bare coloured text; a block
+  that is still streaming already shows as one. Lines too long for the band are cut with an ellipsis.
+- Inline code has its own colour (teal) instead of amber, which stays the colour of warnings and of work in progress.
+- Lines no longer break after a hyphen inside a word: `--config`, `read-only` and `--reasoning-effort` stay whole.
+- The header is two rows (the blank row under the rule is gone).
+
+### Changed
+
 - The empty input reads "Ask anything, or /help for commands..." (a shorter form in a narrow terminal, so that it is
   never cut off), the one place that says commands exist.
 - The welcome banner is gone: the transcript is empty at start and after `/clear`. (`tui.Info.Version` went with it.)

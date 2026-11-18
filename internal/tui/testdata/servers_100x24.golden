@@ -1,6 +1,5 @@
- desk-agent  /work/demo on main                                                           test-model
- ───────────────────────────────────────────────────────────────────────────────────────────────────
-
+ desk-agent  /work/demo on main                                                          test-model
+ ──────────────────────────────────────────────────────────────────────────────────────────────────
    docs    connected · 2 tools (3 hidden) · ~1,240 tokens of definitions · started again 1 time ·
            log /home/u/.local/state/desk-agent/mcp/docs.log
    web     connected · 1 tool · ~90 tokens of definitions
@@ -18,7 +17,8 @@
 
 
 
- ╭─────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ ❯ Ask anything, or /help for commands...                                                        │
- ╰─────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ ❯ Ask anything, or /help for commands...                                                       │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────╯
   enter send · shift+enter new line · pgup/pgdn scroll · ctrl+c quit

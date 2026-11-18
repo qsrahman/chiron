@@ -22,6 +22,8 @@ type theme struct {
 	warning color.Color
 	danger  color.Color
 
+	code color.Color // inline code: its own colour, so that amber stays the colour of warnings and of work in progress
+
 	subtle color.Color // secondary text
 	muted  color.Color // hints, borders, metadata
 
@@ -46,6 +48,7 @@ func newTheme(dark bool, bg color.Color) theme {
 			success:  lipgloss.Color("#4ADE80"),
 			warning:  lipgloss.Color("#FBBF24"),
 			danger:   lipgloss.Color("#F87171"),
+			code:     lipgloss.Color("#5EEAD4"),
 			subtle:   lipgloss.Color("#A1A1AA"),
 			muted:    lipgloss.Color("#71717A"),
 			band:     lipgloss.Color("#232329"),
@@ -62,6 +65,7 @@ func newTheme(dark bool, bg color.Color) theme {
 		success:  lipgloss.Color("#15803D"),
 		warning:  lipgloss.Color("#B45309"),
 		danger:   lipgloss.Color("#DC2626"),
+		code:     lipgloss.Color("#0F766E"),
 		subtle:   lipgloss.Color("#52525B"),
 		muted:    lipgloss.Color("#71717A"),
 		band:     lipgloss.Color("#EEEEF2"),
@@ -168,7 +172,7 @@ func markdownStyle(t theme) ansi.StyleConfig {
 
 	// Inline code is told apart by colour alone. A background with padding turns into a patchy band where the line
 	// wraps.
-	cfg.Code.Color, cfg.Code.BackgroundColor = hex(t.warning), nil
+	cfg.Code.Color, cfg.Code.BackgroundColor = hex(t.code), nil
 	cfg.Code.Prefix, cfg.Code.Suffix = "", ""
 
 	// Code blocks use a named chroma style. Glamour's own per-theme colour tables are registered once under a
