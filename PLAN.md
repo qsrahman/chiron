@@ -365,7 +365,8 @@ From muagent's `commands.py`, the completer in `repl.py` and `tests/test_command
   unset sends none, because non-reasoning models reject it; the flag also takes `default`), `max_turns` (model calls
   per prompt, default 25, replaces the fixed constant) and `streaming` (default true; false makes one non-streaming
   request, for servers with broken SSE).
-- Each `mcpServers` entry may list `"autoApprove": ["tool", ...]`: tools of that server that never prompt (names as
+- Each `mcpServers` entry may list `"autoApprove": ["tool", ...]`, or give `true` for every tool of the server (those it
+  adds later too): tools of that server that never prompt (names as
   the server reports them). Everything else asks: the server's own read-only hint is ignored (section 4.6).
 - Each `mcpServers` entry is either a **stdio server** (`command`, `args`, `env`) or a **remote HTTP server**
   (`url`, `headers`). An entry with both, or with neither, is a config error. `enabled` defaults to true when

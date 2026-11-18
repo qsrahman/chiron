@@ -4,6 +4,14 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-18
+
+### Changed
+
+- `autoApprove` of an MCP server may also be `true` (every tool of the server, those it adds later included) or `false`;
+  before, only a list was accepted and `true` made the config fail to load. Anything else is an error that says what
+  is accepted.
+
 ## [0.5.1] - 2026-11-18
 
 ### Added

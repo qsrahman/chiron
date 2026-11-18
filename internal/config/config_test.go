@@ -214,7 +214,7 @@ func TestLoadMCPServers(t *testing.T) {
 	}
 
 	docs, toolbox := f.MCPServers["docs"], f.MCPServers["toolbox"]
-	if docs.URL != "https://example.com/mcp" || docs.Headers["X-Key"] != "${KEY}" || len(docs.AutoApprove) != 1 || !docs.IsEnabled() ||
+	if docs.URL != "https://example.com/mcp" || docs.Headers["X-Key"] != "${KEY}" || len(docs.AutoApprove.Tools) != 1 || docs.AutoApprove.All || !docs.IsEnabled() ||
 		len(docs.Tools) != 2 || !docs.Instructions {
 		t.Errorf("docs = %+v", docs)
 	}
@@ -244,5 +244,49 @@ func TestLoadRejectsABadMCPServer(t *testing.T) {
 				t.Errorf("err = %v, want it to mention %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestAutoApproveTakesATrueFalseOrAList(t *testing.T) {
+	tests := []struct {
+		name, value string
+		wantAll     bool
+		wantTools   []string
+		covers      map[string]bool
+	}{
+		{"true", `true`, true, nil, map[string]bool{"anything": true}},
+		{"false", `false`, false, nil, map[string]bool{"anything": false}},
+		{"a list", `["a","b"]`, false, []string{"a", "b"}, map[string]bool{"a": true, "c": false}},
+		{"left out", ``, false, nil, map[string]bool{"a": false}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			field := ""
+			if tt.value != "" {
+				field = `, "autoApprove": ` + tt.value
+			}
+			f, err := Load(writeConfig(t, `{"mcpServers": {"s": {"command": "x"`+field+`}}}`, 0o600), &bytes.Buffer{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			a := f.MCPServers["s"].AutoApprove
+			if a.All != tt.wantAll || !reflect.DeepEqual(a.Tools, tt.wantTools) {
+				t.Errorf("autoApprove = %+v", a)
+			}
+			for tool, want := range tt.covers {
+				if a.Covers(tool) != want {
+					t.Errorf("Covers(%q) = %v, want %v", tool, a.Covers(tool), want)
+				}
+			}
+		})
+	}
+}
+
+func TestAutoApproveRejectsAnythingElse(t *testing.T) {
+	for _, value := range []string{`"yes"`, `1`, `{"a": true}`, `[1, 2]`} {
+		_, err := Load(writeConfig(t, `{"mcpServers": {"s": {"command": "x", "autoApprove": `+value+`}}}`, 0o600), &bytes.Buffer{})
+		if err == nil || !strings.Contains(err.Error(), "autoApprove must be true, false or a list of tool names") {
+			t.Errorf("autoApprove %s: err = %v", value, err)
+		}
 	}
 }

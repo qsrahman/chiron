@@ -204,7 +204,7 @@ func (h *Hub) Tools(builtin []string) ([]tools.Tool, []string) {
 				continue
 			}
 			name = uniqueName(name, used)
-			t, err := newTool(s, remote, name, slices.Contains(s.cfg.AutoApprove, remote.Name))
+			t, err := newTool(s, remote, name, s.cfg.AutoApprove.Covers(remote.Name))
 			if err != nil {
 				notices = append(notices, fmt.Sprintf("%s: the tool %q is left out: %v", s.name, remote.Name, err))
 				continue

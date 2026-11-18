@@ -14,6 +14,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/qsrahman/desk-agent/internal/config"
+	"github.com/qsrahman/desk-agent/internal/tools"
 )
 
 // stdio configures a server that is this test binary in the given mode.
@@ -304,3 +305,22 @@ func TestOriginGuardAddsHeadersOnlyForItsHost(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func TestAutoApproveTrueTrustsEveryToolAndAListOnlyItsNames(t *testing.T) {
+	all, some, none := stdio("serve", nil), stdio("serve", nil), stdio("serve", nil)
+	all.AutoApprove = config.AutoApprove{All: true}
+	some.AutoApprove = config.AutoApprove{Tools: []string{"echo"}}
+	h := startHub(t, map[string]config.MCPServer{"all": all, "some": some, "none": none}, Options{})
+
+	trusted := map[string]bool{}
+	list, _ := h.Tools(nil)
+	for _, tl := range list {
+		trusted[tl.Name()] = tl.(tools.Trusted).Trusted()
+	}
+
+	for name, want := range map[string]bool{"all__echo": true, "all__die": true, "some__echo": true, "some__die": false, "none__echo": false} {
+		if trusted[name] != want {
+			t.Errorf("%s trusted = %v, want %v", name, trusted[name], want)
+		}
+	}
+}

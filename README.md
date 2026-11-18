@@ -86,8 +86,9 @@ and prints failures to stderr. `--no-mcp` starts none.
 - **Every MCP call asks first**, because a server's own claim that a tool only reads cannot be trusted. The dialog
   shows `server → tool`, the arguments, and a line saying where the server runs (its command, or the host of its
   URL). Allow for session covers that tool with any arguments. To let a tool run without asking, list it under
-  `autoApprove` (`"autoApprove": ["search"]`, names as the server gives them); `/tools` lists those as running
-  without asking. MCP calls run one at a time. A call times out after 2 minutes, and Ctrl-C cancels it.
+  `autoApprove`: a list of tool names as the server gives them (`"autoApprove": ["search"]`), or `true` for every tool
+  of that server, those it adds later included (`false` is the default). `/tools` lists those as running without
+  asking. MCP calls run one at a time. A call times out after 2 minutes, and Ctrl-C cancels it.
 - **Local servers** run with this program's environment plus their own `env`. They can therefore see variables such
   as `OPENAI_API_KEY`: only start servers you trust. Their error output goes to
   `~/.local/state/desk-agent/mcp/<server>.log` (`$XDG_STATE_HOME` is honoured), a private file that is emptied at each

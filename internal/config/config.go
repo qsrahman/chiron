@@ -62,14 +62,38 @@ type MCPServer struct {
 
 	// Enabled defaults to true; a disabled server is not started.
 	Enabled *bool `json:"enabled"`
-	// AutoApprove lists the server's tools (by the names the server gives them) whose calls never ask.
-	AutoApprove []string `json:"autoApprove"`
+	// AutoApprove says which of the server's tools never ask before a call.
+	AutoApprove AutoApprove `json:"autoApprove"`
 	// Tools, when present, lists the only tools of the server that are offered; a name the server does not have is
 	// an error, so that a typo cannot offer nothing without saying so. An empty list offers none.
 	Tools []string `json:"tools"`
 	// Instructions adds the server's own usage notes to the system prompt.
 	Instructions bool `json:"instructions"`
 }
+
+// AutoApprove is written as a list of the tools (by the names the server gives them) whose calls never ask, or as
+// true for every tool of the server, those it adds later included, or as false for none.
+type AutoApprove struct {
+	All   bool
+	Tools []string
+}
+
+func (a *AutoApprove) UnmarshalJSON(data []byte) error {
+	var all bool
+	if err := json.Unmarshal(data, &all); err == nil {
+		a.All = all
+		return nil
+	}
+	var tools []string
+	if err := json.Unmarshal(data, &tools); err != nil {
+		return errors.New("autoApprove must be true, false or a list of tool names")
+	}
+	a.Tools = tools
+	return nil
+}
+
+// Covers reports whether calls to the tool never ask.
+func (a AutoApprove) Covers(tool string) bool { return a.All || slices.Contains(a.Tools, tool) }
 
 // IsEnabled reports whether the server is to be started.
 func (s MCPServer) IsEnabled() bool { return s.Enabled == nil || *s.Enabled }
