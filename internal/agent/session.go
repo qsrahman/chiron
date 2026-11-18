@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ type saving struct {
 	endpoint string // scheme and host of the server: reasoning items only replay to the endpoint that wrote them
 	id       string // "" until there is something to save, so an empty run writes nothing
 	created  time.Time
+	title    string // the first prompt of the conversation
 }
 
 // EnableSessions makes the agent save the conversation after every turn and every command that changes it. The
@@ -39,9 +41,12 @@ func (a *Agent) persist() error {
 	if s.id == "" {
 		s.id, s.created = session.NewID(now), now
 	}
+	if s.title == "" {
+		s.title = a.firstPrompt()
+	}
 	f := session.File{
 		ID: s.id, Dir: s.workDir, Model: a.settings.Model, Endpoint: s.endpoint,
-		Created: s.created, Updated: now, Summary: a.history.summary,
+		Created: s.created, Updated: now, Summary: a.history.summary, Title: s.title, Replaced: a.history.replaced,
 	}
 	for _, it := range a.history.items {
 		raw, err := json.Marshal(it.param)
@@ -51,6 +56,18 @@ func (a *Agent) persist() error {
 		f.Items = append(f.Items, session.Item{Kind: it.kind, CallID: it.callID, Raw: raw})
 	}
 	return s.store.Save(f)
+}
+
+// firstPrompt is the first user message of the history, "" if there is none.
+func (a *Agent) firstPrompt() string {
+	for _, it := range a.history.items {
+		if it.kind == kindUser {
+			if f, ok := parse(it); ok {
+				return messageText(f.Content)
+			}
+		}
+	}
+	return ""
 }
 
 // SessionID is the name of the file the conversation is saved in, or "" if it is not saved (yet).
@@ -87,7 +104,7 @@ func (a *Agent) Resume(f session.File, endpoint string) error {
 		}
 		items = append(items, it)
 	}
-	a.history = history{items: answerOpenCalls(items), summary: f.Summary}
+	a.history = history{items: answerOpenCalls(items), summary: f.Summary, replaced: f.Replaced}
 	for i := len(items) - 1; i >= 0; i-- {
 		if items[i].kind == kindUser {
 			if p, ok := parse(items[i]); ok {
@@ -99,6 +116,7 @@ func (a *Agent) Resume(f session.File, endpoint string) error {
 	a.lastInput = 0
 	if a.saving != nil {
 		a.saving.id, a.saving.created = f.ID, f.Created // goes on in the same file
+		a.saving.title = cmp.Or(f.Title, a.firstPrompt())
 	}
 	return nil
 }
@@ -190,12 +208,12 @@ func (a *Agent) ListSessions(all bool) ([]SessionInfo, error) {
 		if !all && f.Dir != a.saving.workDir {
 			continue
 		}
-		info := SessionInfo{ID: f.ID, Dir: f.Dir, Updated: f.Updated, Current: f.ID == a.saving.id}
+		info := SessionInfo{ID: f.ID, Dir: f.Dir, Updated: f.Updated, Current: f.ID == a.saving.id, Prompt: f.Title, Turns: f.Replaced}
 		for _, si := range f.Items {
 			if si.Kind != kindUser {
 				continue
 			}
-			if info.Turns == 0 {
+			if info.Prompt == "" {
 				var p fields
 				if json.Unmarshal(si.Raw, &p) == nil {
 					info.Prompt = messageText(p.Content)

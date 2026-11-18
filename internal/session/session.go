@@ -35,6 +35,8 @@ type File struct {
 	Created  time.Time `json:"created"`
 	Updated  time.Time `json:"updated"`
 	Summary  string    `json:"summary,omitempty"`
+	Title    string    `json:"title,omitempty"`    // the first prompt, for lists: the items lose it when a summary replaces it
+	Replaced int       `json:"replaced,omitempty"` // turns a summary stands for, which are no longer in Items
 	Items    []Item    `json:"items"`
 }
 

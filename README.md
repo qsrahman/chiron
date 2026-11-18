@@ -307,8 +307,8 @@ atomically: a failed write leaves the previous one. A conversation that never go
 - **Resume** with `--continue` (the latest of the current directory) or `--resume ID`. The messages and the tool calls
   of the newest turn are shown again, the model sees the whole saved history, and the conversation goes on in the
   same file. `/sessions` lists the ones of this directory, `/sessions all` every directory.
-- **Reasoning items** are dropped when you resume with another model or server than the one that wrote them; they
-  only make sense to the model that produced them. Everything else is kept.
+- **Reasoning items** are dropped when you resume with another model or server than the one that wrote them, and when
+  you switch with `/model`; they only make sense to the model that produced them. Everything else is kept.
 - **Opt out** with `"sessions": false` in the config file or `--no-save` for one run. Resuming still works with
   saving off. The files hold your prompts, the answers and tool results, and the working directory; they are not
   pruned, so delete old ones by hand.

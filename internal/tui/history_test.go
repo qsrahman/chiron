@@ -323,3 +323,28 @@ func TestCtrlZSuspends(t *testing.T) {
 		t.Errorf("Ctrl-Z returned %T", cmd())
 	}
 }
+
+func TestALongLineDoesNotCostTheEntriesAfterIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history")
+	var b strings.Builder
+	b.WriteString("\"old\"\n\"" + strings.Repeat("x", 2<<20) + "\"\n\"newer\"\n\"newest\"") // the last line has no newline
+	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadPromptHistory(path).items; !slices.Equal(got, []string{"old", "newer", "newest"}) {
+		t.Errorf("items = %q", got)
+	}
+}
+
+func TestAHugePromptIsNotRemembered(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history")
+	h := loadPromptHistory(path)
+	h.add(strings.Repeat("x", maxPromptBytes+1))
+	h.add("small")
+	if !slices.Equal(h.items, []string{"small"}) {
+		t.Errorf("items = %d long", len(h.items))
+	}
+	if data, _ := os.ReadFile(path); strings.Contains(string(data), "xxxx") {
+		t.Error("the huge prompt reached the file")
+	}
+}

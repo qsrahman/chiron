@@ -4,6 +4,17 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Fixed
+
+- `auto_compact` no longer announces "Summarizing earlier messages…" every turn when there is nothing it could cut (a
+  single large turn), and a Ctrl-C during an automatic summary is no longer counted as a failed summary.
+- The prompt history no longer loses the entries after a line longer than 1 MiB (it is read with a reader, not a
+  scanner), and a prompt over 64 KiB is not remembered.
+- `/sessions` keeps the first prompt and the real number of turns after `/compact`: the file now carries a title and
+  the count of turns a summary stands for.
+- `/model` to another model drops the reasoning items of the history, as a resume with another model does, so a
+  session file is never labelled with a model that did not write its reasoning.
+
 ## [0.6.2] - 2026-11-18
 
 ### Added

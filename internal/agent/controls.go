@@ -1,6 +1,10 @@
 package agent
 
-import "github.com/qsrahman/desk-agent/internal/tools"
+import (
+	"slices"
+
+	"github.com/qsrahman/desk-agent/internal/tools"
+)
 
 // The methods below are what the slash commands use. They are called between turns, never while one runs: the
 // agent is not safe for concurrent use.
@@ -11,7 +15,7 @@ func (a *Agent) Reset() {
 	a.lastInput = 0
 	a.summaryFailures = 0
 	if a.saving != nil {
-		a.saving.id = "" // the old file stays; the next conversation gets its own
+		a.saving.id, a.saving.title = "", "" // the old file stays; the next conversation gets its own
 	}
 }
 
@@ -47,6 +51,10 @@ func (a *Agent) Settings() Settings { return a.settings }
 
 // SetModel switches the model for the next request. What the server counted belongs to the model that counted it.
 func (a *Agent) SetModel(model string) {
+	if model != a.settings.Model {
+		// Reasoning items only make sense to the model that wrote them, as for a resumed session.
+		a.history.items = slices.DeleteFunc(a.history.items, func(it item) bool { return it.kind == kindReasoning })
+	}
 	a.settings.Model = model
 	a.lastInput = 0
 }

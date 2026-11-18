@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -100,6 +101,11 @@ func (h *history) planCompaction(keep int) int {
 // compact replaces the first `cut` items by the summary. The newest turn is never in them, so undo and rewind
 // still find it.
 func (h *history) compact(cut int, summary string) {
+	for _, it := range h.items[:cut] {
+		if it.kind == kindUser {
+			h.replaced++
+		}
+	}
 	h.items = h.items[cut:]
 	h.summary = summary
 }
@@ -121,8 +127,13 @@ func (a *Agent) Compact(ctx context.Context, focus string) (Compaction, error) {
 	return c, err
 }
 
+// planCut is where a summary would cut the history now: how many items it replaces, 0 for none.
+func (a *Agent) planCut() int {
+	return a.history.planCompaction(min(keepRecentTokens, a.trigger()/2))
+}
+
 func (a *Agent) compact(ctx context.Context, focus string) (Compaction, error) {
-	cut := a.history.planCompaction(min(keepRecentTokens, a.trigger()/2))
+	cut := a.planCut()
 	if cut == 0 {
 		return Compaction{}, ErrNothingToCompact
 	}
@@ -298,14 +309,14 @@ func (a *Agent) compactIfDue(ctx context.Context, prompt string, notice func(str
 	if !a.settings.AutoCompact || a.summaryFailures >= maxSummaryFailures {
 		return
 	}
-	used := max(a.requestTokens(append(a.history.items[:len(a.history.items):len(a.history.items)], userItem(prompt))), int(a.lastInput))
-	if used <= a.trigger()+a.fixedTokens() {
+	used := max(a.requestTokens(append(slices.Clone(a.history.items), userItem(prompt))), int(a.lastInput))
+	if used <= a.trigger()+a.fixedTokens() || a.planCut() == 0 { // nothing to replace: say nothing
 		return
 	}
 	notice("Summarizing earlier messages…")
 	c, err := a.compact(ctx, "")
-	if errors.Is(err, ErrNothingToCompact) {
-		return
+	if ctx.Err() != nil {
+		return // the user cancelled: not a failure of the summary, and the turn will say it was cancelled
 	}
 	if err != nil {
 		a.summaryFailures++

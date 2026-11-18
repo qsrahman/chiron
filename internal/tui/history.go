@@ -12,8 +12,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// maxPrompts is how many prompts are remembered.
-const maxPrompts = 1000
+const (
+	// maxPrompts is how many prompts are remembered.
+	maxPrompts = 1000
+	// maxPromptBytes is the longest prompt that is remembered. A pasted file is not worth recalling, and a line that
+	// long would be a burden to every start.
+	maxPromptBytes = 64 << 10
+)
 
 // promptHistory is the prompts the user has sent, oldest first. With a path they live in a private file, one JSON
 // string a line (a prompt may span lines); without one they are kept for this run only. A file that cannot be
@@ -36,13 +41,19 @@ func loadPromptHistory(path string) *promptHistory {
 	}
 	defer f.Close()
 	lines := 0
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(nil, 1<<20)
-	for scanner.Scan() {
-		lines++
-		var text string
-		if json.Unmarshal(scanner.Bytes(), &text) == nil && text != "" {
-			h.items = append(h.items, text)
+	// A reader, not a scanner: a scanner stops at a line longer than its buffer and everything after it would be lost.
+	reader := bufio.NewReader(f)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if len(line) > 0 {
+			lines++
+			var text string
+			if json.Unmarshal(line, &text) == nil && text != "" && len(text) <= maxPromptBytes {
+				h.items = append(h.items, text)
+			}
+		}
+		if err != nil {
+			break
 		}
 	}
 	if len(h.items) > maxPrompts {
@@ -57,7 +68,7 @@ func loadPromptHistory(path string) *promptHistory {
 // add remembers a prompt, unless it is empty or the same as the last one.
 func (h *promptHistory) add(text string) {
 	text = strings.TrimSpace(text)
-	if text == "" || (len(h.items) > 0 && h.items[len(h.items)-1] == text) {
+	if text == "" || len(text) > maxPromptBytes || (len(h.items) > 0 && h.items[len(h.items)-1] == text) {
 		return
 	}
 	h.items = append(h.items, text)

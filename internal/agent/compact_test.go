@@ -293,3 +293,50 @@ func TestAcceptSummaryForgivesAMissingSummaryTag(t *testing.T) {
 		t.Errorf("got %q, %v", got, err)
 	}
 }
+
+func notices(events []Event) []string {
+	var out []string
+	for _, e := range events {
+		if n, ok := e.(Notice); ok {
+			out = append(out, n.Text)
+		}
+	}
+	return out
+}
+
+func TestAutoCompactSaysNothingWhenThereIsNothingToCut(t *testing.T) {
+	srv := newScriptedServer(t, chatReply("one"), chatReply("two"))
+	a := newTestAgent(srv)
+	a.settings.AutoCompact = true
+	a.settings.MaxContextTokens = 100 // one big turn is over the trigger, but a single turn cannot be summarized
+
+	drain(t, a.Send(context.Background(), strings.Repeat("big ", 200)))
+	events := drain(t, a.Send(context.Background(), "again"))
+
+	if got := notices(events); len(got) != 0 {
+		t.Errorf("notices = %q, want none", got)
+	}
+	if srv.requestCount() != 2 {
+		t.Errorf("requests = %d: nothing should have been sent to summarize", srv.requestCount())
+	}
+}
+
+func TestACancelledAutomaticSummaryIsNotAFailure(t *testing.T) {
+	a, _ := talk(t, 3)
+	a.settings.MaxContextTokens = 400
+	a.settings.AutoCompact = true
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var got []string
+	a.compactIfDue(ctx, "four", func(s string) { got = append(got, s) })
+
+	if a.summaryFailures != 0 {
+		t.Errorf("failures = %d: the user cancelled, the summary did not fail", a.summaryFailures)
+	}
+	for _, s := range got {
+		if strings.Contains(s, "Could not summarize") {
+			t.Errorf("notice %q", s)
+		}
+	}
+}

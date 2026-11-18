@@ -277,3 +277,54 @@ func TestListSessionsIsPerDirectoryUnlessAll(t *testing.T) {
 		t.Errorf("all: %+v", list)
 	}
 }
+
+func TestTheListKeepsTheFirstPromptAndTheTurnsAfterASummary(t *testing.T) {
+	store := session.NewStore(t.TempDir())
+	a, _ := talk(t, 4, summaryReply(goodSummary))
+	a.EnableSessions(store, "/work", endpoint)
+	if err := a.persist(); err != nil { // as after the first turn of a conversation that is saved from its start
+		t.Fatal(err)
+	}
+	a.settings.MaxContextTokens = 400
+	if _, err := a.Compact(context.Background(), ""); err != nil {
+		t.Fatal(err)
+	}
+
+	list, _ := a.ListSessions(false)
+	if len(list) != 1 || list[0].Turns != 4 || !strings.HasPrefix(list[0].Prompt, "question 1") {
+		t.Errorf("list = %+v, want 4 turns and the first question", list)
+	}
+
+	f, _ := store.Load(a.SessionID())
+	b := newTestAgent(newFakeServer(t))
+	b.EnableSessions(store, "/work", endpoint)
+	if err := b.Resume(f, endpoint); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.persist(); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := b.ListSessions(false); again[0].Turns != 4 || !strings.HasPrefix(again[0].Prompt, "question 1") {
+		t.Errorf("after a resume and a save: %+v", again[0])
+	}
+
+	b.Reset()
+	if b.history.replaced != 0 || b.saving.title != "" {
+		t.Error("a reset conversation starts with no summarized turns and no title")
+	}
+}
+
+func TestSwitchingModelDropsReasoningButKeepsTheRest(t *testing.T) {
+	a := newTestAgent(newFakeServer(t))
+	if err := a.Resume(fileWithReasoning("m", endpoint), endpoint); err != nil {
+		t.Fatal(err)
+	}
+	a.SetModel("m") // the same model: nothing to drop
+	if got := kinds(a.history.items); got != "user,reasoning,message" {
+		t.Fatalf("same model: %s", got)
+	}
+	a.SetModel("other")
+	if got := kinds(a.history.items); got != "user,message" {
+		t.Errorf("other model: %s, want the reasoning gone", got)
+	}
+}
