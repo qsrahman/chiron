@@ -102,9 +102,10 @@ func (m *Model) helpCommand(string) (tea.Cmd, error) {
 	interrupt := m.keys.interrupt
 	interrupt.SetHelp("ctrl+c", "cancel a turn, clear the input, quit")
 	rows = nil
-	for _, b := range []key.Binding{m.keys.send, m.keys.newline, m.keys.scroll, interrupt, m.keys.eof} {
+	for _, b := range []key.Binding{m.keys.send, m.keys.newline, m.keys.scroll, m.keys.line, interrupt, m.keys.eof} {
 		rows = append(rows, [2]string{b.Help().Key, b.Help().Desc})
 	}
+	rows = append(rows, [2]string{"mouse wheel", "scroll the transcript (hold Shift to select text)"})
 	m.sayTable(rows)
 	return nil, nil
 }

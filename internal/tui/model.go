@@ -212,6 +212,15 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 
+	case tea.MouseWheelMsg:
+		// The wheel scrolls what has the focus: the details of a call being asked about, or else the transcript.
+		if m.approval.open {
+			m.approval.details, _ = m.approval.details.Update(msg)
+		} else {
+			m.viewport, _ = m.viewport.Update(msg)
+		}
+		return m, nil
+
 	case eventMsg:
 		m.handleEvent(msg.event)
 		return m, waitForEvent(m.events)
@@ -518,6 +527,7 @@ func (m Model) View() tea.View {
 	}
 	v := tea.NewView(screen)
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion // for the wheel; the terminal's own text selection then needs Shift (Option on macOS)
 	return v
 }
 

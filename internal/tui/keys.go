@@ -16,8 +16,8 @@ type keyMap struct {
 	// Used while the approval modal is open.
 	yes, always, no, prev, next key.Binding
 
-	// Used while the input is empty: choosing a tool card, and taking a queued prompt back.
-	cardNext, cardPrev, toggle, unqueue key.Binding
+	// Used while the input is empty: choosing a tool card, taking a queued prompt back, and scrolling a line.
+	cardNext, cardPrev, toggle, unqueue, line key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -35,6 +35,7 @@ func newKeyMap() keyMap {
 		cardPrev:  key.NewBinding(key.WithKeys("shift+tab")),
 		toggle:    key.NewBinding(key.WithKeys("enter", "space"), key.WithHelp("enter", "expand or collapse")),
 		unqueue:   key.NewBinding(key.WithKeys("up")),
+		line:      key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "scroll a line (empty input)")),
 		yes:       key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "allow")),
 		always:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "allow for session")),
 		no:        key.NewBinding(key.WithKeys("n", "esc"), key.WithHelp("n", "deny")),

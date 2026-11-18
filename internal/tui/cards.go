@@ -64,8 +64,8 @@ func (m *Model) toggleCard() {
 	m.refresh()
 }
 
-// emptyInputKey handles the keys that mean something only while the input is empty: choosing a card, and taking
-// a queued prompt back. It reports whether it used the key.
+// emptyInputKey handles the keys that mean something only while the input is empty: choosing a card, taking a
+// queued prompt back, and scrolling the transcript a line. It reports whether it used the key.
 func (m *Model) emptyInputKey(msg tea.KeyPressMsg) bool {
 	switch {
 	case key.Matches(msg, m.keys.cardNext) && len(m.toolCards()) > 0:
@@ -78,6 +78,8 @@ func (m *Model) emptyInputKey(msg tea.KeyPressMsg) bool {
 		m.selectCard(-1)
 	case len(m.queue.prompts) > 0 && key.Matches(msg, m.keys.unqueue):
 		m.unqueue()
+	case key.Matches(msg, m.keys.line):
+		m.viewport, _ = m.viewport.Update(msg) // the viewport's own keys move it one line
 	default:
 		if m.cards.selected >= 0 && !key.Matches(msg, m.keys.scroll) {
 			m.selectCard(-1) // typing goes back to the input

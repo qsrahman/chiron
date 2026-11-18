@@ -4,6 +4,12 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Added
+
+- Up and Down scroll the transcript a line while the input is empty, and the mouse wheel scrolls it (or the details of
+  an open approval dialog). With the mouse reported to the program, selecting text in the terminal needs Shift held
+  (Option on macOS). `/help` lists both.
+
 ## [0.5.2] - 2026-11-18
 
 ### Changed
