@@ -33,6 +33,7 @@ type Agent interface {
 	SetModel(model string)
 	SetReasoningEffort(effort string)
 	ContextEstimate() agent.ContextEstimate
+	ToolList() agent.ToolList
 }
 
 // Info is what the UI shows about the session. Only the fields it displays are here.
@@ -84,6 +85,8 @@ type Model struct {
 	// The suggestion list: the selected row, and the input text it was closed with Esc for.
 	sel       int
 	dismissed string
+
+	approval approval // the modal that asks about a tool call
 
 	contextTokens int64 // size of the conversation after the latest response, 0 until known
 
@@ -151,6 +154,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.markdown = newMarkdownRenderer(m.contentWidth()-gutter, m.th)
+		m.layoutApproval()
 		m.rerender()
 		return m, nil
 
@@ -189,6 +193,9 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	busy := m.events != nil
+	if m.approval.open && !key.Matches(msg, m.keys.interrupt) {
+		return m.approvalKey(msg)
+	}
 	if list, typed := m.suggestions(); len(list) > 0 && m.suggestKey(msg, list, typed) {
 		return m, nil
 	}
@@ -304,6 +311,8 @@ func (m *Model) handleEvent(event agent.Event) {
 		m.addEntry(entry{role: roleTool, callID: e.CallID, name: e.Name, args: e.Arguments, started: m.now()})
 	case agent.ToolFinished:
 		m.finishTool(e)
+	case agent.ApprovalRequested:
+		m.openApproval(e)
 	case agent.Usage:
 		m.contextTokens = e.InputTokens + e.OutputTokens
 	case agent.Done:
@@ -332,7 +341,7 @@ func (m *Model) finishTool(e agent.ToolFinished) {
 	for i := len(m.entries) - 1; i >= 0; i-- {
 		card := &m.entries[i]
 		if card.role == roleTool && card.callID == e.CallID {
-			card.done, card.failed, card.cancelled, card.output = true, e.Failed, e.Cancelled, e.Output
+			card.done, card.failed, card.cancelled, card.denied, card.output = true, e.Failed, e.Cancelled, e.Denied, e.Output
 			card.elapsed = m.now().Sub(card.started)
 			card.rendered = m.render(*card)
 			return
@@ -342,6 +351,7 @@ func (m *Model) finishTool(e agent.ToolFinished) {
 
 // finishTurn runs once the agent has closed its channel, so the next prompt may start.
 func (m *Model) finishTurn() {
+	m.approval = approval{} // a cancelled turn leaves its prompt open
 	m.cancel()
 	m.events, m.cancel, m.cancelling = nil, nil, false
 	m.inputStyles()
@@ -421,7 +431,11 @@ func (m Model) View() tea.View {
 		parts = append(parts, list)
 	}
 	body := lipgloss.JoinVertical(lipgloss.Left, append(parts, m.inputView(), m.helpView())...)
-	v := tea.NewView(indent(body, margin))
+	screen := indent(body, margin)
+	if m.approval.open {
+		screen = m.overlay(screen)
+	}
+	v := tea.NewView(screen)
 	v.AltScreen = true
 	return v
 }

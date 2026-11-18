@@ -3,7 +3,7 @@
 A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI, and works on your
 machine through tools (files, shell, web, todo, questions) and optional MCP servers.
 
-> **Status: Phase 3.8 (v0.3.4).** You can chat with the model in a terminal UI or send a single prompt from the
+> **Status: Phase 4a.1 (v0.4.0).** You can chat with the model in a terminal UI or send a single prompt from the
 > command line. The machinery for tool calls is in place (calls run in parallel when safe, and show up as cards
 > in the chat), but no tools ship yet, so the model still cannot touch your files. Tools and MCP arrive in the
 > next phases; see [PLAN.md](PLAN.md). This README is updated as each phase lands.
@@ -35,11 +35,25 @@ Type `/` in the chat to list them; Up/Down choose, Tab completes, Esc closes. Th
 | `/reset` | Forget the conversation and start over |
 | `/model [NAME]` | Show the model, or switch to NAME |
 | `/effort [LEVEL]` | Show the reasoning effort, or set it (`default` sends none) |
+| `/tools` | List the tools and which of them ask before they run |
 | `/undo` | Remove the last exchange from the conversation |
 | `/retry` | Send the last prompt again |
 | `/context` | Estimated size of the instructions, tools and history |
 
 A lone `/word` that is no command is reported and not sent; a longer line such as `/usr/bin is missing` is a prompt.
+
+## Approvals
+
+A tool that can change something (anything not marked read-only) asks before every call: a dialog in the middle
+of the screen shows what is about to happen, with **Allow** (`y`), **Allow for session** (`s`) and **Deny**
+(`n` or Esc). Deny is selected when it opens, so pressing Enter by reflex refuses. The details are never cut
+(long ones scroll with Up/Down and PgUp/PgDn) and control characters appear as visible escapes such as `\x1b`
+and `\r`, so what you allow is exactly what runs. A session grant covers the same tool with the same key (for
+example the same command) until you quit; `/tools` lists what is allowed. A denied call is reported to the model,
+which is told not to try again. Ctrl-C with the dialog open cancels the turn.
+
+With `-p` nobody can answer, so calls that would ask are denied (a notice goes to stderr) unless you pass `--yes`,
+which allows every call for that run. No built-in tool can change anything yet; they arrive in Phase 5.
 
 ## What the model is told
 

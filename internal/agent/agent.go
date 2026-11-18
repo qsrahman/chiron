@@ -20,6 +20,7 @@ type Settings struct {
 	ReasoningEffort string // "" sends none: models that do not reason reject the setting
 	MaxTurns        int    // model calls for one prompt; 0 means defaultMaxTurns
 	Streaming       bool   // false sends one request and shows the whole reply at once
+	AutoApprove     bool   // allows every call without asking (--yes)
 }
 
 // Agent holds one conversation. It is not safe for concurrent use: wait for the channel returned by Send to
@@ -31,7 +32,8 @@ type Agent struct {
 	tools        *tools.Registry
 	idleTimeout  time.Duration
 	history      history
-	lastInput    int64 // input tokens the server counted for the last request; 0 until one is known
+	grants       map[grant]bool // what the user allowed for the session; lasts until the program exits
+	lastInput    int64          // input tokens the server counted for the last request; 0 until one is known
 }
 
 // New returns an agent with an empty history. registry holds the tools the model may call; use
@@ -40,7 +42,7 @@ func New(client openai.Client, settings Settings, instructions string, registry 
 	if settings.MaxTurns <= 0 {
 		settings.MaxTurns = defaultMaxTurns
 	}
-	return &Agent{client: client, settings: settings, instructions: instructions, tools: registry, idleTimeout: defaultIdleTimeout}
+	return &Agent{client: client, settings: settings, instructions: instructions, tools: registry, idleTimeout: defaultIdleTimeout, grants: map[grant]bool{}}
 }
 
 // Send starts a turn for the user's text and streams events on the returned channel.

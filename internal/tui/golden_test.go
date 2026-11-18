@@ -146,6 +146,11 @@ func TestNoLineIsWiderThanTheTerminal(t *testing.T) {
 				m, _ := typeAndEnter(t, sized(&fakeAgent{}, width, 40), "/help")
 				return m
 			},
+			"approval": func() Model {
+				m, _, _ := asking(t, "git commit -m 'fix'\n"+strings.Repeat("x", 300))
+				next, _ := update(m, tea.WindowSizeMsg{Width: width, Height: 30})
+				return next
+			},
 			"suggestions": func() Model {
 				m := sized(&fakeAgent{}, width, 30)
 				m.input.SetValue("/")

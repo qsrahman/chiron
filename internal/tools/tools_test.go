@@ -108,3 +108,34 @@ func TestRegistry(t *testing.T) {
 		t.Errorf("zero Registry has specs: %v", got)
 	}
 }
+
+func TestValidate(t *testing.T) {
+	v := echo().(Validator)
+	tests := []struct {
+		name, arguments string
+		wantErr         bool
+	}{
+		{"valid", `{"text":"a"}`, false},
+		{"optional field left out", `{"text":"a","times":2}`, false},
+		{"required field missing", `{"times":2}`, true},
+		{"empty arguments", ``, true},
+		{"wrong type", `{"text":5}`, true},
+		{"not JSON", `{"text":`, true},
+		{"not an object", `["a"]`, true},
+		{"unknown field", `{"text":"a","tiems":2}`, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := v.Validate(tt.arguments); (err != nil) != tt.wantErr {
+				t.Errorf("Validate(%q) = %v, wantErr %v", tt.arguments, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateAcceptsNoArgumentsForAToolWithNone(t *testing.T) {
+	none := MustNew("none", "Takes nothing.", true, func(context.Context, struct{}) (string, error) { return "", nil })
+	if err := none.(Validator).Validate(``); err != nil {
+		t.Errorf("Validate(\"\") = %v", err)
+	}
+}

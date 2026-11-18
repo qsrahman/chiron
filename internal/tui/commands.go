@@ -35,6 +35,7 @@ func commandList() []command {
 		{name: "/reset", description: "Forget the conversation and start over", run: (*Model).resetCommand},
 		{name: "/model", usage: "[NAME]", description: "Show the model, or switch to NAME", run: (*Model).modelCommand},
 		{name: "/effort", usage: "[LEVEL]", description: "Show the reasoning effort, or set it", args: effortLevels, run: (*Model).effortCommand},
+		{name: "/tools", description: "List the tools and which of them ask before they run", run: (*Model).toolsCommand},
 		{name: "/undo", description: "Remove the last exchange from the conversation", run: (*Model).undoCommand},
 		{name: "/retry", description: "Send the last prompt again", run: (*Model).retryCommand},
 		{name: "/context", description: "Show how much of the context window is used", run: (*Model).contextCommand},
@@ -173,6 +174,28 @@ func (m *Model) retryCommand(string) (tea.Cmd, error) {
 	}
 	m.contextTokens = 0
 	return m.startTurn(prompt), nil
+}
+
+func (m *Model) toolsCommand(string) (tea.Cmd, error) {
+	l := m.agent.ToolList()
+	if len(l.Free)+len(l.Allowed)+len(l.Ask) == 0 {
+		m.say("Tools: none")
+		return nil, nil
+	}
+	if m.agent.Settings().AutoApprove {
+		m.say("Every call is allowed without asking (--yes)")
+	}
+	var rows [][2]string
+	for _, group := range []struct {
+		label string
+		names []string
+	}{{"run without asking", l.Free}, {"allowed this session", l.Allowed}, {"ask first", l.Ask}} {
+		if len(group.names) > 0 {
+			rows = append(rows, [2]string{group.label, strings.Join(group.names, ", ")})
+		}
+	}
+	m.sayTable(rows)
+	return nil, nil
 }
 
 func (m *Model) contextCommand(string) (tea.Cmd, error) {

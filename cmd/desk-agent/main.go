@@ -49,6 +49,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&given.ReasoningEffort, "reasoning-effort", "", "reasoning effort: none, minimal, low, medium, high, xhigh, max, or default to send none")
 	flags.IntVar(&given.MaxTurns, "max-turns", 0, "most model calls for one prompt (default 25)")
 	// Two flags make a three-state setting: not given, on, off.
+	yes := flags.Bool("yes", false, "allow every tool call without asking (in -p mode, calls that would ask are denied without it)")
 	flags.BoolFunc("streaming", "stream the reply as it arrives (the default)", func(string) error { given.Streaming = new(true); return nil })
 	flags.BoolFunc("no-streaming", "send one request and show the whole reply at once", func(string) error { given.Streaming = new(false); return nil })
 
@@ -62,7 +63,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	cfg, err := loadConfig(*configPath, given, stderr)
 	if err == nil {
-		err = start(ctx, cfg, *prompt, stdout, stderr)
+		err = start(ctx, cfg, *prompt, *yes, stdout, stderr)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "desk-agent:", err)
@@ -72,7 +73,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 }
 
 // start builds the agent for the current directory and runs either one prompt or the chat UI.
-func start(ctx context.Context, cfg config.Config, prompt string, stdout, stderr io.Writer) error {
+func start(ctx context.Context, cfg config.Config, prompt string, autoApprove bool, stdout, stderr io.Writer) error {
 	// Local servers often need no key, so only insist on one for the OpenAI API.
 	if cfg.APIKey == "" && cfg.BaseURL == "" {
 		return errors.New("no API key: set OPENAI_API_KEY or api_key in the config file")
@@ -91,6 +92,7 @@ func start(ctx context.Context, cfg config.Config, prompt string, stdout, stderr
 		ReasoningEffort: cfg.ReasoningEffort,
 		MaxTurns:        cfg.MaxTurns,
 		Streaming:       cfg.Streaming,
+		AutoApprove:     autoApprove,
 	}, instructions, registry)
 
 	if prompt != "" {
@@ -122,7 +124,8 @@ func loadConfig(path string, given config.Flags, warn io.Writer) (config.Config,
 }
 
 // runPrompt sends one prompt and streams the answer to w. After a retry the text of the failed attempt has
-// already been written, so the answer can start over; the notice goes to stderr to say so.
+// already been written, so the answer can start over; the notice goes to stderr to say so. Nobody can answer an
+// approval request here, so a call that needs one is denied (the model is told) unless --yes allowed everything.
 func runPrompt(ctx context.Context, a *agent.Agent, prompt string, w, notices io.Writer) error {
 	var failure error
 	for event := range a.Send(ctx, prompt) {
@@ -131,6 +134,9 @@ func runPrompt(ctx context.Context, a *agent.Agent, prompt string, w, notices io
 			fmt.Fprint(w, e.Text)
 		case agent.Retry:
 			fmt.Fprintf(notices, "\n[%s]\n", e.Reason)
+		case agent.ApprovalRequested:
+			fmt.Fprintf(notices, "\n[denied: %q; run with --yes to allow tool calls]\n", e.Summary)
+			e.Reply <- agent.Deny
 		case agent.Error:
 			failure = e.Err
 		case agent.Done:

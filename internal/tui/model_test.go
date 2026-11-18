@@ -29,11 +29,13 @@ type fakeAgent struct {
 	undoable     bool // whether Undo finds an exchange
 	rewindPrompt string
 	conversation bool
+	tools        agent.ToolList
 }
 
-func (f *fakeAgent) Reset()                { f.resets++ }
-func (f *fakeAgent) Undo() bool            { return f.undoable }
-func (f *fakeAgent) HasConversation() bool { return f.conversation }
+func (f *fakeAgent) Reset()                   { f.resets++ }
+func (f *fakeAgent) Undo() bool               { return f.undoable }
+func (f *fakeAgent) HasConversation() bool    { return f.conversation }
+func (f *fakeAgent) ToolList() agent.ToolList { return f.tools }
 func (f *fakeAgent) Settings() agent.Settings {
 	s := f.settings
 	if s.Model == "" {

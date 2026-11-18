@@ -46,6 +46,7 @@ type entry struct {
 	done      bool
 	failed    bool
 	cancelled bool
+	denied    bool
 	output    string
 }
 

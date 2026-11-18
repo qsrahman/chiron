@@ -4,6 +4,21 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-18
+
+### Added
+
+- Approvals: a call to a tool that is not read-only asks first. The agent validates the arguments (a JSON object
+  matching the tool's schema) and answers an invalid call without asking, then emits `ApprovalRequested` and waits
+  for a `Decision` (`Deny`, `Allow`, `AllowSession`) or a cancel. Session grants are kept by tool and grant key until
+  the program exits. A denied call tells the model not to retry it.
+- Optional `tools.Describer` (summary, details, grant key) and `tools.Validator`; `MustNew` tools validate against
+  their schema.
+- A centered approval dialog that starts on Deny. Its details are never cut, scroll, and show control characters as
+  visible escapes. Denied calls get their own card state.
+- `/tools`: which tools run without asking, which are allowed for the session and which ask first.
+- `--yes` allows every call; with `-p`, calls that would ask are denied unless `--yes` is given.
+
 ### Fixed
 
 - A reply is drawn as markdown while it streams (bold, lists, code); before, the raw `**` and `-` were visible until

@@ -10,6 +10,7 @@
    /quit            Quit
    /reset           Forget the conversation and start over
    /retry           Send the last prompt again
+   /tools           List the tools and which of them ask before they run
    /undo            Remove the last exchange from the conversation
 
    enter        send
@@ -17,7 +18,6 @@
    pgup/pgdn    scroll
    ctrl+c       cancel a turn, clear the input, quit
    ctrl+d       quit on an empty input
-
 
 
 

@@ -19,9 +19,32 @@ type ToolFinished struct {
 	Name   string
 	Output string
 	Failed bool
+	// Denied is set when the user refused the call; the model was told so.
+	Denied bool
 	// Cancelled is set when the call failed because the turn was cancelled, so front-ends can show it
 	// as interrupted rather than as an error.
 	Cancelled bool
+}
+
+// Decision is the user's answer to an approval request. The zero value refuses, so an answer that was never given
+// can never allow a call.
+type Decision int
+
+const (
+	Deny Decision = iota
+	Allow
+	AllowSession // allow this call and every later one with the same grant key
+)
+
+// ApprovalRequested asks the user to allow a call to a tool that is not read-only. The turn waits until a
+// Decision is sent on Reply, or its context is cancelled. Reply has room for the answer, so sending never blocks.
+type ApprovalRequested struct {
+	CallID   string
+	Tool     string
+	Summary  string // one line
+	Details  string // what is about to happen; may hold any character, so show it with care
+	GrantKey string // what Allow for session covers besides the tool; empty covers the tool
+	Reply    chan<- Decision
 }
 
 // Usage reports the token counts of one model response. Input plus output is roughly the size of the
@@ -39,10 +62,11 @@ type Done struct{}
 // A turn that failed before any tool ran leaves the history as it was; one that stopped after tool work is kept.
 type Error struct{ Err error }
 
-func (TextDelta) isEvent()    {}
-func (ToolStarted) isEvent()  {}
-func (ToolFinished) isEvent() {}
-func (Usage) isEvent()        {}
-func (Retry) isEvent()        {}
-func (Done) isEvent()         {}
-func (Error) isEvent()        {}
+func (TextDelta) isEvent()         {}
+func (ToolStarted) isEvent()       {}
+func (ToolFinished) isEvent()      {}
+func (ApprovalRequested) isEvent() {}
+func (Usage) isEvent()             {}
+func (Retry) isEvent()             {}
+func (Done) isEvent()              {}
+func (Error) isEvent()             {}

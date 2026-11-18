@@ -18,7 +18,9 @@ import (
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
 
+	"github.com/qsrahman/desk-agent/internal/agent"
 	"github.com/qsrahman/desk-agent/internal/config"
+	"github.com/qsrahman/desk-agent/internal/tools"
 )
 
 func TestRunVersion(t *testing.T) {
@@ -300,3 +302,67 @@ func TestEnvironmentBaseURLCannotRedirectTheKey(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// toolCallStream is a response that calls the mutating tool "write", and then a plain answer.
+const toolCallStream = `event: response.completed
+data: {"type":"response.completed","sequence_number":1,"response":{"id":"r","object":"response","status":"completed","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"write","arguments":"{\"name\":\"a.txt\"}","status":"completed"}]}}
+
+`
+
+// Nobody can answer an approval prompt with -p: the call is denied and the model is told, unless --yes allows it.
+func TestRunPromptDeniesCallsThatNeedApprovalUnlessYes(t *testing.T) {
+	type writeArgs struct {
+		Name string `json:"name"`
+	}
+	for _, yes := range []bool{false, true} {
+		t.Run(map[bool]string{false: "no flag", true: "--yes"}[yes], func(t *testing.T) {
+			isolate(t)
+			var mu sync.Mutex
+			var requests []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				mu.Lock()
+				requests = append(requests, string(body))
+				first := len(requests) == 1
+				mu.Unlock()
+				w.Header().Set("Content-Type", "text/event-stream")
+				if first {
+					_, _ = io.WriteString(w, toolCallStream)
+					return
+				}
+				_, _ = io.WriteString(w, streamedAnswer)
+			}))
+			t.Cleanup(srv.Close)
+
+			ran := false
+			write := tools.MustNew("write", "write a file", false, func(context.Context, writeArgs) (string, error) {
+				ran = true
+				return "written", nil
+			})
+			registry, err := tools.NewRegistry(write)
+			if err != nil {
+				t.Fatal(err)
+			}
+			a := agent.New(newClient(config.Config{BaseURL: srv.URL}), agent.Settings{Model: "m", Streaming: true, AutoApprove: yes}, "", registry)
+
+			var out, notices bytes.Buffer
+			if err := runPrompt(context.Background(), a, "go", &out, &notices); err != nil {
+				t.Fatal(err)
+			}
+
+			if ran != yes {
+				t.Errorf("the tool ran = %v, want %v", ran, yes)
+			}
+			if got := strings.Contains(notices.String(), "denied"); got == yes {
+				t.Errorf("notices = %q", notices.String())
+			}
+			wantInSecondRequest := "the user denied this call"
+			if yes {
+				wantInSecondRequest = "written"
+			}
+			if len(requests) != 2 || !strings.Contains(requests[1], wantInSecondRequest) {
+				t.Errorf("the second request should carry %q: %v", wantInSecondRequest, requests)
+			}
+		})
+	}
+}

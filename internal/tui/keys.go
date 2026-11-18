@@ -12,6 +12,9 @@ type keyMap struct {
 
 	// Used while the suggestion list is open.
 	up, down, complete, dismiss key.Binding
+
+	// Used while the approval modal is open.
+	yes, always, no, prev, next key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -25,6 +28,11 @@ func newKeyMap() keyMap {
 		down:      key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "next")),
 		complete:  key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "complete")),
 		dismiss:   key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
+		yes:       key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "allow")),
+		always:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "allow for session")),
+		no:        key.NewBinding(key.WithKeys("n", "esc"), key.WithHelp("n", "deny")),
+		prev:      key.NewBinding(key.WithKeys("left", "shift+tab"), key.WithHelp("←/→", "choose")),
+		next:      key.NewBinding(key.WithKeys("right", "tab")),
 	}
 }
 
@@ -42,4 +50,11 @@ func (k keyMap) helpBindings(busy, cancelling bool) []key.Binding {
 		return []key.Binding{interrupt, k.scroll}
 	}
 	return []key.Binding{k.send, k.newline, k.scroll, interrupt}
+}
+
+// approvalHelp is what the help bar shows while the approval modal is open.
+func (k keyMap) approvalHelp() []key.Binding {
+	confirm := k.send
+	confirm.SetHelp("enter", "confirm")
+	return []key.Binding{k.yes, k.always, k.no, k.prev, confirm}
 }

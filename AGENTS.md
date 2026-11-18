@@ -63,6 +63,11 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
 - **Adding a tool:** define an `Args` struct (`json` tags for names, `jsonschema` tags for descriptions), write
   `func(ctx, Args) (string, error)`, wrap it with `tools.MustNew`, and add it to the registry in `main`. The
   agent loop and the TUI need no change; the TUI shows every call as a card.
+- **Approvals.** Every call to a tool whose `ReadOnly()` is false goes through `Agent.approve` (`approve.go`)
+  unless `Settings.AutoApprove` or a session grant covers it. A tool may implement `tools.Describer` (summary,
+  details, grant key) and `tools.Validator`; `MustNew` tools validate against their schema, and an invalid call is
+  answered without asking. The TUI shows the details with `escape`, never `sanitize`: the user must see exactly what
+  runs. Tests that are not about approval use `testSettings`, which allows every call.
 - **Read-only tools run concurrently; mutating tools run alone, in model order.** Mark a tool read-only only if
   it cannot change anything outside the process.
 - **File tools are confined to the working directory tree.**

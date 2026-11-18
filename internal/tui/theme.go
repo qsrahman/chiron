@@ -86,6 +86,8 @@ type styles struct {
 
 	welcomeTitle, welcomeText lipgloss.Style
 
+	modal, button, buttonSelected lipgloss.Style
+
 	inputBox, inputBoxBusy lipgloss.Style
 	prompt, promptBusy     lipgloss.Style
 	help                   help.Styles
@@ -126,10 +128,13 @@ func newStyles(t theme) styles {
 		welcomeTitle: fg(t.primary).Bold(true),
 		welcomeText:  fg(t.subtle),
 
-		inputBox:     box.BorderForeground(t.primary),
-		inputBoxBusy: box.BorderForeground(t.muted),
-		prompt:       fg(t.primary).Bold(true),
-		promptBusy:   fg(t.muted),
+		modal:          box.BorderForeground(t.primary).Padding(1, 1),
+		button:         lipgloss.NewStyle().Padding(0, 1).Foreground(t.subtle),
+		buttonSelected: lipgloss.NewStyle().Padding(0, 1).Bold(true).Background(t.primary).Foreground(t.onAccent),
+		inputBox:       box.BorderForeground(t.primary),
+		inputBoxBusy:   box.BorderForeground(t.muted),
+		prompt:         fg(t.primary).Bold(true),
+		promptBusy:     fg(t.muted),
 
 		help: help.Styles{
 			ShortKey:       fg(t.subtle),

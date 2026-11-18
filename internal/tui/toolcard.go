@@ -81,6 +81,8 @@ func (m *Model) cardIcon(e entry) string {
 		return m.sty.iconRunning.Render(m.spin.View())
 	case e.cancelled:
 		return m.sty.iconOff.Render("●")
+	case e.denied:
+		return m.sty.iconOff.Render("⊘")
 	case e.failed:
 		return m.sty.iconErr.Render("×")
 	default:
@@ -137,6 +139,8 @@ func (m *Model) cardBody(e entry, width int) []string {
 	switch {
 	case e.cancelled:
 		return []string{m.sty.toolMeta.Render("cancelled")}
+	case e.denied:
+		return []string{m.sty.toolMeta.Render("denied by you")}
 	case e.failed:
 		return m.failureLines(e.output, width)
 	}

@@ -9,6 +9,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/openai/openai-go/v3/responses"
+
+	"github.com/qsrahman/desk-agent/internal/tools"
 )
 
 const (
@@ -51,35 +53,62 @@ func (a *Agent) isReadOnly(call responses.ResponseFunctionToolCall) bool {
 	return ok && tool.ReadOnly()
 }
 
+// callResult is how one call ended: the text the model reads, and how the front-end should show it.
+type callResult struct {
+	output                    string
+	failed, cancelled, denied bool
+}
+
+func failure(text string) callResult { return callResult{output: text, failed: true} }
+
+func interrupted() callResult {
+	return callResult{output: interruptedOutput, failed: true, cancelled: true}
+}
+
 // runCall runs one call and returns the text to give back to the model. Failures (unknown tool, bad
-// arguments, tool errors) become that text instead of aborting the turn, so the model can recover. A call that
-// was running, or had not run yet, when the turn was cancelled is answered as interrupted.
+// arguments, a denial, tool errors) become that text instead of aborting the turn, so the model can recover. A
+// call that was running, or had not run yet, when the turn was cancelled is answered as interrupted.
 func (a *Agent) runCall(ctx context.Context, call responses.ResponseFunctionToolCall, events chan<- Event) string {
 	events <- ToolStarted{CallID: call.CallID, Name: call.Name, Arguments: call.Arguments}
+	res := a.execute(ctx, call, events)
+	events <- ToolFinished{CallID: call.CallID, Name: call.Name, Output: res.output, Failed: res.failed, Cancelled: res.cancelled, Denied: res.denied}
+	return res.output
+}
 
-	output, failed, cancelled := "", false, false
+func (a *Agent) execute(ctx context.Context, call responses.ResponseFunctionToolCall, events chan<- Event) callResult {
 	tool, known := a.tools.Get(call.Name)
 	switch {
 	case !known:
-		output, failed = unknownToolText(call.Name, a.tools.Names()), true
+		return failure(unknownToolText(call.Name, a.tools.Names()))
 	case ctx.Err() != nil:
-		output, failed, cancelled = interruptedOutput, true, true
-	default:
-		result, err := tool.Run(ctx, call.Arguments)
-		switch {
-		case err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled):
-			output, failed, cancelled = interruptedOutput, true, true
+		return interrupted()
+	}
+
+	// A call that could not run is answered before the user is asked about it.
+	if v, ok := tool.(tools.Validator); ok {
+		if err := v.Validate(call.Arguments); err != nil {
+			return failure("error: invalid arguments: " + err.Error())
+		}
+	}
+	if !tool.ReadOnly() {
+		switch decision, err := a.approve(ctx, tool, call, events); {
 		case err != nil:
-			output, failed = "error: "+err.Error(), true
-		case result == "":
-			output = "(no output)"
-		default:
-			output = capOutput(result)
+			return interrupted()
+		case decision == Deny:
+			return callResult{output: deniedOutput, failed: true, denied: true}
 		}
 	}
 
-	events <- ToolFinished{CallID: call.CallID, Name: call.Name, Output: output, Failed: failed, Cancelled: cancelled}
-	return output
+	result, err := tool.Run(ctx, call.Arguments)
+	switch {
+	case err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled):
+		return interrupted()
+	case err != nil:
+		return failure("error: " + err.Error())
+	case result == "":
+		return callResult{output: "(no output)"}
+	}
+	return callResult{output: capOutput(result)}
 }
 
 // unknownToolText tells the model which tools exist, so it can correct the call.

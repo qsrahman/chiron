@@ -102,8 +102,11 @@ func (f *fakeServer) requestCount() int {
 	return len(f.requests)
 }
 
-// testSettings are the settings most tests use.
-func testSettings(model string) Settings { return Settings{Model: model, Streaming: true} }
+// testSettings are the settings most tests use. They allow every call, since most tests are about something other
+// than approval; the approval tests turn that off.
+func testSettings(model string) Settings {
+	return Settings{Model: model, Streaming: true, AutoApprove: true}
+}
 
 // newTestAgent returns an agent without tools, talking to the fake server.
 func newTestAgent(srv *fakeServer) *Agent {
