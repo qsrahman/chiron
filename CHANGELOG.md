@@ -4,6 +4,16 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Changed
+
+- Tool cards are closed by default: one line, with the number of lines returned and the duration at the right end
+  (`cancelled` and `denied by you` also go there); a failed call also shows the first line of its error. Opening a
+  card (Enter or Space) shows the whole output; the five-line preview is gone.
+- Consecutive tool cards have no blank line between them, so a run of calls reads as a list, and the server of an MCP
+  tool is muted in its title.
+- The top heading of an answer is no longer a coloured badge, and inline code is a colour without a padded background
+  (which broke into patches where a line wrapped).
+
 ### Added
 
 - Up and Down scroll the transcript a line while the input is empty, and the mouse wheel scrolls it (or the details of

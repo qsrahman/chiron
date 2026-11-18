@@ -151,8 +151,8 @@ synthetic messages. Real-API checks are manual and documented in the README.
   prompt; the next Enter sends the first. Up on an empty input pulls the last queued prompt back into the input.
   Commands are never queued (they stay refused during a turn).
 - **Expandable cards:** the model keeps a selected card index; Tab / Shift+Tab move it when the input is empty;
-  Enter or Space toggle that card; Esc clears the selection. Collapsed cards show 5 lines, expanded ones show the
-  whole output (still width-clamped, at most the 20 KiB the agent keeps) and the viewport scrolls to keep the selected card in view.
+  Enter or Space toggle that card; Esc clears the selection. Closed cards (the default) show only their header, with
+  the line count and duration at the right end (and one line of an error), expanded ones show the whole output (still width-clamped, at most the 20 KiB the agent keeps) and the viewport scrolls to keep the selected card in view.
 
 ### 4.6 MCP client (Phases 4b.1 and 4b.2)
 

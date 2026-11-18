@@ -52,9 +52,9 @@ queue. After a turn that fails on its own the queue is held and a notice says ho
 an empty line sends the first. **Up** on an empty input takes the last queued prompt back to edit. Commands are never
 queued; they wait for the turn to end.
 
-**Tab** (or Shift+Tab) on an empty input selects a tool card, newest first; **Enter** or **Space** switches it
-between a five-line preview and its whole output, and the screen scrolls to keep it in view. **Esc**, or typing,
-goes back to the input.
+**Tab** (or Shift+Tab) on an empty input selects a tool card, newest first; **Enter** or **Space** opens it to show its
+whole output, or closes it again, and the screen scrolls to keep it in view. **Esc**, or typing, goes back to the
+input.
 
 ## Approvals
 
@@ -176,10 +176,12 @@ help. The colours adapt to your terminal: the UI asks the terminal for its backg
 palette, deriving the shaded areas from it, so it fits any terminal theme.
 
 When the model calls a tool, a card appears in the transcript: a spinner while it runs, then `✓` or `×`, the
-tool name, its main argument and the others as `key=value`, and the duration if it was slow. The result sits
-below on a shaded band, cut to 5 lines with a count of the rest. A failure shows an `ERROR` badge, and a call
-that was interrupted shows as cancelled. Independent read-only calls run at the same time; anything that could change
-something runs alone, in the order the model asked.
+tool name, its main argument and the others as `key=value`. Cards are **closed by default**: one line each, with
+what the call came to at the right end (`12 lines`, how long it took if it was slow, `cancelled` or `denied by you`).
+A run of calls reads as a list, with no blank lines between the cards. Open a card (see above) to see the whole
+output on a shaded band. A failure shows an `ERROR` badge and the first line of the error even while closed. For an
+MCP tool the server is muted: `docs → search`. Independent read-only calls run at the same time; anything that could
+change something runs alone, in the order the model asked.
 
 A cancelled or failed answer stays on screen but is not added to the conversation history, so the next
 message continues from the last complete answer.

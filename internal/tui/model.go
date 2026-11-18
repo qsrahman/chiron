@@ -485,19 +485,25 @@ func (m *Model) renderStreaming() {
 
 // refresh rebuilds the viewport content, following new output only if the user is at the bottom.
 func (m *Model) refresh() {
-	var parts []string
-	for _, e := range m.entries {
-		parts = append(parts, e.rendered)
+	var transcript strings.Builder
+	for i, e := range m.entries {
+		if i > 0 {
+			transcript.WriteString(separator(m.entries[i-1], e))
+		}
+		transcript.WriteString(e.rendered)
 	}
-	if m.streamView != "" {
-		parts = append(parts, m.streamView)
+	content := transcript.String()
+	for _, tail := range []string{m.streamView, m.activityLine()} {
+		if tail == "" {
+			continue
+		}
+		if content != "" {
+			content += "\n\n"
+		}
+		content += tail
 	}
-	if line := m.activityLine(); line != "" {
-		parts = append(parts, line)
-	}
-	content := m.welcomeView()
-	if len(parts) > 0 {
-		content = strings.Join(parts, "\n\n")
+	if content == "" {
+		content = m.welcomeView()
 	}
 
 	follow := m.viewport.AtBottom()

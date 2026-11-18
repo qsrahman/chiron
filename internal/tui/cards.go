@@ -96,7 +96,9 @@ func (m *Model) cardOffset(index int) (top, height int) {
 		if i == index {
 			return top, height
 		}
-		top += height + 1 // the blank line between entries
+		if i+1 < len(m.entries) {
+			top += height + strings.Count(separator(e, m.entries[i+1]), "\n") - 1
+		}
 	}
 	return 0, 0
 }

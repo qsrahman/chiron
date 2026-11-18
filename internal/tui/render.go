@@ -207,3 +207,12 @@ func continuesItem(prev, next string, lead, width int) bool {
 	word, _, _ := strings.Cut(text, " ")
 	return ansi.StringWidth(strings.TrimRight(prev, " "))+1+ansi.StringWidth(word) > width
 }
+
+// separator goes between two neighbouring entries: a blank line, except between tool cards, so that a run of calls
+// reads as a list.
+func separator(prev, next entry) string {
+	if prev.role == roleTool && next.role == roleTool {
+		return "\n"
+	}
+	return "\n\n"
+}

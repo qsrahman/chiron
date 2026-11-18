@@ -133,3 +133,23 @@ func TestCodeColoursFollowTheTheme(t *testing.T) {
 		t.Error("switching themes back and forth changed the code colours")
 	}
 }
+
+// The title of an answer is not a badge, and inline code is a colour, not a padded band that breaks where it wraps.
+func TestHeadingsAndInlineCodeHaveNoBackground(t *testing.T) {
+	for _, dark := range []bool{true, false} {
+		m := sized(&fakeAgent{}, 80, 24)
+		m.applyTheme(newTheme(dark, nil))
+
+		out := m.markdownText("# desk-agent\n\n## Packages\n\nUse `go build` now.\n", 76)
+
+		if strings.Contains(out, "\x1b[48;") || strings.Contains(out, ";48;") {
+			t.Errorf("dark=%v: a heading or inline code has a background: %q", dark, out)
+		}
+		if strings.Contains(out, " ") || strings.Contains(ansi.Strip(out), " desk-agent ") {
+			t.Errorf("dark=%v: a heading or inline code is padded: %q", dark, ansi.Strip(out))
+		}
+		if !strings.Contains(out, "\x1b[38;") {
+			t.Errorf("dark=%v: headings and code lost their colour", dark)
+		}
+	}
+}

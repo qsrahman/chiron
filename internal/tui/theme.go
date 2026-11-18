@@ -167,9 +167,14 @@ func markdownStyle(t theme) ansi.StyleConfig {
 	for _, h := range []*ansi.StyleBlock{&cfg.H2, &cfg.H3, &cfg.H4, &cfg.H5, &cfg.H6} {
 		h.Prefix = ""
 	}
-	cfg.H1.Color, cfg.H1.BackgroundColor = hex(t.onAccent), hex(t.primary)
+	// The top heading is no badge: a block of colour around the title of an answer is louder than the answer.
+	cfg.H1.Color, cfg.H1.BackgroundColor = hex(t.info), nil
+	cfg.H1.Prefix, cfg.H1.Suffix = "", ""
 
-	cfg.Code.Color, cfg.Code.BackgroundColor = hex(t.warning), hex(t.band)
+	// Inline code is told apart by colour alone. A background with padding turns into a patchy band where the line
+	// wraps.
+	cfg.Code.Color, cfg.Code.BackgroundColor = hex(t.warning), nil
+	cfg.Code.Prefix, cfg.Code.Suffix = "", ""
 
 	// Code blocks use a named chroma style. Glamour's own per-theme colour tables are registered once under a
 	// single global name, so the first theme rendered would win for the whole process and a later switch

@@ -294,8 +294,8 @@ func TestToolCardsShowProgressAndResult(t *testing.T) {
 	if !failed.done || failed.outcome != agent.CallFailed || !strings.Contains(failed.rendered, "×") || !strings.Contains(failed.rendered, "ERROR") || !strings.Contains(failed.rendered, "no such file") {
 		t.Errorf("failed card not rendered as failed: %q", failed.rendered)
 	}
-	if !ok.done || ok.outcome != agent.CallOK || !strings.Contains(ok.rendered, "✓") || !strings.Contains(ok.rendered, "b.go") {
-		t.Errorf("successful card not rendered as done: %q", ok.rendered)
+	if !ok.done || ok.outcome != agent.CallOK || !strings.Contains(ok.rendered, "✓") || !strings.Contains(ok.rendered, "2 lines") || strings.Contains(ok.rendered, "b.go") {
+		t.Errorf("a successful card is closed: a done mark and the line count, not the output: %q", ok.rendered)
 	}
 }
 
@@ -310,33 +310,29 @@ func TestRunningToolCardHasNoResultMarker(t *testing.T) {
 	}
 }
 
-func TestToolPreviewIsShortened(t *testing.T) {
+func TestAClosedCardShowsOnlyItsHeaderAndHowMuchItReturned(t *testing.T) {
 	m := newTestModel(&fakeAgent{})
-	m, _ = update(m, tea.WindowSizeMsg{Width: 30, Height: 20})
+	m, _ = update(m, tea.WindowSizeMsg{Width: 50, Height: 20})
 	lines := []string{"line1", "line2", "line3 " + strings.Repeat("x", 100), "line4", "line5", "line6", "line7", "line8", "line9"}
 
-	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "read_file", Arguments: "{}"}})
+	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "read_file", Arguments: `{"path":"main.go"}`}})
 	m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "read_file", Output: strings.Join(lines, "\n")}})
 
-	card := ansi.Strip(lastEntry(m).rendered)
-	if strings.Contains(card, "line6") || !strings.Contains(card, "line5") || !strings.Contains(card, "(4 more lines)") {
-		t.Errorf("a collapsed card shows %d lines and counts the rest:\n%s", cardPreviewLines, card)
+	closed := ansi.Strip(lastEntry(m).rendered)
+	if strings.Count(closed, "\n") != 0 || strings.Contains(closed, "line1") || !strings.Contains(closed, "9 lines") || !strings.Contains(closed, "main.go") {
+		t.Errorf("a closed card is its header, with the line count at the right end:\n%s", closed)
 	}
-	for _, line := range strings.Split(card, "\n") {
+
+	m.cards.selected = 0
+	m.toggleCard()
+	opened := ansi.Strip(lastEntry(m).rendered)
+	if !strings.Contains(opened, "line9") || strings.Count(opened, "\n") != 9 {
+		t.Errorf("an opened card shows the whole output:\n%s", opened)
+	}
+	for _, line := range strings.Split(opened, "\n") {
 		if w := ansi.StringWidth(line); w > m.contentWidth() {
 			t.Errorf("line %q is %d cells wide, want at most %d", line, w, m.contentWidth())
 		}
-	}
-}
-
-func TestOneHiddenLineIsShownInstead(t *testing.T) {
-	m := newTestModel(&fakeAgent{})
-	six := "a\nb\nc\nd\ne\nf" // one more than the preview: "1 more line" would save nothing
-	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "read_file", Arguments: "{}"}})
-	m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "read_file", Output: six}})
-
-	if card := ansi.Strip(lastEntry(m).rendered); !strings.Contains(card, "f") || strings.Contains(card, "more line") {
-		t.Errorf("all six lines should be shown:\n%s", card)
 	}
 }
 

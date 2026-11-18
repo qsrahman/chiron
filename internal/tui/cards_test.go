@@ -68,15 +68,15 @@ func TestEnterAndSpaceToggleTheWholeOutput(t *testing.T) {
 			m := withCards(t, lines(20))
 			m, _ = update(m, tab)
 
-			collapsed := screenText(m)
-			if !strings.Contains(collapsed, "row 5") || strings.Contains(collapsed, "row 20") || !strings.Contains(collapsed, "15 more lines") || !strings.Contains(collapsed, "enter to expand") {
-				t.Errorf("collapsed card:\n%s", collapsed)
+			closed := screenText(m)
+			if strings.Contains(closed, "row 1") || !strings.Contains(closed, "20 lines") {
+				t.Errorf("a card is closed by default: its header and the line count, no output:\n%s", closed)
 			}
 
 			m, _ = update(m, k)
-			expanded := screenText(m)
-			if !strings.Contains(expanded, "row 20") || strings.Contains(expanded, "more lines") {
-				t.Errorf("expanded card:\n%s", expanded)
+			opened := screenText(m)
+			if !strings.Contains(opened, "row 1 ") || !strings.Contains(opened, "row 20") {
+				t.Errorf("an opened card shows the whole output:\n%s", opened)
 			}
 
 			m, _ = update(m, k)
@@ -245,4 +245,106 @@ func TestGoldenExpandedCard(t *testing.T) {
 	m, _ = update(m, shiftTab) // the one before
 	m, _ = update(m, enter)
 	checkGolden(t, "expanded_card_100x40", screen(m))
+}
+
+func TestAFailedCardStaysClosedOnOneLineOfTheError(t *testing.T) {
+	m := sized(&fakeAgent{}, 100, 40)
+	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "shell", Arguments: `{"command":"make"}`}})
+	m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "shell", Outcome: agent.CallFailed, Output: "error: first line\nsecond line\nthird line"}})
+
+	closed := ansi.Strip(m.entries[0].rendered)
+
+	if !strings.Contains(closed, "ERROR") || !strings.Contains(closed, "first line") || strings.Contains(closed, "second line") {
+		t.Errorf("a failed card shows the first line of the error without being opened:\n%s", closed)
+	}
+}
+
+func TestCancelledAndDeniedCardsSayWhatHappenedInTheirHeader(t *testing.T) {
+	for outcome, want := range map[agent.Outcome]string{agent.CallCancelled: "cancelled", agent.CallDenied: "denied by you"} {
+		m := sized(&fakeAgent{}, 100, 40)
+		m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "write", Arguments: `{}`}})
+		m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "write", Outcome: outcome, Output: "error: whatever"}})
+
+		card := ansi.Strip(m.entries[0].rendered)
+		if strings.Count(card, "\n") != 0 || !strings.Contains(card, want) || strings.Contains(card, "ERROR") {
+			t.Errorf("%s card:\n%s", want, card)
+		}
+	}
+}
+
+func TestACallWithNothingToShowHasNoLineCount(t *testing.T) {
+	m := sized(&fakeAgent{}, 100, 40)
+	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "write", Arguments: `{}`}})
+	m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "write", Output: "(no output)"}})
+
+	if card := ansi.Strip(m.entries[0].rendered); strings.Contains(card, "line") {
+		t.Errorf("card: %q", card)
+	}
+}
+
+func TestTheMetaKeepsItsPlaceWhenTheCommandIsLong(t *testing.T) {
+	m := sized(&fakeAgent{}, 80, 40)
+	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "shell", Arguments: `{"command":"` + strings.Repeat("echo something long; ", 20) + `"}`}})
+	m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "shell", Output: "a\nb\nc"}})
+
+	header := strings.TrimRight(ansi.Strip(m.entries[0].rendered), " ")
+
+	if !strings.HasSuffix(header, "3 lines") || !strings.Contains(header, "…") || ansi.StringWidth(header) > m.contentWidth() {
+		t.Errorf("header (%d cells):\n%s", ansi.StringWidth(header), header)
+	}
+}
+
+func TestTheServerOfAnMCPToolIsMutedInItsTitle(t *testing.T) {
+	m := sized(&fakeAgent{}, 100, 40)
+	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "docs__search", Title: "docs → search", Arguments: `{}`}})
+
+	card := m.entries[0].rendered
+
+	if !strings.Contains(ansi.Strip(card), "docs → search") || strings.Contains(ansi.Strip(card), "docs__search") {
+		t.Errorf("title: %q", ansi.Strip(card))
+	}
+	if !strings.Contains(card, m.sty.toolMeta.Render("docs → ")) || !strings.Contains(card, m.sty.toolName.Render("search")) {
+		t.Errorf("the server and the tool should be styled apart: %q", card)
+	}
+}
+
+// A run of calls reads as a list: no blank line between cards, a blank line around everything else.
+func TestCardsInARunHaveNoBlankLinesBetweenThem(t *testing.T) {
+	m := sized(&fakeAgent{}, 100, 40)
+	m.addEntry(entry{role: roleAssistant, text: "Looking."})
+	for i := 0; i < 3; i++ {
+		m.addEntry(entry{role: roleTool, callID: fmt.Sprint(i), name: "read_file", args: fmt.Sprintf(`{"path":"f%d"}`, i), done: true, output: "x"})
+	}
+	m.addEntry(entry{role: roleAssistant, text: "Done."})
+	m.refresh()
+
+	var rows []string
+	for _, l := range strings.Split(ansi.Strip(m.viewport.GetContent()), "\n") {
+		rows = append(rows, strings.TrimSpace(l))
+	}
+	got := strings.Join(rows, "|")
+
+	want := "Looking.||✓ read_file  f0       1 line|✓ read_file  f1       1 line|✓ read_file  f2       1 line||Done."
+	if strings.Join(strings.Fields(got), " ") != strings.Join(strings.Fields(want), " ") {
+		t.Errorf("transcript rows:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// The scroll position of a card is counted with the same gaps the transcript is drawn with.
+func TestCardOffsetsMatchWhatIsDrawn(t *testing.T) {
+	m := sized(&fakeAgent{}, 100, 40)
+	m.addEntry(entry{role: roleAssistant, text: "Intro."})
+	for i := 0; i < 3; i++ {
+		m.addEntry(entry{role: roleTool, callID: fmt.Sprint(i), name: "read_file", args: fmt.Sprintf(`{"path":"marker%d"}`, i), done: true, output: "x"})
+	}
+	m.addEntry(entry{role: roleAssistant, text: "Outro."})
+	m.refresh()
+
+	rows := strings.Split(ansi.Strip(m.viewport.GetContent()), "\n")
+	for i := 0; i < 3; i++ {
+		top, _ := m.cardOffset(m.toolCards()[i])
+		if !strings.Contains(rows[top], fmt.Sprintf("marker%d", i)) {
+			t.Errorf("card %d is said to start at row %d, which holds %q", i, top, rows[top])
+		}
+	}
 }

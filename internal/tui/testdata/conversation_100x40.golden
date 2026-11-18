@@ -9,26 +9,26 @@
 
    Here is what I found:
 
-   •  main.go  starts the app
-   •  internal/agent  runs the conversation loop
+   • main.go starts the app
+   • internal/agent runs the conversation loop
 
    func main() {
        fmt.Println("hi")
    }
 
-   ✓ read_file  main.go (limit=200)
-      package main
-
-      import "fmt"
-
-      func main() {
-      … (4 more lines)
-
+   ✓ read_file  main.go (limit=200)                                                          9 lines
    × shell  go test ./... (timeout=30)
       ERROR  exit status 1
-       FAIL desk-agent/internal/agent 0.4s
 
    The tests fail; I'll look into it.
+
+
+
+
+
+
+
+
 
 
 

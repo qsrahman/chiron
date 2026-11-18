@@ -1,7 +1,7 @@
  desk-agent  /work/demo on main                                                           test-model
  ───────────────────────────────────────────────────────────────────────────────────────────────────
 
- ▸ ✓ read_file  f0.go
+ ▸ ✓ read_file  f0.go                                                                       14 lines
       row 1
       row 2
       row 3
@@ -16,9 +16,9 @@
       row 12
       row 13
       row 14
+   ✓ read_file  f1.go                                                                         1 line
 
-   ✓ read_file  f1.go
-      short
+
 
 
 
