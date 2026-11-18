@@ -104,8 +104,9 @@ kills the whole tree.
 
 ### 4.3 Events
 
-`TextDelta`, `Usage{InputTokens, OutputTokens}`, `ToolStarted{CallID, Name, Arguments}`, `ToolFinished{CallID, Name, Output, Failed}`,
-`ApprovalRequested{Reply chan bool}`,
+`TextDelta`, `Usage{InputTokens, OutputTokens}`, `Retry{Reason}`, `ToolStarted{CallID, Name, Arguments}`,
+`ToolFinished{CallID, Name, Output, Outcome}` (`CallOK`, `CallFailed`, `CallCancelled`, `CallDenied`),
+`ApprovalRequested{CallID, Tool, Summary, Details, GrantKey, Reply chan<- Decision}` (done in 4a.1),
 `QuestionAsked{Reply chan string}`, `TodoUpdated`, `Done`, `Error`. The agent returns `<-chan Event`.
 Approvals and questions are events with reply channels so any front-end (TUI now, others later) can answer them.
 
