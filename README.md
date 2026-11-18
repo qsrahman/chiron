@@ -40,6 +40,7 @@ Type `/` in the chat to list them; Up/Down choose, Tab completes, Esc closes. Th
 | `/tools` | List the tools and which of them ask before they run |
 | `/undo` | Remove the last exchange from the conversation |
 | `/retry` | Send the last prompt again |
+| `/copy [code]` | Copy the last answer, or its last code block, to the clipboard (through the terminal, which must support OSC 52; control characters are removed first) |
 | `/context` | Estimated size of the instructions, tools and history |
 
 A lone `/word` that is no command is reported and not sent; a longer line such as `/usr/bin is missing` is a prompt.
@@ -165,12 +166,20 @@ conversation keeps its history for the whole session. Terminals narrower than 40
 | Key | Action |
 |---|---|
 | `Enter` | Send the message (ignored while an answer is streaming; your draft stays) |
-| `Shift-Enter` | New line in the message (`Alt-Enter` and `Ctrl-J` also work, for terminals that cannot tell Shift-Enter from Enter) |
+| `Ctrl-J` or `Shift-Enter` | New line in the message. `Shift-Enter` is a key of its own only in a terminal that supports it (kitty, Ghostty, WezTerm, iTerm2 and others); in any other it is plain Enter. The help bar shows `shift+enter` once the terminal has said it can, and `ctrl+j` until then (`Alt-Enter` works too) |
 | `PgUp` / `PgDn` | Scroll the transcript a page (when you have scrolled up, the help bar says `↓ N lines below`) |
 | `Up` / `Down` | Scroll the transcript a line, while the input is empty (with a prompt queued, `Up` takes it back instead) |
-| Mouse wheel | Scroll the transcript (or the details of an approval dialog that is open). The terminal's own text selection then needs `Shift` held (`Option` on macOS) |
+| Mouse wheel | Scroll the transcript (or the details of an approval dialog that is open). The terminal's own text selection then needs `Shift` held (`Option` on macOS); `/copy` needs no selection |
+| Left click | On a tool card: open or close it. On a button of an approval dialog: answer it. On the help bar while `↓ N lines below` shows: jump to the bottom |
 | `Ctrl-C` | While an answer is streaming: cancel it (press again to quit). When idle: clears what you typed; on an empty input it asks you to press it again, since the conversation is not saved, and quits at once if there is no conversation yet. |
 | `Ctrl-D` | On an empty input: quit, with the same second-press protection as `Ctrl-C` (the two count together) |
+
+The terminal gets what it can use of the program's state: the window or tab title names the directory and starts with `●`
+while the program works and `▲` while it waits for an approval; a terminal with a progress indicator (Windows Terminal,
+iTerm2, Ghostty and others) shows it running, or yellow while it waits for you; and if the terminal reports focus, a bell
+and a `✓` or `✗` in the title tell you when a run that finished or an approval that waits happened in a window you were
+not looking at. The text cursor is the terminal's own (a bar, in your cursor colour). The share of the context window in
+the top row turns amber at 75% and red at 90%.
 
 The top row shows the working directory and git branch on the left and the model, and after the first answer the
 size of the conversation in tokens, on the right. Below the transcript are the input box and a one-line key

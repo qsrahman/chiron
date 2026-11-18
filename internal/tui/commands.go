@@ -38,6 +38,7 @@ func commandList() []command {
 		{name: "/tools", description: "List the tools and which of them ask before they run", run: (*Model).toolsCommand},
 		{name: "/undo", description: "Remove the last exchange from the conversation", run: (*Model).undoCommand},
 		{name: "/retry", description: "Send the last prompt again", run: (*Model).retryCommand},
+		{name: "/copy", usage: "[code]", description: "Copy the last answer, or its last code block, to the clipboard", args: func(*Model) []string { return []string{"code"} }, run: (*Model).copyCommand},
 		{name: "/context", description: "Show how much of the context window is used", run: (*Model).contextCommand},
 	}
 	slices.SortFunc(list, func(a, b command) int { return strings.Compare(a.name, b.name) })
@@ -201,6 +202,47 @@ func (m *Model) toolsCommand(string) (tea.Cmd, error) {
 	}
 	m.sayTable(rows)
 	return nil, nil
+}
+
+// copyCommand puts the last answer, or the last code block of it, on the clipboard through the terminal. With the mouse
+// reported to the program the terminal's own selection needs Shift, and this needs nothing. Control characters the
+// model wrote are removed first: the text will be pasted somewhere.
+func (m *Model) copyCommand(arg string) (tea.Cmd, error) {
+	var answer string
+	for i := len(m.entries) - 1; i >= 0 && answer == ""; i-- {
+		if m.entries[i].role == roleAssistant {
+			answer = sanitize(m.entries[i].text)
+		}
+	}
+	if strings.TrimSpace(answer) == "" {
+		m.say("Nothing to copy")
+		return nil, nil
+	}
+	what, text := "the last answer", answer
+	switch strings.ToLower(arg) {
+	case "":
+	case "code":
+		what, text = "the last code block", lastCodeBlock(answer)
+		if text == "" {
+			m.say("The last answer has no code block")
+			return nil, nil
+		}
+	default:
+		return nil, fmt.Errorf("unknown argument %q: say code for the last code block, or nothing for the whole answer", arg)
+	}
+	m.say(fmt.Sprintf("Copied %s (%s) to the clipboard", what, plural(len([]rune(text)), "character")))
+	return tea.SetClipboard(text), nil
+}
+
+// lastCodeBlock is the inside of the last fenced code block of the markdown, or "".
+func lastCodeBlock(markdown string) string {
+	block := ""
+	for _, seg := range splitFences(markdown) {
+		if seg.code {
+			block = seg.text
+		}
+	}
+	return block
 }
 
 // serverNames lists the configured servers, for completing /reconnect.

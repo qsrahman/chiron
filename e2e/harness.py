@@ -117,6 +117,19 @@ class Term:
         os.write(self.fd, text.encode())
         self.pump(settle)
 
+    def click(self, col, row, button=0):
+        """Presses and releases a mouse button at a 0-based column and row, as a terminal reports it (SGR, 1-based)."""
+        self.send(f"\x1b[<{button};{col + 1};{row + 1}M", 0.1)
+        self.send(f"\x1b[<{button};{col + 1};{row + 1}m", 0.3)
+
+    def find(self, text):
+        """The (column, row) of the first occurrence of text on the screen, or None."""
+        for y, line in enumerate(self.screen.display):
+            x = line.find(text)
+            if x >= 0:
+                return x, y
+        return None
+
     def type(self, text, enter=True):
         self.send(text, 0.1)
         if enter:

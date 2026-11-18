@@ -21,4 +21,4 @@
  │   second line                                                              │
  │   third line                                                               │
  ╰────────────────────────────────────────────────────────────────────────────╯
-  enter send · shift+enter new line · pgup/pgdn scroll · ctrl+c quit
+  enter send · ctrl+j new line · pgup/pgdn scroll · ctrl+c quit

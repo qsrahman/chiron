@@ -14,10 +14,10 @@
 
    ▸ /clear             Clear the screen; the conversation is kept
      /context           Show how much of the context window is used
+     /copy [code]       Copy the last answer, or its last code block, to the c…
      /effort [LEVEL]    Show the reasoning effort, or set it
      /exit              Quit
      /help              List the commands and keys
-     /model [NAME]      Show the model, or switch to NAME
  ╭────────────────────────────────────────────────────────────────────────────╮
  │ ❯ /                                                                        │
  ╰────────────────────────────────────────────────────────────────────────────╯

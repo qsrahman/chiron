@@ -2,6 +2,8 @@
  ──────────────────────────────────────────────────────────────────────────────
    /clear             Clear the screen; the conversation is kept
    /context           Show how much of the context window is used
+   /copy [code]       Copy the last answer, or its last code block, to the
+                      clipboard
    /effort [LEVEL]    Show the reasoning effort, or set it
    /exit              Quit
    /help              List the commands and keys
@@ -16,7 +18,7 @@
    /undo              Remove the last exchange from the conversation
 
    enter        send
-   shift+enter  new line
+   ctrl+j       new line
    pgup/pgdn    scroll
    ↑/↓          scroll a line (empty input)
    ctrl+c       cancel a turn, clear the input, quit
@@ -32,9 +34,7 @@
 
 
 
-
-
  ╭────────────────────────────────────────────────────────────────────────────╮
  │ ❯ Ask anything, or /help for commands...                                   │
  ╰────────────────────────────────────────────────────────────────────────────╯
-  enter send · shift+enter new line · pgup/pgdn scroll · ctrl+c quit
+  enter send · ctrl+j new line · pgup/pgdn scroll · ctrl+c quit

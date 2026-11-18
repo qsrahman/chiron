@@ -129,6 +129,11 @@ type Model struct {
 	starting bool
 	status   string
 
+	// focused is whether the terminal window has the focus (true until the terminal says otherwise, which it does
+	// only if it reports focus). attention marks the title when something happened while it did not.
+	focused   bool
+	attention string
+
 	width, height int
 }
 
@@ -159,6 +164,7 @@ func New(a Agent, info Info) Model {
 	input.MinHeight = 1
 	input.MaxHeight = 8
 	input.KeyMap.InsertNewline = keys.newline
+	input.SetVirtualCursor(false) // the terminal's own cursor is drawn at View, so it follows the user's cursor settings
 	input.Focus()
 
 	// Whatever the session shows may come from the environment (a directory name, say): clean it once here.
@@ -174,6 +180,7 @@ func New(a Agent, info Info) Model {
 		keys:     keys,
 		cards:    cardState{selected: -1},
 		starting: info.Startup != nil,
+		focused:  true,
 		width:    80,
 		height:   24,
 	}
@@ -228,6 +235,28 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 
+	case tea.KeyboardEnhancementsMsg:
+		// Shift+Enter reaches the program as a key of its own only in a terminal that supports it; in any other it is Enter,
+		// which sends. Until the terminal says so, the help names the key that works everywhere.
+		if msg.SupportsKeyDisambiguation() {
+			m.keys.newline.SetHelp("shift+enter", "new line")
+		}
+		return m, nil
+
+	case tea.FocusMsg:
+		m.focused, m.attention = true, ""
+		return m, nil
+
+	case tea.BlurMsg:
+		m.focused = false
+		return m, nil
+
+	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft {
+			m.click(msg.X, msg.Y)
+		}
+		return m, nil
+
 	case tea.MouseWheelMsg:
 		// The wheel scrolls what has the focus: the details of a call being asked about, or else the transcript.
 		if m.approval.open {
@@ -239,7 +268,11 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case eventMsg:
 		m.handleEvent(msg.event)
-		return m, waitForEvent(m.events)
+		next := waitForEvent(m.events)
+		if _, asks := msg.event.(agent.ApprovalRequested); asks {
+			next = tea.Batch(next, m.attend("▲"))
+		}
+		return m, next
 
 	case startupMsg:
 		m.starting, m.status = false, sanitize(msg.Status)
@@ -256,6 +289,13 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	case turnClosedMsg:
 		m.finishTurn()
 		next := m.nextQueued()
+		if next == nil { // the run is over: tell a user who looked away
+			mark := "✓"
+			if m.queue.failed {
+				mark = "✗"
+			}
+			next = m.attend(mark)
+		}
 		m.refresh()
 		return m, next
 
@@ -277,6 +317,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	busy := m.events != nil
+	m.attention = "" // the user is here
 	if m.approval.open && !key.Matches(msg, m.keys.interrupt) {
 		return m.approvalKey(msg)
 	}
@@ -546,6 +587,7 @@ func (m Model) View() tea.View {
 	if list := m.suggestionView(); list != "" {
 		parts = append(parts, list)
 	}
+	above := lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, parts...)) // the rows above the input box
 	body := lipgloss.JoinVertical(lipgloss.Left, append(parts, m.inputView(), m.helpView())...)
 	screen := indent(body, margin)
 	if m.approval.open {
@@ -553,6 +595,10 @@ func (m Model) View() tea.View {
 	}
 	v := tea.NewView(screen)
 	v.AltScreen = true
+	v.ReportFocus = true
+	v.WindowTitle = m.windowTitle()
+	v.ProgressBar = m.progressBar()
+	v.Cursor = m.cursor(above)
 	v.MouseMode = tea.MouseModeCellMotion // for the wheel; the terminal's own text selection then needs Shift (Option on macOS)
 	return v
 }

@@ -141,6 +141,16 @@ def startup_and_chat():
         t.contains("beam:cloud") if "beam" in user_settings()[1] else None
         t.contains("Ask anything, or /help for commands...")
         t.lacks("Welcome")
+        # the terminal's own cursor sits in the input, and the title names the program and the directory
+        prompt = t.find("❯ ")
+        t.expect(prompt is not None and not t.screen.cursor.hidden, "no cursor shown")
+        t.expect((t.screen.cursor.x, t.screen.cursor.y) == (prompt[0] + 2, prompt[1]), f"the cursor is at {(t.screen.cursor.x, t.screen.cursor.y)}, not at the start of the input {(prompt[0] + 2, prompt[1])}")
+        t.expect(t.screen.title.startswith("desk-agent"), f"window title {t.screen.title!r}")
+        t.type("Write a 200 word essay about the sea.", enter=True)
+        t.wait_for("Working", 20)
+        t.expect(t.screen.title.startswith("●"), f"the title does not show the work: {t.screen.title!r}")
+        t.idle(120)
+        t.expect(not t.screen.title.startswith("●"), f"the title still shows work: {t.screen.title!r}")
         say(t, "Reply with exactly: PONG")
         t.expect("   PONG" in t.lines, "the answer is not drawn cleanly on its own row")
         t.expect(re.search(r"[\d.]+k? tokens", t.lines[0]), "the header does not show the token count")
@@ -193,7 +203,9 @@ def approval_and_cards():
         for text in ("local → echo", "text: hello", "Runs: ", "Allow", "Deny", "For the session"):
             t.contains(text, f"the dialog is missing {text!r}")
         t.expect("\\u0026" not in t.text, "the dialog shows a JSON escape")
-        answer(t, "n")
+        t.pump(0.7)  # out of the guard time
+        col, row = t.find("Deny")
+        t.click(col + 1, row)  # a click on the button answers like the key
         settle(t, "after deny")
         t.contains("⊘", "the denied call has no denied card")
         t.contains("denied by you")
@@ -476,6 +488,13 @@ def long_output_card():
         say(t, "Call the local__env tool with the name E2E_LINES, once, and then say DONE.")
         t.contains("40 lines", "the closed card does not count the lines")
         t.lacks("row 7", "a closed card shows its output")
+        # a click opens the card, and another closes it
+        col, row = t.find("✓ local → env")
+        t.click(col + 5, row)
+        t.contains("row 7", "a click on the card did not open it")
+        col, row = t.find("local → env")
+        t.click(col + 5, row)
+        t.lacks("row 7", "a second click did not close it")
         t.send(TAB, 0.4)
         t.send(ENTER, 0.5)
         t.expect(any(l.strip() == "row 1" for l in t.lines), "the opened card does not show its output from the top")
@@ -680,7 +699,28 @@ def toolbox_large_output():
         t.close()
 
 
-SCENARIOS = [startup_and_chat, markdown, approval_and_cards, queue_and_cancel, commands, restart_after_death, scrolling,
+def clipboard_and_title():
+    t = start(servers={})
+    try:
+        t.wait_for("/help", 10)
+        t.type("/copy")
+        t.contains("Nothing to copy")
+        say(t, "Reply with exactly: COPYME")
+        t.type("/copy")
+        t.contains("Copied the last answer")
+        t.pump(0.3)
+        import base64
+        payloads = re.findall(rb"\x1b\]52;c;([A-Za-z0-9+/=]*)(?:\x07|\x1b\\)", t.raw)
+        t.expect(payloads, "no OSC 52 sequence reached the terminal")
+        t.expect(b"COPYME" in base64.b64decode(payloads[-1]), f"the clipboard holds {base64.b64decode(payloads[-1])!r}")
+        # the help names the new-line key that works here: this emulator never says it supports Shift+Enter
+        t.contains("ctrl+j new line")
+        return t
+    finally:
+        t.close()
+
+
+SCENARIOS = [startup_and_chat, clipboard_and_title, markdown, approval_and_cards, queue_and_cancel, commands, restart_after_death, scrolling,
              resize, quit_protection, multiline_input, long_output_card, failing_server_and_flags, non_interactive,
              toolbox_startup, toolbox_files, toolbox_shell, toolbox_fetch_and_search, toolbox_large_output]
 

@@ -115,3 +115,34 @@ func (m *Model) showCard() {
 		m.viewport.SetYOffset(min(top, top+height-window))
 	}
 }
+
+// cardAt returns the index of the tool card that holds a line of the transcript, or -1.
+func (m *Model) cardAt(line int) int {
+	for i, e := range m.entries {
+		if top, height := m.cardOffset(i); line >= top && line < top+height {
+			if e.role == roleTool {
+				return i
+			}
+			return -1
+		}
+	}
+	return -1
+}
+
+// click handles a press of the left mouse button: an answer to the dialog, a tool card (which opens or closes), or the
+// hint that more output is below.
+func (m *Model) click(x, y int) {
+	switch {
+	case m.approval.open:
+		m.clickModal(x, y)
+	case y == m.height-1: // the help bar, where the hint is
+		m.viewport.GotoBottom()
+	case y >= headerHeight && y < headerHeight+m.viewport.Height():
+		if card := m.cardAt(m.viewport.YOffset() + y - headerHeight); card >= 0 {
+			m.selectCard(card)
+			m.toggleCard()
+		} else {
+			m.selectCard(-1)
+		}
+	}
+}

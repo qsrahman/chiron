@@ -107,6 +107,14 @@ text from a redraw, no leftover stand-in character, no banner.
   returns a message. The TUI depends on the small `tui.Sender` interface, not on `*agent.Agent`, so tests drive
   it with a fake and synthetic messages (see `internal/tui/model_test.go`). Bubble Tea v2 APIs: `View()`
   returns `tea.View`, keys are `tea.KeyPressMsg`.
+- **Use what Bubble Tea gives, before writing it.** The `View` carries more than the screen: `WindowTitle`,
+  `ProgressBar`, `ReportFocus` (then `FocusMsg` and `BlurMsg`), `Cursor`, `MouseMode`, and `KeyboardEnhancements`
+  (then `KeyboardEnhancementsMsg`); `tea.Raw` writes a control sequence (the bell), `tea.SetClipboard` copies through the
+  terminal. The input's cursor is the terminal's (`SetVirtualCursor(false)`, `Cursor()`), moved by the rows above the
+  box and its border in `View`. Hit-testing of the dialog is the compositor's: the buttons are child layers with an ID
+  and `Compositor.Hit` says which was clicked; **a layer's `Z` is absolute, not relative to its parent**, so children
+  need a higher one or they sit under the parent and never get the hit. Terminals ignore what they do not support, so
+  none of these needs a check, except `Shift+Enter`, which is named in the help only after `KeyboardEnhancementsMsg`.
 - **UI look.** There is a margin of one column on each side. Colours come only from the palette in `theme.go`; never hard-code a colour or an ANSI index
   elsewhere, and never paint the terminal background (bands are derived from it). Everything in the transcript
   shares the `gutter` indent and is capped at `maxTextWidth`; `render` clamps every line to the content width,

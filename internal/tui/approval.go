@@ -87,6 +87,7 @@ func (m *Model) modalInnerWidth() int {
 func (m *Model) answer(d agent.Decision) {
 	m.approval.req.Reply <- d
 	m.approval = approval{}
+	m.attention = ""
 }
 
 // approvalKey handles the keys while the modal is open: every key belongs to it except Ctrl-C.
@@ -119,6 +120,12 @@ func (m Model) approvalKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 
 // approvalView draws the dialog.
 func (m *Model) approvalView() string {
+	view, _ := m.approvalBody()
+	return view
+}
+
+// approvalBody draws the dialog and says on which row inside it the buttons are.
+func (m *Model) approvalBody() (view string, buttonRow int) {
 	a := m.approval
 	inner := m.modalInnerWidth()
 
@@ -133,12 +140,8 @@ func (m *Model) approvalView() string {
 	}
 
 	buttons := make([]string, len(choices))
-	for i, c := range choices {
-		style := m.sty.button
-		if i == a.choice {
-			style = m.sty.buttonSelected
-		}
-		buttons[i] = style.Render(c.label)
+	for i := range choices {
+		buttons[i] = m.button(i)
 	}
 
 	rows := []string{
@@ -153,22 +156,59 @@ func (m *Model) approvalView() string {
 		a.details.View(),
 		m.sty.toolMeta.Render(ansi.Truncate(size, inner, "…")),
 		"",
+	)
+	buttonRow = m.sty.modal.GetBorderTopSize() + m.sty.modal.GetPaddingTop() + lipgloss.Height(strings.Join(rows, "\n"))
+	rows = append(rows,
 		strings.Join(buttons, " "),
 		m.sty.toolMeta.Render(ansi.Truncate("For the session: "+covers, inner, "…")),
 	)
-	body := strings.Join(rows, "\n")
-	return m.sty.modal.Width(inner + 4).Render(body)
+	return m.sty.modal.Width(inner + 4).Render(strings.Join(rows, "\n")), buttonRow
+}
+
+// button draws one of the answers; the chosen one is highlighted.
+func (m *Model) button(i int) string {
+	if i == m.approval.choice {
+		return m.sty.buttonSelected.Render(choices[i].label)
+	}
+	return m.sty.button.Render(choices[i].label)
+}
+
+// buttonIDs name the layers of the buttons, in the order of choices.
+var buttonIDs = [...]string{choiceAllow: "allow", choiceSession: "session", choiceDeny: "deny"}
+
+// modalLayer is the dialog as a layer, with each button a layer of its own on top, so that the compositor can say which
+// of them a click landed on.
+func (m *Model) modalLayer() *lipgloss.Layer {
+	view, buttonRow := m.approvalBody()
+	buttons := make([]*lipgloss.Layer, len(choices))
+	x := m.sty.modal.GetBorderLeftSize() + m.sty.modal.GetPaddingLeft()
+	for i := range choices {
+		button := m.button(i)
+		buttons[i] = lipgloss.NewLayer(button).ID(buttonIDs[i]).X(x).Y(buttonRow).Z(2) // z is absolute, not the parent's plus
+		x += lipgloss.Width(button) + 1                                                // the buttons are one space apart
+	}
+	return lipgloss.NewLayer(view, buttons...).ID("modal").
+		X(max(0, (m.width-lipgloss.Width(view))/2)).Y(max(0, (m.height-lipgloss.Height(view))/2)).Z(1)
+}
+
+// clickModal answers the dialog if the click landed on one of its buttons.
+func (m *Model) clickModal(x, y int) {
+	if m.now().Sub(m.approval.openedAt) < answerGuard {
+		return
+	}
+	id := lipgloss.NewCompositor(m.modalLayer()).Hit(x, y).ID()
+	for i, name := range buttonIDs {
+		if id == name {
+			m.answer(choices[i].decision)
+			m.refresh()
+			return
+		}
+	}
 }
 
 // overlay draws the modal centered over the screen.
 func (m *Model) overlay(screen string) string {
-	modal := m.approvalView()
-	x := (m.width - lipgloss.Width(modal)) / 2
-	y := (m.height - lipgloss.Height(modal)) / 2
-	out := lipgloss.NewCompositor(
-		lipgloss.NewLayer(screen),
-		lipgloss.NewLayer(modal).X(max(0, x)).Y(max(0, y)).Z(1),
-	).Render()
+	out := lipgloss.NewCompositor(lipgloss.NewLayer(screen), m.modalLayer()).Render()
 	// A window too small for the modal must not get a screen taller than itself.
 	if rows := strings.Split(out, "\n"); len(rows) > m.height {
 		out = strings.Join(rows[:m.height], "\n")

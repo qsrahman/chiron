@@ -3,10 +3,12 @@ package tui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -42,10 +44,11 @@ func (m *Model) headerView() string {
 	case m.status != "":
 		status = m.sty.toolMeta.Render(m.status + " · ")
 	}
+	usage := m.usageStyle()
 	candidates := []string{
-		status + model + m.sty.toolMeta.Render(m.usageText(true)),
-		model + m.sty.toolMeta.Render(m.usageText(true)),
-		model + m.sty.toolMeta.Render(m.usageText(false)),
+		status + model + usage.Render(m.usageText(true)),
+		model + usage.Render(m.usageText(true)),
+		model + usage.Render(m.usageText(false)),
 		model,
 	}
 	room := width - lipgloss.Width(brand) - 2
@@ -60,6 +63,21 @@ func (m *Model) headerView() string {
 	left := brand + ansi.Truncate(where, max(0, width-lipgloss.Width(right)-2-lipgloss.Width(brand)), "…")
 	gap := strings.Repeat(" ", max(1, width-lipgloss.Width(left)-lipgloss.Width(right)))
 	return left + gap + right + "\n" + m.sty.rule.Render(strings.Repeat("─", width))
+}
+
+// usageStyle is the muted style of the usage figure, turning amber when the context is three quarters full and red when
+// it is nine tenths full: the point where a long conversation needs /compact, or the model starts to lose the start.
+func (m *Model) usageStyle() lipgloss.Style {
+	if m.info.ContextWindow <= 0 {
+		return m.sty.toolMeta
+	}
+	switch percent := m.contextTokens * 100 / int64(m.info.ContextWindow); {
+	case percent >= 90:
+		return m.sty.iconErr
+	case percent >= 75:
+		return m.sty.iconRunning
+	}
+	return m.sty.toolMeta
 }
 
 // usageText shows how much context the conversation uses, with a percentage when the window is known and asked for.
@@ -152,6 +170,7 @@ func (m *Model) linesBelow() int {
 // prompt only on the first row.
 func (m *Model) inputStyles() {
 	s := textarea.DefaultStyles(m.th.dark)
+	s.Cursor.Shape, s.Cursor.Blink, s.Cursor.Color = tea.CursorBar, true, nil // the terminal's own colour for the cursor
 	for _, state := range []*textarea.StyleState{&s.Focused, &s.Blurred} {
 		state.CursorLine = lipgloss.NewStyle()
 		state.Placeholder = lipgloss.NewStyle().Foreground(m.th.muted)
@@ -168,4 +187,60 @@ func (m *Model) inputStyles() {
 			return m.sty.prompt.Render("❯ ")
 		}
 	})
+}
+
+// windowTitle is the title of the terminal window or tab: the program and the directory, with a mark in front while it
+// works (●), waits for an answer (▲), or, when the window did not have the focus at the time, has finished (✓) or failed
+// (✗). The tab of a terminal you are not looking at then says what it wants.
+func (m *Model) windowTitle() string {
+	title := "desk-agent"
+	if dir := sanitize(filepath.Base(m.info.WorkDir)); dir != "" && dir != "." && dir != "/" {
+		title += " · " + dir
+	}
+	mark := m.attention
+	switch {
+	case m.approval.open:
+		mark = "▲"
+	case m.events != nil || m.starting:
+		mark = "●"
+	}
+	if mark == "" {
+		return title
+	}
+	return mark + " " + title
+}
+
+// progressBar is the terminal's own progress indicator (a tab or taskbar marker in terminals that have one): running
+// while a turn works or the servers start, and yellow while the program waits for an approval.
+func (m *Model) progressBar() *tea.ProgressBar {
+	switch {
+	case m.approval.open:
+		return tea.NewProgressBar(tea.ProgressBarWarning, 100)
+	case m.events != nil || m.starting:
+		return tea.NewProgressBar(tea.ProgressBarIndeterminate, 0)
+	}
+	return nil
+}
+
+// attend tells a user who is looking at another window that the program wants them: a bell, and a mark in the title.
+// It does nothing while the window has the focus.
+func (m *Model) attend(mark string) tea.Cmd {
+	if m.focused {
+		return nil
+	}
+	m.attention = mark
+	return tea.Raw("\a")
+}
+
+// cursor is the terminal's own cursor, in the input box. The textarea knows where it is within itself; the box's border
+// and padding, the margin and everything above the box move it to its place on the screen. It is hidden while the
+// approval dialog has the screen.
+func (m *Model) cursor(rowsAbove int) *tea.Cursor {
+	c := m.input.Cursor()
+	if c == nil || m.approval.open {
+		return nil
+	}
+	c.X += margin + 2    // the margin, then the box's border and padding
+	c.Y += rowsAbove + 1 // the rows above, then the box's top border
+	return c
 }

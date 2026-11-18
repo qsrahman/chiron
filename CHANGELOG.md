@@ -6,6 +6,25 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Added
 
+- The terminal gets the program's state through Bubble Tea's `View`: the window title (`● desk-agent · dir` while it works,
+  `▲` while it waits for an approval), the terminal's progress indicator (running, or yellow while it waits), focus
+  reporting with a bell and a `✓`/`✗` in the title when a run finishes, or an approval waits, in a window that is not in
+  front.
+- The input uses the terminal's own cursor (a bar, in the user's cursor colour) instead of drawing one.
+- Mouse clicks: a tool card opens and closes, the buttons of the approval dialog answer it (hit-tested with the
+  compositor's layer IDs, and with the same guard time as keys), and a click on the help bar jumps to the bottom while
+  `↓ N lines below` shows.
+- `/copy [code]` puts the last answer, or its last code block, on the clipboard through the terminal (OSC 52), with
+  control characters removed.
+- The usage figure in the header turns amber at 75% of the context window and red at 90%.
+
+### Changed
+
+- The help names `ctrl+j` as the new-line key until the terminal says it can tell Shift+Enter from Enter
+  (`KeyboardEnhancementsMsg`), then `shift+enter`: in a terminal that cannot, Shift+Enter sends the message.
+
+### Added
+
 - `e2e/run.sh`: a live end-to-end check of the real binary in a pseudo-terminal, with a real model and a real stdio MCP
   server, read through a terminal emulator. Thirteen scenarios: startup, markdown and code bands, approvals and cards,
   the queue and cancel, every command, restart after a server dies, scrolling, resizing, quitting, multi-line input,

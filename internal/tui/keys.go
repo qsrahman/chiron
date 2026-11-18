@@ -23,7 +23,7 @@ type keyMap struct {
 func newKeyMap() keyMap {
 	return keyMap{
 		send:      key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "send")),
-		newline:   key.NewBinding(key.WithKeys("shift+enter", "alt+enter", "ctrl+j"), key.WithHelp("shift+enter", "new line")),
+		newline:   key.NewBinding(key.WithKeys("shift+enter", "alt+enter", "ctrl+j"), key.WithHelp("ctrl+j", "new line")),
 		scroll:    key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("pgup/pgdn", "scroll")),
 		interrupt: key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
 		eof:       key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "quit on an empty input")),
