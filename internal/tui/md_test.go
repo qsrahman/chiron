@@ -210,7 +210,7 @@ func TestTheHelpBarSaysHowMuchIsBelowWhenScrolledUp(t *testing.T) {
 		t.Fatal("the hint is shown at the bottom")
 	}
 
-	m, _ = update(m, up)
+	m = scrolledUp(m, 1)
 	one := ansi.Strip(m.helpView())
 	if !strings.Contains(one, "↓ 1 line below") {
 		t.Fatalf("one line up: %q", one)
@@ -234,7 +234,7 @@ func TestTheHintDoesNotOverflowAndKeepsItsPlaceInANarrowTerminal(t *testing.T) {
 		}
 		m.refresh()
 		m.viewport.GotoBottom()
-		m, _ = update(m, up)
+		m = scrolledUp(m, 1)
 
 		bar := ansi.Strip(m.helpView())
 		if !strings.HasSuffix(strings.TrimRight(bar, " "), "below") || ansi.StringWidth(bar) > width-margin {

@@ -143,6 +143,8 @@ func (m *Model) helpView() string {
 		bindings = m.keys.suggestionHelp()
 	}
 	switch {
+	case m.search.open:
+		bindings = m.keys.searchHelp()
 	case m.approval.open:
 		bindings = m.keys.approvalHelp()
 	case m.cards.selected >= 0:

@@ -53,6 +53,9 @@ type Info struct {
 
 	// Servers is what /servers and /reconnect use; nil when no MCP server is configured.
 	Servers Servers
+
+	// HistoryPath is the file the sent prompts are kept in; empty keeps them for this run only.
+	HistoryPath string
 }
 
 // ServerInfo says how one MCP server is doing.
@@ -129,10 +132,13 @@ type Model struct {
 	quitArmed bool
 	hint      string
 
-	suggest  suggestState // the list that opens while a command is typed
-	approval approval     // the modal that asks about a tool call
-	queue    queueState   // prompts typed during a turn
-	cards    cardState    // the tool card chosen with Tab
+	hist     *promptHistory // the prompts sent so far, for Up and Down and Ctrl-R
+	recall   recallState    // where Up and Down have got to
+	search   searchState    // Ctrl-R
+	suggest  suggestState   // the list that opens while a command is typed
+	approval approval       // the modal that asks about a tool call
+	queue    queueState     // prompts typed during a turn
+	cards    cardState      // the tool card chosen with Tab
 
 	contextTokens int64 // size of the conversation after the latest response, 0 until known
 
@@ -192,6 +198,7 @@ func New(a Agent, info Info) Model {
 		input:    input,
 		keys:     keys,
 		cards:    cardState{selected: -1},
+		hist:     loadPromptHistory(info.HistoryPath),
 		starting: info.Startup != nil,
 		focused:  true,
 		width:    80,
@@ -323,6 +330,10 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		m.refresh()
 		return m, next
 
+	case editorDoneMsg:
+		m.finishEditor(msg)
+		return m, nil
+
 	case compactedMsg:
 		m.starting, m.startLabel = false, ""
 		if msg.err != nil {
@@ -369,6 +380,19 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.approval.open && !key.Matches(msg, m.keys.interrupt) {
 		return m.approvalKey(msg)
 	}
+	if m.search.open {
+		m.searchKey(msg)
+		return m, nil
+	}
+	switch {
+	case key.Matches(msg, m.keys.search):
+		m.startSearch()
+		return m, nil
+	case key.Matches(msg, m.keys.editor):
+		return m, m.editInEditor()
+	case key.Matches(msg, m.keys.suspend):
+		return m, tea.Suspend
+	}
 	if list, typed := m.suggestions(); len(list) > 0 && m.suggestKey(msg, list, typed) {
 		return m, nil
 	}
@@ -376,6 +400,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if !interrupt && !eof {
 		m.quitArmed, m.hint = false, "" // any other key takes the warning back
 		if m.input.Value() == "" && m.emptyInputKey(msg) {
+			return m, nil
+		}
+		if m.recalling() && m.recallKey(msg) {
 			return m, nil
 		}
 	}
@@ -411,6 +438,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		m.hist.add(text)
 		if cmd, handled := m.dispatch(text); handled {
 			return m, cmd
 		}
@@ -563,7 +591,7 @@ func (m *Model) layout() {
 	// A window at the bottom of the transcript stays there when its height changes (the suggestion list opens and
 	// closes, the queue grows, the terminal is resized): otherwise the next output lands below the fold.
 	atBottom := m.viewport.AtBottom()
-	m.viewport.SetHeight(max(1, m.height-headerHeight-inputHeight-helpHeight-m.suggestionHeight()-m.queueHeight()))
+	m.viewport.SetHeight(max(1, m.height-headerHeight-inputHeight-helpHeight-m.suggestionHeight()-m.queueHeight()-m.searchHeight()))
 	if atBottom {
 		m.viewport.GotoBottom()
 	}
@@ -633,6 +661,9 @@ func (m Model) View() tea.View {
 	parts := []string{m.headerView(), m.viewport.View()}
 	if queue := m.queueView(); queue != "" {
 		parts = append(parts, queue)
+	}
+	if search := m.searchView(); search != "" {
+		parts = append(parts, search)
 	}
 	if list := m.suggestionView(); list != "" {
 		parts = append(parts, list)

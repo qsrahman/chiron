@@ -30,24 +30,6 @@ func wheel(button tea.MouseButton) tea.MouseWheelMsg {
 	return tea.MouseWheelMsg{Button: button, X: 10, Y: 5}
 }
 
-func TestUpAndDownScrollTheTranscriptOneLine(t *testing.T) {
-	m := scrollable(t)
-	bottom := m.viewport.YOffset()
-
-	m, _ = update(m, up)
-	if got := m.viewport.YOffset(); got != bottom-1 {
-		t.Fatalf("Up moved the transcript to %d, want %d (one line up)", got, bottom-1)
-	}
-	m, _ = update(m, up)
-	m, _ = update(m, down)
-	if got := m.viewport.YOffset(); got != bottom-1 {
-		t.Errorf("Up, Up, Down left the transcript at %d, want %d", got, bottom-1)
-	}
-	if m.input.Value() != "" {
-		t.Errorf("the keys reached the input: %q", m.input.Value())
-	}
-}
-
 func TestUpAndDownBelongToTheInputWhenThereIsText(t *testing.T) {
 	m := scrollable(t)
 	m.input.SetValue("first line\nsecond line")
@@ -61,27 +43,28 @@ func TestUpAndDownBelongToTheInputWhenThereIsText(t *testing.T) {
 	}
 }
 
-func TestDownScrollsEvenWhenAQueuedPromptCanBeTakenBack(t *testing.T) {
+func TestUpTakesAQueuedPromptBackBeforeRecallingHistory(t *testing.T) {
 	m := scrollable(t)
+	m.hist.add("an older prompt")
 	m.queue.prompts = []string{"queued"}
-	m.viewport.SetYOffset(m.viewport.YOffset() - 5)
-	at := m.viewport.YOffset()
 
-	m, _ = update(m, down)
-	if m.viewport.YOffset() != at+1 {
-		t.Errorf("Down moved to %d, want %d", m.viewport.YOffset(), at+1)
+	m, _ = update(m, up)
+	if m.input.Value() != "queued" || len(m.queue.prompts) != 0 {
+		t.Errorf("input %q, queue %v: Up should take the queued prompt back", m.input.Value(), m.queue.prompts)
 	}
-	m, _ = update(m, up) // Up takes the queued prompt back, as before
-	if m.input.Value() != "queued" || m.viewport.YOffset() != at+1 {
-		t.Errorf("input %q, offset %d: Up should take the prompt back and not scroll", m.input.Value(), m.viewport.YOffset())
-	}
+}
+
+// scrolledUp moves the transcript up by n lines, as the wheel or a page key would.
+func scrolledUp(m Model, n int) Model {
+	m.viewport.SetYOffset(m.viewport.YOffset() - n)
+	return m
 }
 
 func TestScrollingKeepsTheSelectedCard(t *testing.T) {
 	m := withCards(t, "a")
 	m, _ = update(m, tab)
 
-	m, _ = update(m, up)
+	m, _ = update(m, tea.KeyPressMsg{Code: tea.KeyPgUp})
 
 	if m.cards.selected < 0 {
 		t.Error("scrolling a line cleared the card selection")
@@ -195,9 +178,7 @@ func TestTheTranscriptKeepsFollowingAcrossAHeightChange(t *testing.T) {
 }
 
 func TestAWindowThatWasScrolledUpStaysWhereItWasWhenItsHeightChanges(t *testing.T) {
-	m := scrollable(t)
-	m, _ = update(m, up)
-	m, _ = update(m, up)
+	m := scrolledUp(scrollable(t), 2)
 	at := m.viewport.YOffset()
 
 	m, _ = update(m, tea.KeyPressMsg{Code: '/', Text: "/"})

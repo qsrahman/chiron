@@ -184,7 +184,10 @@ conversation keeps its history for the whole session. Terminals narrower than 40
 | `Enter` | Send the message (ignored while an answer is streaming; your draft stays) |
 | `Ctrl-J` or `Shift-Enter` | New line in the message. `Shift-Enter` is a key of its own only in a terminal that supports it (kitty, Ghostty, WezTerm, iTerm2 and others); in any other it is plain Enter. The help bar shows `shift+enter` once the terminal has said it can, and `ctrl+j` until then (`Alt-Enter` works too) |
 | `PgUp` / `PgDn` | Scroll the transcript a page (when you have scrolled up, the help bar says `↓ N lines below`) |
-| `Up` / `Down` | Scroll the transcript a line, while the input is empty (with a prompt queued, `Up` takes it back instead) |
+| `Up` / `Down` | Recall earlier prompts: `Up` on an empty input shows the newest, `Up` and `Down` then walk through the history, and `Down` past the newest empties the input again. Once you edit a recalled prompt the keys belong to the input. With a prompt queued, `Up` takes that back first. |
+| `Ctrl-R` | Search the prompt history: type to filter (newest match first), `Ctrl-R` again for an older one, `Enter` puts the match in the input (it is not sent), `Esc` cancels |
+| `Ctrl-G` | Edit the prompt in your editor (`$VISUAL`, else `$EDITOR`; arguments such as `code --wait` are allowed). What the editor saves comes back into the input and is not sent. |
+| `Ctrl-Z` | Suspend the program; `fg` brings it back |
 | Mouse wheel | Scroll the transcript (or the details of an approval dialog that is open). The terminal's own text selection then needs `Shift` held (`Option` on macOS); `/copy` needs no selection |
 | Left click | On a tool card: open or close it. On a button of an approval dialog: answer it. On the help bar while `↓ N lines below` shows: jump to the bottom |
 | `Ctrl-C` | While an answer is streaming: cancel it (press again to quit). When idle: clears what you typed; on an empty input it asks you to press it again, since the conversation is not saved, and quits at once if there is no conversation yet. |
@@ -309,6 +312,9 @@ atomically: a failed write leaves the previous one. A conversation that never go
 - **Opt out** with `"sessions": false` in the config file or `--no-save` for one run. Resuming still works with
   saving off. The files hold your prompts, the answers and tool results, and the working directory; they are not
   pruned, so delete old ones by hand.
+- **Prompt history** (`Up`, `Ctrl-R`) is kept next to them, in `$XDG_STATE_HOME/desk-agent/history` (private, the last 1,000
+  prompts, one JSON string a line, no repeats in a row), and follows the same switch: with sessions off, prompts are
+  remembered for the current run only.
 
 ## Safety
 

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"time"
 
 	"github.com/openai/openai-go/v3"
@@ -143,6 +144,10 @@ func start(ctx context.Context, cfg config.Config, opts runOptions, stdout, stde
 		WorkDir:       workDir,
 		Branch:        agent.GitBranch(ctx, workDir),
 		ContextWindow: cfg.ContextWindow,
+	}
+	// The prompts you type are kept with the sessions, and by the same switch.
+	if stateDir, err := mcp.StateDir(); err == nil && cfg.Sessions && !opts.noSave {
+		info.HistoryPath = filepath.Join(stateDir, "history")
 	}
 	if mcpc != nil {
 		info.Startup, info.Servers = mcpc.connect, mcpc

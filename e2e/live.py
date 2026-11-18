@@ -61,9 +61,9 @@ def local_server(**extra):
     return {"command": MCP, "env": env, **extra}
 
 
-def start(servers=None, args=(), rows=40, cols=120, config="default", cwd=None, **settings):
+def start(servers=None, args=(), rows=40, cols=120, config="default", cwd=None, env=None, **settings):
     path = write_config(config, servers if servers is not None else {"local": local_server()}, **settings)
-    env = {"XDG_STATE_HOME": os.path.join(WORK, "state")}
+    env = {"XDG_STATE_HOME": os.path.join(WORK, "state"), **(env or {})}
     return Term([BIN, "--config", path, *args], env=env, rows=rows, cols=cols, cwd=cwd)
 
 
@@ -379,8 +379,10 @@ def scrolling():
         t.send(PGDN, 0.3)
         t.send(PGDN, 0.3)
         t.lacks("below", "the hint shows at the bottom")
+        t.send(PGUP, 0.4)
+        t.contains("below", "Page Up did not scroll (no hint)")
         t.send(UP, 0.4)
-        t.contains("below", "Up did not scroll (no hint)")
+        t.send(DOWN, 0.4)
         t.send(PGUP, 0.4)
         before = re.search(r"↓ (\d+) lines? below", t.text)
         t.expect(before, "the hint has no count")
@@ -388,7 +390,6 @@ def scrolling():
         after = re.search(r"↓ (\d+) lines? below", t.text)
         t.expect(int(after.group(1)) > int(before.group(1)), "the wheel did not scroll up")
         t.send(WHEEL_DOWN, 0.4)
-        t.send(DOWN, 0.4)
         for _ in range(12):
             t.send(PGDN, 0.2)
         t.lacks("below", "scrolling back down did not reach the bottom")
@@ -396,8 +397,6 @@ def scrolling():
         # typing is not scrolling
         t.send("abc", 0.3)
         t.contains("abc")
-        t.send(UP, 0.3)
-        t.lacks("below", "Up scrolled although the input holds text")
         return t
     finally:
         t.close()
@@ -759,6 +758,65 @@ def compact():
         t.close()
 
 
+def prompt_history():
+    editor = os.path.join(WORK, "fake-editor.sh")
+    with open(editor, "w") as f:
+        f.write("#!/bin/sh\nprintf 'edited in the editor' > \"$1\"\n")
+    os.chmod(editor, 0o755)
+    t = start(servers={}, config="history", env={"EDITOR": editor, "VISUAL": ""})
+    try:
+        t.wait_for("/help", 10)
+        say(t, "Reply with exactly: ALPHA-7")
+        say(t, "Reply with exactly: BETA-8")
+        t.send(UP, 0.4)
+        t.contains("❯ Reply with exactly: BETA-8", "Up did not recall the last prompt")
+        t.send(UP, 0.4)
+        t.contains("❯ Reply with exactly: ALPHA-7", "a second Up did not recall the one before")
+        t.send(DOWN, 0.4)
+        t.contains("❯ Reply with exactly: BETA-8")
+        t.send(DOWN, 0.4)
+        t.lacks("❯ Reply with exactly", "Down past the newest should empty the input")
+        t.send("draft", 0.3)
+        t.send(UP, 0.3)
+        t.lacks("❯ Reply with exactly", "Up replaced typed text")
+        t.send("\x15", 0.3)  # Ctrl-U
+
+        t.send("\x12", 0.3)  # Ctrl-R
+        t.send("ALPHA", 0.4)
+        t.contains("search ALPHA", "no search row")
+        t.contains("older match", "the help bar does not describe the search")
+        t.send(ENTER, 0.4)
+        t.contains("❯ Reply with exactly: ALPHA-7", "Enter did not put the match in the input")
+        t.lacks("search ALPHA")
+        t.send("\x15", 0.3)
+
+        t.send("my draft", 0.3)
+        t.send("\x07", 1.5)  # Ctrl-G: the editor, which replaces the text
+        t.wait_for("edited in the editor", 10)
+        t.lacks("my draft")
+        t.pump(0.5)
+        t.expect(t.text.count("edited in the editor") == 1, "the editor's text was sent, not put in the input")
+        invariants(t, "after the editor")
+        t.send("\x15", 0.3)
+        t.send(CTRL_C, 0.3)
+        t.send(CTRL_C, 0.8)
+        t.expect(t.exited() == 0, "two Ctrl-C did not quit")
+    finally:
+        t.close()
+
+    path = os.path.join(WORK, "state", "desk-agent", "history")
+    t.expect(os.stat(path).st_mode & 0o777 == 0o600, "the history file is not private")
+    t = start(servers={}, config="history")
+    try:
+        t.wait_for("/help", 10)
+        t.send(UP, 0.4)
+        t.contains("❯ Reply with exactly: BETA-8", "the history did not survive a restart")
+        t.send("\x15", 0.3)
+        return t
+    finally:
+        t.close()
+
+
 def sessions():
     work = os.path.join(WORK, "sessions-dir")  # its own directory: --continue picks the latest session of the directory
     os.makedirs(work, exist_ok=True)
@@ -799,7 +857,7 @@ def sessions():
 
 SCENARIOS = [startup_and_chat, clipboard_and_title, markdown, approval_and_cards, queue_and_cancel, commands, restart_after_death, scrolling,
              resize, quit_protection, multiline_input, long_output_card, failing_server_and_flags, non_interactive,
-             compact, sessions, toolbox_startup, toolbox_files, toolbox_shell, toolbox_fetch_and_search, toolbox_large_output]
+             compact, sessions, prompt_history, toolbox_startup, toolbox_files, toolbox_shell, toolbox_fetch_and_search, toolbox_large_output]
 
 
 def main():

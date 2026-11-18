@@ -9,6 +9,9 @@ type keyMap struct {
 	scroll    key.Binding
 	interrupt key.Binding
 	eof       key.Binding
+	search    key.Binding
+	editor    key.Binding
+	suspend   key.Binding
 
 	// Used while the suggestion list is open.
 	up, down, complete, dismiss key.Binding
@@ -16,8 +19,8 @@ type keyMap struct {
 	// Used while the approval modal is open.
 	yes, always, no, prev, next key.Binding
 
-	// Used while the input is empty: choosing a tool card, taking a queued prompt back, and scrolling a line.
-	cardNext, cardPrev, toggle, unqueue, line key.Binding
+	// Used while the input is empty: choosing a tool card, taking a queued prompt back, and recalling a prompt.
+	cardNext, cardPrev, toggle, unqueue, history key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -27,6 +30,9 @@ func newKeyMap() keyMap {
 		scroll:    key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("pgup/pgdn", "scroll")),
 		interrupt: key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
 		eof:       key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "quit on an empty input")),
+		search:    key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "search earlier prompts")),
+		editor:    key.NewBinding(key.WithKeys("ctrl+g"), key.WithHelp("ctrl+g", "edit the prompt in $EDITOR")),
+		suspend:   key.NewBinding(key.WithKeys("ctrl+z"), key.WithHelp("ctrl+z", "suspend")),
 		up:        key.NewBinding(key.WithKeys("up"), key.WithHelp("↑", "previous")),
 		down:      key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "next")),
 		complete:  key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "complete")),
@@ -35,7 +41,7 @@ func newKeyMap() keyMap {
 		cardPrev:  key.NewBinding(key.WithKeys("shift+tab")),
 		toggle:    key.NewBinding(key.WithKeys("enter", "space"), key.WithHelp("enter", "expand or collapse")),
 		unqueue:   key.NewBinding(key.WithKeys("up")),
-		line:      key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "scroll a line (empty input)")),
+		history:   key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "recall earlier prompts")),
 		yes:       key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "allow")),
 		always:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "allow for session")),
 		no:        key.NewBinding(key.WithKeys("n", "esc"), key.WithHelp("n", "deny")),

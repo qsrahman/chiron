@@ -76,9 +76,7 @@ func TestOnlyTheLeftButtonClicks(t *testing.T) {
 }
 
 func TestClickingTheHintJumpsToTheBottom(t *testing.T) {
-	m := scrollable(t)
-	m, _ = update(m, up)
-	m, _ = update(m, up)
+	m := scrolledUp(scrollable(t), 2)
 	if m.linesBelow() == 0 {
 		t.Fatal("not scrolled up")
 	}

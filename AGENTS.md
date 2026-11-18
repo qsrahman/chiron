@@ -116,6 +116,12 @@ text from a redraw, no leftover stand-in character, no banner.
   and `Compositor.Hit` says which was clicked; **a layer's `Z` is absolute, not relative to its parent**, so children
   need a higher one or they sit under the parent and never get the hit. Terminals ignore what they do not support, so
   none of these needs a check, except `Shift+Enter`, which is named in the help only after `KeyboardEnhancementsMsg`.
+- **Input keys.** `Up`/`Down` are the prompt history (`history.go`): from an empty input only, and while the input
+  still holds the recalled prompt unedited (`recalling`); a recalled `/command` is marked dismissed so the suggestion
+  list does not take the arrows. `Ctrl-R` is a mode (`search.go`) that takes every key until it closes and leaves the
+  input alone until `Enter`. `Ctrl-G` writes the input to a private temporary file and runs `$VISUAL`/`$EDITOR` with
+  `tea.ExecProcess` (`editor.go`; its result is an `editorDoneMsg`, never sent as a prompt). Prompts are added to
+  the history where Enter is handled, before commands run. Transcript scrolling is `PgUp`/`PgDn` and the wheel only.
 - **UI look.** There is a margin of one column on each side. Colours come only from the palette in `theme.go`; never hard-code a colour or an ANSI index
   elsewhere, and never paint the terminal background (bands are derived from it). Everything in the transcript
   shares the `gutter` indent and is capped at `maxTextWidth`; `render` clamps every line to the content width,

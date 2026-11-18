@@ -4,6 +4,24 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-18
+
+### Added
+
+- Prompt history (Phase 9c): `Up` on an empty input recalls the newest prompt, `Up`/`Down` walk through the history and
+  `Down` past the newest empties the input; once a recalled prompt is edited the keys belong to the input again. The
+  last 1,000 prompts (commands included, no repeats in a row) are kept in a private file next to the sessions and
+  survive a restart; with sessions off they are kept for the run only.
+- `Ctrl-R` searches the history (case-insensitive, newest first, `Ctrl-R` again for an older match, `Enter` puts it in
+  the input, `Esc` cancels).
+- `Ctrl-G` edits the prompt in `$VISUAL` or `$EDITOR` through `tea.ExecProcess`; the saved text comes back into the input.
+- `Ctrl-Z` suspends the program (`tea.Suspend`).
+- A live scenario for the history, search, editor and restart.
+
+### Changed
+
+- `Up` and `Down` no longer scroll the transcript a line; `PgUp`/`PgDn` and the mouse wheel still do.
+
 ## [0.6.1] - 2026-11-18
 
 ### Added
