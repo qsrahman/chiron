@@ -186,7 +186,7 @@ conversation keeps its history for the whole session. Terminals narrower than 40
 | `PgUp` / `PgDn` | Scroll the transcript a page (when you have scrolled up, the help bar says `↓ N lines below`) |
 | `Up` / `Down` | Recall earlier prompts: `Up` on an empty input shows the newest, `Up` and `Down` then walk through the history, and `Down` past the newest empties the input again. Once you edit a recalled prompt the keys belong to the input. With a prompt queued, `Up` takes that back first. |
 | `Ctrl-R` | Search the prompt history: type to filter (newest match first), `Ctrl-R` again for an older one, `Enter` puts the match in the input (it is not sent), `Esc` cancels |
-| `Ctrl-G` | Edit the prompt in your editor (`$VISUAL`, else `$EDITOR`; arguments such as `code --wait` are allowed). What the editor saves comes back into the input and is not sent. |
+| `Ctrl-G` | Edit the prompt in your editor (`$VISUAL`, else `$EDITOR`, run as a shell command line like git does, so `code --wait` and a quoted path with spaces work). What the editor saves comes back into the input and is not sent. |
 | `Ctrl-Z` | Suspend the program; `fg` brings it back |
 | Mouse wheel | Scroll the transcript (or the details of an approval dialog that is open). The terminal's own text selection then needs `Shift` held (`Option` on macOS); `/copy` needs no selection |
 | Left click | On a tool card: open or close it. On a button of an approval dialog: answer it. On the help bar while `↓ N lines below` shows: jump to the bottom |
@@ -306,14 +306,19 @@ atomically: a failed write leaves the previous one. A conversation that never go
 
 - **Resume** with `--continue` (the latest of the current directory) or `--resume ID`. The messages and the tool calls
   of the newest turn are shown again, the model sees the whole saved history, and the conversation goes on in the
-  same file. `/sessions` lists the ones of this directory, `/sessions all` every directory.
+  same file. `/sessions` lists the ones of this directory, `/sessions all` every directory (the newest 20). A directory is known by its real
+  path, so a symlink to it finds the same sessions. `--continue` takes the session written last and warns about damaged
+  files it had to pass over, since one of them may have been the one you meant.
+- **Two programs, one session:** if another desk-agent has written the file since this one did, this one does not
+  overwrite it: it says so and goes on in a new file.
 - **Reasoning items** are dropped when you resume with another model or server than the one that wrote them, and when
   you switch with `/model`; they only make sense to the model that produced them. Everything else is kept.
 - **Opt out** with `"sessions": false` in the config file or `--no-save` for one run. Resuming still works with
   saving off. The files hold your prompts, the answers and tool results, and the working directory; they are not
   pruned, so delete old ones by hand.
 - **Prompt history** (`Up`, `Ctrl-R`) is kept next to them, in `$XDG_STATE_HOME/desk-agent/history` (private, the last 1,000
-  prompts, one JSON string a line, no repeats in a row), and follows the same switch: with sessions off, prompts are
+  prompts, one JSON string a line, no repeats in a row, and a prompt that starts with a space is not remembered, as in a
+  shell, for what should leave no trace), and follows the same switch: with sessions off, prompts are
   remembered for the current run only.
 
 ## Safety

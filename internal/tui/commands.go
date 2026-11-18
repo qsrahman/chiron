@@ -12,6 +12,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/qsrahman/desk-agent/internal/agent"
 	"github.com/qsrahman/desk-agent/internal/config"
 )
 
@@ -382,6 +383,9 @@ func (m *Model) sessionsCommand(arg string) (tea.Cmd, error) {
 		rows = append(rows, [2]string{label, detail})
 	}
 	m.sayTable(rows)
+	if len(list) == agent.SessionListLimit {
+		m.say(fmt.Sprintf("Showing the newest %d", agent.SessionListLimit))
+	}
 	return nil, nil
 }
 

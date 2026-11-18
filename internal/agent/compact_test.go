@@ -340,3 +340,17 @@ func TestACancelledAutomaticSummaryIsNotAFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestTheSummariserIsNotGivenMoreThanTheBudgetCanHold(t *testing.T) {
+	a, srv := talk(t, 4, summaryReply(goodSummary))
+	a.settings.MaxContextTokens = 300 // the turns to summarize are about 1,000 bytes, the limit 900
+
+	if _, err := a.Compact(context.Background(), ""); err != nil {
+		t.Fatal(err)
+	}
+
+	input := srv.request(t, 4)["input"].(string)
+	if !strings.Contains(input, "of the conversation are left out") || strings.Contains(input, "question 1") || !strings.Contains(input, "question 3") {
+		t.Errorf("the summariser got %d bytes: %.120q ...", len(input), input)
+	}
+}

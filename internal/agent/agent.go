@@ -63,7 +63,11 @@ func (a *Agent) Send(ctx context.Context, text string) <-chan Event {
 		defer close(events)
 		err := a.run(ctx, text, events)
 		// Saved before the last event, so a user who quits as soon as the turn ends loses nothing.
-		if saveErr := a.persist(); saveErr != nil {
+		note, saveErr := a.persist()
+		if note != "" {
+			events <- Notice{Text: note}
+		}
+		if saveErr != nil {
 			events <- Notice{Text: "Could not save the session: " + saveErr.Error()}
 		}
 		if err != nil {

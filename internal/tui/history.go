@@ -65,8 +65,11 @@ func loadPromptHistory(path string) *promptHistory {
 	return h
 }
 
-// add remembers a prompt, unless it is empty or the same as the last one.
+// add remembers a prompt, unless it is empty, starts with a space or is the same as the last one.
 func (h *promptHistory) add(text string) {
+	if strings.HasPrefix(text, " ") {
+		return // as in a shell: a prompt that starts with a space is not remembered, for what should leave no trace
+	}
 	text = strings.TrimSpace(text)
 	if text == "" || len(text) > maxPromptBytes || (len(h.items) > 0 && h.items[len(h.items)-1] == text) {
 		return

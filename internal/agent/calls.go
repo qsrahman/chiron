@@ -61,6 +61,19 @@ type callResult struct {
 
 func failure(text string) callResult { return callResult{text, CallFailed} }
 
+// outcomeOf recovers how a call ended from the text the model read, for calls shown again after a resume.
+func outcomeOf(output string) Outcome {
+	switch {
+	case output == interruptedOutput:
+		return CallCancelled
+	case output == deniedOutput:
+		return CallDenied
+	case strings.HasPrefix(output, "error: "):
+		return CallFailed
+	}
+	return CallOK
+}
+
 func interrupted() callResult { return callResult{interruptedOutput, CallCancelled} }
 
 // runCall runs one call and returns the text to give back to the model. Failures (unknown tool, bad

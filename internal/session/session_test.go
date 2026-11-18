@@ -17,7 +17,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	want := file("20261118-100000-abcd", "/work", time.Now())
 	want.Summary = "## Goal"
 	want.Items = append(want.Items, Item{Kind: "function_call_output", CallID: "c1", Raw: []byte(`{"output":"x","call_id":"c1"}`)})
-	if err := s.Save(want); err != nil {
+	if _, err := s.Save(want); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.Load(want.ID)
@@ -32,7 +32,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 func TestFilesAndDirectoryArePrivate(t *testing.T) {
 	state := t.TempDir()
 	s := NewStore(state)
-	if err := s.Save(file("a-1", "/w", time.Now())); err != nil {
+	if _, err := s.Save(file("a-1", "/w", time.Now())); err != nil {
 		t.Fatal(err)
 	}
 	dir, err := os.Stat(filepath.Join(state, "sessions"))
@@ -51,7 +51,7 @@ func TestAFailedSaveKeepsThePreviousFileAndLeavesNoTemporaryFile(t *testing.T) {
 	}
 	state := t.TempDir()
 	s := NewStore(state)
-	if err := s.Save(file("a-1", "/w", time.Now())); err != nil {
+	if _, err := s.Save(file("a-1", "/w", time.Now())); err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(state, "sessions")
@@ -61,7 +61,7 @@ func TestAFailedSaveKeepsThePreviousFileAndLeavesNoTemporaryFile(t *testing.T) {
 	defer os.Chmod(dir, 0o700)
 
 	changed := file("a-1", "/other", time.Now())
-	if err := s.Save(changed); err == nil {
+	if _, err := s.Save(changed); err == nil {
 		t.Fatal("saving into a read-only directory must fail")
 	}
 	got, err := s.Load("a-1")
@@ -77,7 +77,7 @@ func TestAFailedSaveKeepsThePreviousFileAndLeavesNoTemporaryFile(t *testing.T) {
 func TestLoadByPrefix(t *testing.T) {
 	s := NewStore(t.TempDir())
 	for _, id := range []string{"20261118-1", "20261118-12", "20261118-2", "20261119-1"} {
-		if err := s.Save(file(id, "/w", time.Now())); err != nil {
+		if _, err := s.Save(file(id, "/w", time.Now())); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -101,24 +101,41 @@ func TestAnIdThatIsNotAnIdIsRefused(t *testing.T) {
 		if _, err := s.Load(id); err == nil {
 			t.Errorf("Load(%q) must fail", id)
 		}
-		if err := s.Save(File{ID: id}); err == nil {
+		if _, err := s.Save(File{ID: id}); err == nil {
 			t.Errorf("Save(%q) must fail", id)
 		}
 	}
 }
 
-func TestListIsNewestFirstAndSkipsDamagedFiles(t *testing.T) {
+// saveAt saves a session and sets the modification time of its file, which is what orders sessions.
+func saveAt(t *testing.T, s *Store, f File, mod time.Time) {
+	t.Helper()
+	if _, err := s.Save(f); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(s.dir, f.ID+".json"), mod, mod); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func all(Info) bool { return true }
+
+func TestListIsNewestFirstLimitedAndSkipsDamagedFiles(t *testing.T) {
 	state := t.TempDir()
 	s := NewStore(state)
 	now := time.Now()
-	s.Save(file("old-1", "/w", now.Add(-time.Hour)))
-	s.Save(file("new-1", "/w", now))
+	saveAt(t, s, file("old-1", "/w", now), now.Add(-2*time.Hour))
+	saveAt(t, s, file("mid-1", "/w", now), now.Add(-time.Hour))
+	saveAt(t, s, file("new-1", "/w", now), now)
 	os.WriteFile(filepath.Join(state, "sessions", "bad-1.json"), []byte("{not json"), 0o600)
 	os.WriteFile(filepath.Join(state, "sessions", "v9-1.json"), []byte(`{"version":9,"id":"v9-1"}`), 0o600)
 
-	list, err := s.List()
-	if err != nil || len(list) != 2 || list[0].ID != "new-1" || list[1].ID != "old-1" {
+	list, err := s.List(all, 0)
+	if err != nil || len(list) != 3 || list[0].ID != "new-1" || list[1].ID != "mid-1" || list[2].ID != "old-1" {
 		t.Errorf("list = %v, %v", list, err)
+	}
+	if list, _ := s.List(all, 2); len(list) != 2 || list[1].ID != "mid-1" {
+		t.Errorf("limit 2: %v", list)
 	}
 	if _, err := s.Load("bad-1"); err == nil || !strings.Contains(err.Error(), "damaged") {
 		t.Errorf("a damaged file should say so: %v", err)
@@ -128,21 +145,63 @@ func TestListIsNewestFirstAndSkipsDamagedFiles(t *testing.T) {
 	}
 }
 
-func TestLatestIsPerDirectory(t *testing.T) {
+func TestListReadsTheHeaderAndFiltersByDirectory(t *testing.T) {
 	s := NewStore(t.TempDir())
 	now := time.Now()
-	s.Save(file("a-1", "/one", now.Add(-time.Hour)))
-	s.Save(file("b-1", "/two", now))
-	if f, err := s.Latest("/one"); err != nil || f.ID != "a-1" {
-		t.Errorf("latest = %v %v", f.ID, err)
+	a := file("a-1", "/one", now)
+	a.Title, a.Turns = "the first prompt", 7
+	saveAt(t, s, a, now)
+	saveAt(t, s, file("b-1", "/two", now), now.Add(-time.Minute))
+
+	list, _ := s.List(func(i Info) bool { return i.Dir == "/one" }, 0)
+	if len(list) != 1 || list[0].Title != "the first prompt" || list[0].Turns != 7 {
+		t.Errorf("list = %+v", list)
 	}
-	if _, err := s.Latest("/three"); err == nil {
+}
+
+func TestLatestIsPerDirectoryAndWarnsAboutDamagedFilesItPassed(t *testing.T) {
+	state := t.TempDir()
+	s := NewStore(state)
+	now := time.Now()
+	saveAt(t, s, file("a-1", "/one", now), now.Add(-time.Hour))
+	saveAt(t, s, file("b-1", "/two", now), now.Add(-time.Minute))
+	bad := filepath.Join(state, "sessions", "bad-1.json")
+	os.WriteFile(bad, []byte("{not json"), 0o600)
+	os.Chtimes(bad, now, now) // the newest file of all is the damaged one
+
+	f, warnings, err := s.Latest("/one")
+	if err != nil || f.ID != "a-1" {
+		t.Fatalf("latest = %v %v", f.ID, err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "bad-1") {
+		t.Errorf("warnings = %q: the damaged newer file may have been the one meant", warnings)
+	}
+	if _, _, err := s.Latest("/three"); err == nil {
 		t.Error("a directory with no session must be an error")
 	}
 }
 
+func TestStampTellsWhenAnotherWriterWasHere(t *testing.T) {
+	s := NewStore(t.TempDir())
+	stamp, err := s.Save(file("a-1", "/w", time.Now()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := s.Stamp("a-1"); !again.Equal(stamp) {
+		t.Error("the stamp changed without a write")
+	}
+	later := stamp.Add(time.Second)
+	os.Chtimes(filepath.Join(s.dir, "a-1.json"), later, later) // someone else wrote it
+	if again, _ := s.Stamp("a-1"); again.Equal(stamp) {
+		t.Error("the stamp did not change")
+	}
+	if zero, err := s.Stamp("none-1"); err != nil || !zero.IsZero() {
+		t.Errorf("a missing file has the zero stamp: %v %v", zero, err)
+	}
+}
+
 func TestNoSessionsYetIsNotAnError(t *testing.T) {
-	list, err := NewStore(t.TempDir()).List()
+	list, err := NewStore(t.TempDir()).List(all, 0)
 	if err != nil || len(list) != 0 {
 		t.Errorf("%v %v", list, err)
 	}

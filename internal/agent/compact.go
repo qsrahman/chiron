@@ -122,7 +122,7 @@ func (a *Agent) Compact(ctx context.Context, focus string) (Compaction, error) {
 	c, err := a.compact(ctx, focus)
 	if err == nil {
 		a.summaryFailures = 0
-		_ = a.persist()
+		a.saveSession()
 	}
 	return c, err
 }
@@ -169,7 +169,7 @@ func (a *Agent) summarize(ctx context.Context, previous string, items []item, fo
 		parts = append(parts, "Previous summary:\n"+previous)
 	}
 	text := transcript(items)
-	parts = append(parts, "Conversation:\n"+text)
+	parts = append(parts, "Conversation:\n"+fitTranscript(text, a.maxContext()*3))
 	if focus != "" {
 		parts = append(parts, "Focus: "+cut(focus, focusMax))
 	}
@@ -218,6 +218,21 @@ func acceptSummary(answer string, replaces int) (string, error) {
 		return "", errors.New("the summary is longer than the text it replaces")
 	}
 	return answer, nil
+}
+
+// fitTranscript keeps the summariser's input within limit bytes (about three quarters of the budget in tokens), or the
+// request that asks for a summary could itself be too long for the model. The newest part is kept, since the previous
+// summary already stands for what came before; the cut is at the start of a line.
+func fitTranscript(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	tail := text[len(text)-limit:]
+	if i := strings.IndexByte(tail, '\n'); i >= 0 {
+		tail = tail[i+1:]
+	}
+	tail = strings.TrimLeftFunc(tail, func(r rune) bool { return r == utf8.RuneError }) // the cut may have split a character
+	return fmt.Sprintf("[... the first %d characters of the conversation are left out ...]\n%s", len(text)-len(tail), tail)
 }
 
 // fields is what the code reads from an item's JSON: the item can be one we built or one the API sent.

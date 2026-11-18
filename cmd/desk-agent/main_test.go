@@ -382,12 +382,15 @@ func sessionFiles(t *testing.T) []string {
 func seedSession(t *testing.T, prompt string) string {
 	t.Helper()
 	dir, _ := os.Getwd()
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real // sessions are kept by the real path of the directory
+	}
 	stateDir, err := mcp.StateDir()
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := session.NewID(time.Now())
-	err = session.NewStore(stateDir).Save(session.File{ID: id, Dir: dir, Model: "m", Created: time.Now(), Updated: time.Now(), Items: []session.Item{
+	_, err = session.NewStore(stateDir).Save(session.File{ID: id, Dir: dir, Model: "m", Created: time.Now(), Updated: time.Now(), Items: []session.Item{
 		{Kind: "user", Raw: json.RawMessage(`{"content":` + strconv.Quote(prompt) + `,"role":"user"}`)},
 		{Kind: "assistant", Raw: json.RawMessage(`{"content":"noted","role":"assistant"}`)},
 	}})
@@ -480,5 +483,42 @@ func TestEndpointKeepsOnlySchemeAndHost(t *testing.T) {
 		if got := endpointOf(in); got != want {
 			t.Errorf("endpointOf(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestASymlinkedDirectoryFindsTheSessionsOfTheRealOne(t *testing.T) {
+	isolate(t)
+	srv, requests := recordingServer(t)
+	seedSession(t, "seen through a link")
+	here, _ := os.Getwd()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(here, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(link)
+
+	runOK(t, "-p", "again", "--continue", "--base-url", srv.URL)
+
+	if got, _ := json.Marshal(requests()[0]["input"]); !strings.Contains(string(got), "seen through a link") {
+		t.Errorf("--continue from a symlink missed the session: %s", got)
+	}
+}
+
+func TestContinueWarnsAboutADamagedFileNewerThanTheSession(t *testing.T) {
+	isolate(t)
+	srv, _ := recordingServer(t)
+	seedSession(t, "kept")
+	bad := filepath.Join(os.Getenv("XDG_STATE_HOME"), "desk-agent", "sessions", "zz-damaged.json")
+	if err := os.WriteFile(bad, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	args := []string{"-p", "hi", "--continue", "--base-url", srv.URL}
+	if code := run(context.Background(), args, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "warning") || !strings.Contains(errOut.String(), "zz-damaged") {
+		t.Errorf("stderr = %q", errOut.String())
 	}
 }

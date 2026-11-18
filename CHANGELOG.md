@@ -6,11 +6,25 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Changed
 
+- `/sessions` and `--continue` no longer read every session file in full: files are ordered by modification time, a
+  list reads only the header of a file (the files carry their turn count now) and shows the newest 20, and `--continue`
+  stops at the first match. `--continue` prints a warning for each damaged file newer than the session it chose.
+- A directory is known by its real path, so `--continue` through a symlink finds the same sessions.
+- A resumed conversation shows how each tool call ended (failed, denied, interrupted) and the `server → tool` titles
+  once the MCP servers have connected.
+- `$VISUAL`/`$EDITOR` is run as a shell command line, so quoted paths with spaces and arguments work.
+- A prompt that starts with a space is not added to the prompt history.
+- The text sent to the summariser is cut from its start when it is longer than about three quarters of the budget, so the
+  request for a summary cannot itself be too long.
 - A `-p` run is never saved as a session: it is a script's call, and one file per call would pile up. `-p` with
   `--continue` or `--resume` still reads the session, and does not add to it.
 
 ### Fixed
 
+- Two programs saving the same session no longer overwrite each other: the second to write notices that the file has
+  changed since its own last write, says so, and continues in a new file.
+- A `max_context_tokens` that is not more than the instructions and tool definitions alone is reported at the start of
+  the turn, instead of every turn stopping after its first tool round.
 - `auto_compact` no longer announces "Summarizing earlier messages…" every turn when there is nothing it could cut (a
   single large turn), and a Ctrl-C during an automatic summary is no longer counted as a failed summary.
 - The prompt history no longer loses the entries after a line longer than 1 MiB (it is read with a reader, not a

@@ -23,7 +23,7 @@ func (a *Agent) Reset() {
 func (a *Agent) Undo() bool {
 	a.lastInput = 0 // what the server counted no longer holds
 	undone := a.history.undo()
-	_ = a.persist()
+	a.saveSession()
 	return undone
 }
 
@@ -32,7 +32,7 @@ func (a *Agent) Undo() bool {
 func (a *Agent) Rewind() (string, bool) {
 	a.lastInput = 0
 	prompt, ok := a.history.rewind()
-	_ = a.persist()
+	a.saveSession()
 	return prompt, ok
 }
 

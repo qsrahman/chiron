@@ -157,7 +157,7 @@ text from a redraw, no leftover stand-in character, no banner.
 - **Sessions.** `internal/session` knows files, not meaning: `File{Items []Item{Kind, CallID, Raw}}`, atomic `Save`
   (temporary file in the same directory, then rename), `Load` by name or unique prefix, `List`, `Latest(dir)`. The agent
   turns its history into items (`persist`) and back (`Resume`, `itemFromFile`); messages and results are rebuilt from
-  their text so shortening and summaries treat them like new ones, and the rest is replayed raw. `persist` runs at the
+  their text so shortening and summaries treat them like new ones, and the rest is replayed raw. Every save checks the file's modification time against the one it wrote last (`Store.Stamp`) and forks to a new file if another process has written it. `persist` runs at the
   end of `Send`, before the last event, and after `Undo`, `Rewind` and `Compact` (their errors are ignored: the next save
   writes everything again). The file is named when there is first something to save. `-p` runs never call `EnableSessions`, so they save nothing. **Tests must never touch the real
   state directory:** set `XDG_STATE_HOME` (the `isolate` helper does) or use a temporary `session.Store`.

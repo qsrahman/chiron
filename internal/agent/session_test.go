@@ -2,12 +2,19 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/responses"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	"github.com/qsrahman/desk-agent/internal/session"
+	"github.com/qsrahman/desk-agent/internal/tools"
 )
 
 const endpoint = "http://localhost:11434"
@@ -177,7 +184,7 @@ func TestResetStartsANewFileAndKeepsTheOld(t *testing.T) {
 	}
 	drain(t, a.Send(context.Background(), "second"))
 
-	list, _ := store.List()
+	list, _ := store.List(func(session.Info) bool { return true }, 0)
 	if len(list) != 2 || a.SessionID() == first {
 		t.Errorf("sessions = %d, id = %s (first %s)", len(list), a.SessionID(), first)
 	}
@@ -282,7 +289,7 @@ func TestTheListKeepsTheFirstPromptAndTheTurnsAfterASummary(t *testing.T) {
 	store := session.NewStore(t.TempDir())
 	a, _ := talk(t, 4, summaryReply(goodSummary))
 	a.EnableSessions(store, "/work", endpoint)
-	if err := a.persist(); err != nil { // as after the first turn of a conversation that is saved from its start
+	if _, err := a.persist(); err != nil { // as after the first turn of a conversation that is saved from its start
 		t.Fatal(err)
 	}
 	a.settings.MaxContextTokens = 400
@@ -301,7 +308,7 @@ func TestTheListKeepsTheFirstPromptAndTheTurnsAfterASummary(t *testing.T) {
 	if err := b.Resume(f, endpoint); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.persist(); err != nil {
+	if _, err := b.persist(); err != nil {
 		t.Fatal(err)
 	}
 	if again, _ := b.ListSessions(false); again[0].Turns != 4 || !strings.HasPrefix(again[0].Prompt, "question 1") {
@@ -327,4 +334,138 @@ func TestSwitchingModelDropsReasoningButKeepsTheRest(t *testing.T) {
 	if got := kinds(a.history.items); got != "user,message" {
 		t.Errorf("other model: %s, want the reasoning gone", got)
 	}
+}
+
+func TestAnotherWritersFileIsNotOverwrittenAndTheConversationGoesOnElsewhere(t *testing.T) {
+	state := t.TempDir()
+	store := session.NewStore(state)
+	srv := newScriptedServer(t, chatReply("one"), chatReply("two"), chatReply("three"))
+	a := saved(t, srv, store)
+	drain(t, a.Send(context.Background(), "first"))
+	first := a.SessionID()
+
+	// Another process continues the same session and saves a turn of its own.
+	f, _ := store.Load(first)
+	f.Title = "written by the other process"
+	if _, err := store.Save(f); err != nil {
+		t.Fatal(err)
+	}
+	stamp, _ := store.Stamp(first)
+	later := stamp.Add(time.Second) // a clock that is too coarse must not hide the other write
+	os.Chtimes(filepath.Join(state, "sessions", first+".json"), later, later)
+
+	events := drain(t, a.Send(context.Background(), "second"))
+
+	if !hasNotice(events, "Another desk-agent has written session") {
+		t.Errorf("notices = %q", notices(events))
+	}
+	if a.SessionID() == first || a.SessionID() == "" {
+		t.Errorf("the conversation stayed in %q", a.SessionID())
+	}
+	theirs, _ := store.Load(first)
+	if theirs.Title != "written by the other process" || len(theirs.Items) != len(f.Items) {
+		t.Error("the other process's file was overwritten")
+	}
+	mine, err := store.Load(a.SessionID())
+	if err != nil || len(mine.Items) <= len(f.Items) {
+		t.Errorf("the new file holds %d items, err %v", len(mine.Items), err)
+	}
+
+	// And after that it saves into its own file without further notices.
+	if again := drain(t, a.Send(context.Background(), "third")); len(notices(again)) != 0 {
+		t.Errorf("notices = %q", notices(again))
+	}
+}
+
+func TestAResumedSessionIsNotMistakenForAnotherWritersFile(t *testing.T) {
+	store := session.NewStore(t.TempDir())
+	srv := newScriptedServer(t, chatReply("one"), chatReply("two"))
+	first := saved(t, srv, store)
+	drain(t, first.Send(context.Background(), "first"))
+	f, _ := store.Load(first.SessionID())
+
+	b := saved(t, srv, store)
+	if err := b.Resume(f, endpoint); err != nil {
+		t.Fatal(err)
+	}
+	events := drain(t, b.Send(context.Background(), "second"))
+
+	if len(notices(events)) != 0 || b.SessionID() != f.ID {
+		t.Errorf("notices %q, id %q (resumed %q)", notices(events), b.SessionID(), f.ID)
+	}
+}
+
+func TestAFileWrittenBeforeTurnsWereCountedStillListsItsTurns(t *testing.T) {
+	store := session.NewStore(t.TempDir())
+	if _, err := store.Save(session.File{ID: "old-1", Dir: "/work", Replaced: 2, Items: []session.Item{
+		{Kind: kindUser, Raw: []byte(`{"content":"the first prompt","role":"user"}`)},
+		{Kind: kindAssistant, Raw: []byte(`{"content":"a","role":"assistant"}`)},
+		{Kind: kindUser, Raw: []byte(`{"content":"another","role":"user"}`)},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	a := saved(t, newFakeServer(t), store)
+
+	list, err := a.ListSessions(false)
+	if err != nil || len(list) != 1 || list[0].Turns != 4 || list[0].Prompt != "the first prompt" {
+		t.Errorf("list = %+v, %v", list, err)
+	}
+}
+
+func TestResumedCallsKeepHowTheyEnded(t *testing.T) {
+	a := newTestAgent(newFakeServer(t))
+	a.history.items = []item{
+		userItem("go"),
+		{kind: kindCall, callID: "c1", param: rawParam(functionCall("c1", "x", nameArgs{"a"}))},
+		callOutputItem("c1", "error: boom"),
+		{kind: kindCall, callID: "c2", param: rawParam(functionCall("c2", "x", nameArgs{"a"}))},
+		callOutputItem("c2", deniedOutput),
+		{kind: kindCall, callID: "c3", param: rawParam(functionCall("c3", "x", nameArgs{"a"}))},
+		callOutputItem("c3", interruptedOutput),
+		{kind: kindCall, callID: "c4", param: rawParam(functionCall("c4", "x", nameArgs{"a"}))},
+		callOutputItem("c4", "fine"),
+	}
+	var got []Outcome
+	for _, m := range a.Messages() {
+		if m.Role == "tool" {
+			got = append(got, m.Outcome)
+		}
+	}
+	if want := []Outcome{CallFailed, CallDenied, CallCancelled, CallOK}; !slices.Equal(got, want) {
+		t.Errorf("outcomes = %v, want %v", got, want)
+	}
+}
+
+func TestATurnIsRefusedWhenTheBudgetCannotHoldTheInstructions(t *testing.T) {
+	srv := newScriptedServer(t, chatReply("never"))
+	a := New(srv.client(), testSettings("m"), strings.Repeat("instructions ", 100), &tools.Registry{})
+	a.settings.MaxContextTokens = 50
+
+	events := drain(t, a.Send(context.Background(), "hello"))
+
+	err := lastError(t, events)
+	if !strings.Contains(err.Error(), "max_context_tokens (50)") || !strings.Contains(err.Error(), "raise it") {
+		t.Errorf("error = %v", err)
+	}
+	if srv.requestCount() != 0 || a.HasConversation() {
+		t.Errorf("requests %d, conversation %v: nothing should have been sent or saved", srv.requestCount(), a.HasConversation())
+	}
+}
+
+func TestTheSummariserInputIsCutFromTheStart(t *testing.T) {
+	text := "line one\nline two\nline three\nline four"
+	if got := fitTranscript(text, 1000); got != text {
+		t.Errorf("short text changed: %q", got)
+	}
+	got := fitTranscript(text, 20) // keeps the last 20 bytes, cut at a line start
+	if !strings.HasPrefix(got, "[... the first ") || !strings.HasSuffix(got, "\nline four") || strings.Contains(got, "line two") {
+		t.Errorf("got %q", got)
+	}
+	if one := fitTranscript(strings.Repeat("é", 50), 21); !utf8.ValidString(one) {
+		t.Errorf("the cut split a character: %q", one)
+	}
+}
+
+func rawParam(raw string) responses.ResponseInputItemUnionParam {
+	return param.Override[responses.ResponseInputItemUnionParam](json.RawMessage(raw))
 }

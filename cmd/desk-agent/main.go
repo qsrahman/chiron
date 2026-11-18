@@ -122,7 +122,7 @@ func start(ctx context.Context, cfg config.Config, opts runOptions, stdout, stde
 		AutoCompact:      cfg.AutoCompact,
 	}, instructions, registry)
 
-	if err := openSessions(a, cfg, opts, workDir); err != nil {
+	if err := openSessions(a, cfg, opts, workDir, stderr); err != nil {
 		return err
 	}
 
@@ -215,7 +215,7 @@ func newClient(cfg config.Config, extra ...option.RequestOption) openai.Client {
 
 // openSessions turns on saving, and resumes a saved conversation when asked to. Resuming works even when saving is
 // off. Without a home directory there is nowhere to keep sessions: that is an error only for a resume.
-func openSessions(a *agent.Agent, cfg config.Config, opts runOptions, workDir string) error {
+func openSessions(a *agent.Agent, cfg config.Config, opts runOptions, workDir string, stderr io.Writer) error {
 	resuming := opts.cont || opts.resume != ""
 	stateDir, err := mcp.StateDir()
 	if err != nil {
@@ -226,6 +226,10 @@ func openSessions(a *agent.Agent, cfg config.Config, opts runOptions, workDir st
 	}
 	store := session.NewStore(stateDir)
 	endpoint := endpointOf(cfg.BaseURL)
+	// A directory is known by where it really is, so reaching it through a symlink finds the same sessions.
+	if real, err := filepath.EvalSymlinks(workDir); err == nil {
+		workDir = real
+	}
 	// A one-shot -p run is a script's call, not a conversation: it can continue a session but is never saved.
 	if cfg.Sessions && !opts.noSave && opts.prompt == "" {
 		a.EnableSessions(store, workDir, endpoint)
@@ -235,7 +239,11 @@ func openSessions(a *agent.Agent, cfg config.Config, opts runOptions, workDir st
 	}
 	var f session.File
 	if opts.cont {
-		f, err = store.Latest(workDir)
+		var damaged []string
+		f, damaged, err = store.Latest(workDir)
+		for _, d := range damaged { // one of them may have been the session meant
+			fmt.Fprintln(stderr, "desk-agent: warning:", d)
+		}
 	} else {
 		f, err = store.Load(opts.resume)
 	}

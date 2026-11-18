@@ -18,10 +18,11 @@ type editorDoneMsg struct {
 }
 
 // prepareEditor writes the text to a private temporary file and returns the command that edits it. $VISUAL wins
-// over $EDITOR, as in other programs; the value may carry arguments ("code --wait"), split at spaces.
+// over $EDITOR, as in other programs. The value is a shell command line, as for git and less, so it may carry
+// arguments and quotes ("code --wait", "'/Applications/My Editor/ed'"); the file is its last argument.
 func prepareEditor(text string) (*exec.Cmd, string, error) {
-	fields := strings.Fields(cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR")))
-	if len(fields) == 0 {
+	editor := strings.TrimSpace(cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR")))
+	if editor == "" {
 		return nil, "", errors.New("set $EDITOR (or $VISUAL) to edit a prompt in your editor")
 	}
 	f, err := os.CreateTemp("", "desk-agent-prompt-*.md") // mode 0600
@@ -37,7 +38,7 @@ func prepareEditor(text string) (*exec.Cmd, string, error) {
 		os.Remove(f.Name())
 		return nil, "", err
 	}
-	return exec.Command(fields[0], append(fields[1:], f.Name())...), f.Name(), nil
+	return exec.Command("sh", "-c", editor+` "$@"`, "sh", f.Name()), f.Name(), nil
 }
 
 // editInEditor hands the terminal to the editor with the input's text, and sends the result back as a message.

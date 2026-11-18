@@ -38,6 +38,7 @@ type Agent interface {
 	Messages() []agent.Message
 	ListSessions(all bool) ([]agent.SessionInfo, error)
 	SessionID() string
+	ToolTitle(name string) string
 	ToolList() agent.ToolList
 }
 
@@ -224,7 +225,7 @@ func (m *Model) restore() {
 		case "assistant":
 			m.addEntry(entry{role: roleAssistant, text: msg.Text})
 		default:
-			m.addEntry(entry{role: roleTool, callID: msg.CallID, name: msg.Name, args: msg.Arguments, output: msg.Output, done: true})
+			m.addEntry(entry{role: roleTool, callID: msg.CallID, name: msg.Name, title: msg.Title, args: msg.Arguments, output: msg.Output, done: true, outcome: msg.Outcome})
 		}
 	}
 	note := "Resumed session " + m.agent.SessionID()
@@ -232,6 +233,18 @@ func (m *Model) restore() {
 		note += "; the oldest turns are summarized (/summary)"
 	}
 	m.addEntry(entry{role: roleNotice, text: note})
+}
+
+// retitleCards gives the cards of a resumed conversation the names of tools that have connected since.
+func (m *Model) retitleCards() {
+	for i := range m.entries {
+		if e := &m.entries[i]; e.role == roleTool && e.title == "" {
+			if title := m.agent.ToolTitle(e.name); title != "" {
+				e.title = title
+				e.rendered = m.render(*e)
+			}
+		}
+	}
 }
 
 // applyTheme (re)builds everything that depends on the palette.
@@ -320,6 +333,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case startupMsg:
 		m.starting, m.status = false, sanitize(msg.Status)
+		m.retitleCards() // a resumed conversation was shown before the MCP tools were known
 		if len(msg.Servers) > 0 {
 			m.sayTable(msg.Servers)
 		}

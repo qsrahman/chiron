@@ -10,6 +10,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/qsrahman/desk-agent/internal/agent"
 )
 
 func withHistory(prompts ...string) Model {
@@ -276,7 +278,7 @@ func TestEditorCommandAndFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(path)
-	if !slices.Equal(cmd.Args, []string{"code", "--wait", path}) {
+	if !slices.Equal(cmd.Args, []string{"sh", "-c", `code --wait "$@"`, "sh", path}) {
 		t.Errorf("args = %v: $VISUAL wins and keeps its arguments", cmd.Args)
 	}
 	data, _ := os.ReadFile(path)
@@ -285,7 +287,7 @@ func TestEditorCommandAndFile(t *testing.T) {
 		t.Errorf("file %q mode %v", data, info.Mode().Perm())
 	}
 	t.Setenv("VISUAL", "")
-	if cmd, path2, _ := prepareEditor(""); cmd.Args[0] != "vi" {
+	if cmd, path2, _ := prepareEditor(""); !strings.HasPrefix(cmd.Args[2], "vi ") {
 		t.Errorf("$EDITOR is the fallback: %v", cmd.Args)
 	} else {
 		os.Remove(path2)
@@ -346,5 +348,74 @@ func TestAHugePromptIsNotRemembered(t *testing.T) {
 	}
 	if data, _ := os.ReadFile(path); strings.Contains(string(data), "xxxx") {
 		t.Error("the huge prompt reached the file")
+	}
+}
+
+func TestAnEditorPathWithSpacesAndQuotesRuns(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my editors")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(dir, "ed.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf 'edited:%s' \"$1\" > \"$2\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", `'`+script+`' 'an argument'`) // quoted, because of the space in the path
+	cmd, path, err := prepareEditor("old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(path)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("running the editor: %v\n%s", err, out)
+	}
+	if data, _ := os.ReadFile(path); string(data) != "edited:an argument" {
+		t.Errorf("file after the run: %q: the quoted path and argument, then the file, should reach the script", data)
+	}
+}
+
+func TestAPromptThatStartsWithASpaceIsNotRemembered(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history")
+	h := loadPromptHistory(path)
+	h.add(" my secret token")
+	h.add("normal")
+	if !slices.Equal(h.items, []string{"normal"}) {
+		t.Errorf("items = %q", h.items)
+	}
+	if data, _ := os.ReadFile(path); strings.Contains(string(data), "secret") {
+		t.Error("the prompt reached the file")
+	}
+}
+
+func TestAResumedConversationShowsHowItsCallsEndedAndTheToolsTitles(t *testing.T) {
+	a := &fakeAgent{messages: []agent.Message{
+		{Role: "tool", CallID: "c1", Name: "shell", Output: "error: boom", Outcome: agent.CallFailed},
+		{Role: "tool", CallID: "c2", Name: "docs__query", Output: "x", Outcome: agent.CallOK},
+		{Role: "tool", CallID: "c3", Name: "shell", Output: "denied", Outcome: agent.CallDenied},
+	}, titles: map[string]string{"docs__query": "docs → query"}}
+	m := newTestModel(a)
+
+	if m.entries[0].outcome != agent.CallFailed || m.entries[2].outcome != agent.CallDenied {
+		t.Errorf("outcomes = %v %v", m.entries[0].outcome, m.entries[2].outcome)
+	}
+	if m.entries[1].title != "" {
+		t.Fatal("the tool was not known at the start")
+	}
+
+	m, _ = update(m, startupMsg{}) // the MCP servers have connected
+	if m.entries[1].title != "docs → query" || !strings.Contains(ansi.Strip(m.entries[1].rendered), "docs → query") {
+		t.Errorf("title %q, card %q", m.entries[1].title, ansi.Strip(m.entries[1].rendered))
+	}
+}
+
+func TestTheSessionListSaysWhenItIsCutShort(t *testing.T) {
+	var list []agent.SessionInfo
+	for i := 0; i < agent.SessionListLimit; i++ {
+		list = append(list, agent.SessionInfo{ID: fmt.Sprint("s-", i), Turns: 1})
+	}
+	m, _ := typeAndEnter(t, newTestModel(&fakeAgent{sessions: list}), "/sessions")
+	if !strings.Contains(said(m), "Showing the newest 20") {
+		t.Errorf("said:\n%s", said(m))
 	}
 }

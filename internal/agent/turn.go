@@ -26,6 +26,9 @@ type turnState struct {
 //     the first round saves nothing, since there is no work to keep and a prompt with no reply would leave two
 //     user messages in a row.
 func (a *Agent) run(ctx context.Context, text string, events chan<- Event) error {
+	if budget, fixed := a.maxContext(), a.fixedTokens(); budget <= fixed {
+		return fmt.Errorf("max_context_tokens (%d) is not more than the instructions and tool definitions alone (about %d tokens): raise it", budget, fixed)
+	}
 	a.compactIfDue(ctx, text, func(s string) { events <- Notice{Text: s} })
 	t := &turnState{items: a.history.begin(text)}
 	var steps []string // signatures of the tool steps so far, for loop detection

@@ -42,6 +42,7 @@ type fakeAgent struct {
 	sessions    []agent.SessionInfo
 	sessionsErr error
 	listedAll   bool
+	titles      map[string]string
 }
 
 func (f *fakeAgent) Reset()                   { f.resets++ }
@@ -61,8 +62,9 @@ func (f *fakeAgent) Compact(_ context.Context, focus string) (agent.Compaction, 
 	f.compactFocus = focus
 	return f.compaction, f.compactErr
 }
-func (f *fakeAgent) Messages() []agent.Message { return f.messages }
-func (f *fakeAgent) SessionID() string         { return f.sessionID }
+func (f *fakeAgent) Messages() []agent.Message    { return f.messages }
+func (f *fakeAgent) SessionID() string            { return f.sessionID }
+func (f *fakeAgent) ToolTitle(name string) string { return f.titles[name] }
 func (f *fakeAgent) ListSessions(all bool) ([]agent.SessionInfo, error) {
 	f.listedAll = all
 	return f.sessions, f.sessionsErr

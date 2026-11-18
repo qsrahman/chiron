@@ -21,8 +21,12 @@ type saving struct {
 	endpoint string // scheme and host of the server: reasoning items only replay to the endpoint that wrote them
 	id       string // "" until there is something to save, so an empty run writes nothing
 	created  time.Time
-	title    string // the first prompt of the conversation
+	title    string    // the first prompt of the conversation
+	stamp    time.Time // modification time of the file as this process last wrote or read it
 }
+
+// SessionListLimit is how many sessions a list shows: the newest.
+const SessionListLimit = 20
 
 // EnableSessions makes the agent save the conversation after every turn and every command that changes it. The
 // file is named when there is first something to save. A failed save is reported by the turn that made it; the next
@@ -31,13 +35,24 @@ func (a *Agent) EnableSessions(store *session.Store, workDir, endpoint string) {
 	a.saving = &saving{store: store, workDir: workDir, endpoint: endpoint}
 }
 
-// persist writes the conversation to its file.
-func (a *Agent) persist() error {
+// saveSession writes the conversation after a command changed it. Its errors are ignored on purpose: the next turn saves
+// everything again and reports a failure then.
+func (a *Agent) saveSession() { _, _ = a.persist() }
+
+// persist writes the conversation to its file. If another process has written that file since this one did, the
+// conversation goes on in a file of its own instead of overwriting the other's turns, and the note says so.
+func (a *Agent) persist() (note string, err error) {
 	s := a.saving
 	if s == nil || (s.id == "" && !a.HasConversation()) {
-		return nil
+		return "", nil
 	}
 	now := time.Now()
+	if s.id != "" {
+		if cur, err := s.store.Stamp(s.id); err == nil && !cur.IsZero() && !cur.Equal(s.stamp) {
+			note = fmt.Sprintf("Another desk-agent has written session %s: this conversation goes on in a new file", s.id)
+			s.id = ""
+		}
+	}
 	if s.id == "" {
 		s.id, s.created = session.NewID(now), now
 	}
@@ -48,14 +63,19 @@ func (a *Agent) persist() error {
 		ID: s.id, Dir: s.workDir, Model: a.settings.Model, Endpoint: s.endpoint,
 		Created: s.created, Updated: now, Summary: a.history.summary, Title: s.title, Replaced: a.history.replaced,
 	}
+	f.Turns = f.Replaced
 	for _, it := range a.history.items {
 		raw, err := json.Marshal(it.param)
 		if err != nil {
-			return fmt.Errorf("encoding the conversation: %w", err)
+			return note, fmt.Errorf("encoding the conversation: %w", err)
 		}
 		f.Items = append(f.Items, session.Item{Kind: it.kind, CallID: it.callID, Raw: raw})
+		if it.kind == kindUser {
+			f.Turns++
+		}
 	}
-	return s.store.Save(f)
+	s.stamp, err = s.store.Save(f)
+	return note, err
 }
 
 // firstPrompt is the first user message of the history, "" if there is none.
@@ -117,6 +137,7 @@ func (a *Agent) Resume(f session.File, endpoint string) error {
 	if a.saving != nil {
 		a.saving.id, a.saving.created = f.ID, f.Created // goes on in the same file
 		a.saving.title = cmp.Or(f.Title, a.firstPrompt())
+		a.saving.stamp, _ = a.saving.store.Stamp(f.ID)
 	}
 	return nil
 }
@@ -149,6 +170,8 @@ type Message struct {
 	Name      string
 	Arguments string
 	Output    string // what the call returned, "" if the call has no result in the history
+	Title     string // what to show instead of Name, as for ToolStarted; empty if the tool is not known (yet)
+	Outcome   Outcome
 }
 
 // Messages lists the conversation in order. Older turns hold only their messages; the newest holds its tool calls.
@@ -171,10 +194,11 @@ func (a *Agent) Messages() []Message {
 			}
 		case kindCall:
 			at[f.CallID] = len(out)
-			out = append(out, Message{Role: "tool", CallID: f.CallID, Name: f.Name, Arguments: f.Arguments})
+			out = append(out, Message{Role: "tool", CallID: f.CallID, Name: f.Name, Arguments: f.Arguments, Title: a.titleOf(f.Name)})
 		case kindCallOutput:
 			if i, ok := at[f.CallID]; ok {
 				out[i].Output = messageText(f.Output)
+				out[i].Outcome = outcomeOf(out[i].Output)
 			}
 		}
 	}
@@ -194,34 +218,48 @@ type SessionInfo struct {
 // ErrSessionsOff is returned by ListSessions when saving is not enabled.
 var ErrSessionsOff = errors.New("sessions are off (sessions: false in the config file, or --no-save)")
 
-// ListSessions lists the saved sessions of this directory, or of every directory with all, the newest first.
+// ListSessions lists the saved sessions of this directory, or of every directory with all, the newest first and at
+// most SessionListLimit of them.
 func (a *Agent) ListSessions(all bool) ([]SessionInfo, error) {
 	if a.saving == nil {
 		return nil, ErrSessionsOff
 	}
-	files, err := a.saving.store.List()
+	infos, err := a.saving.store.List(func(i session.Info) bool { return all || i.Dir == a.saving.workDir }, SessionListLimit)
 	if err != nil {
 		return nil, err
 	}
 	var out []SessionInfo
-	for _, f := range files {
-		if !all && f.Dir != a.saving.workDir {
-			continue
-		}
-		info := SessionInfo{ID: f.ID, Dir: f.Dir, Updated: f.Updated, Current: f.ID == a.saving.id, Prompt: f.Title, Turns: f.Replaced}
-		for _, si := range f.Items {
-			if si.Kind != kindUser {
-				continue
-			}
-			if info.Prompt == "" {
-				var p fields
-				if json.Unmarshal(si.Raw, &p) == nil {
-					info.Prompt = messageText(p.Content)
-				}
-			}
-			info.Turns++
+	for _, i := range infos {
+		info := SessionInfo{ID: i.ID, Dir: i.Dir, Updated: i.Updated, Current: i.ID == a.saving.id, Prompt: i.Title, Turns: i.Turns}
+		if i.Turns == 0 { // written before turns were counted: count them from the file
+			info.Turns, info.Prompt = a.legacyTurns(i.ID, info.Prompt)
 		}
 		out = append(out, info)
 	}
 	return out, nil
 }
+
+// legacyTurns counts the turns of a session file that does not say, and finds its first prompt if it has no title.
+func (a *Agent) legacyTurns(id, title string) (turns int, prompt string) {
+	f, err := a.saving.store.Load(id)
+	if err != nil {
+		return 0, title
+	}
+	turns, prompt = f.Replaced, title
+	for _, si := range f.Items {
+		if si.Kind != kindUser {
+			continue
+		}
+		if prompt == "" {
+			var p fields
+			if json.Unmarshal(si.Raw, &p) == nil {
+				prompt = messageText(p.Content)
+			}
+		}
+		turns++
+	}
+	return turns, prompt
+}
+
+// ToolTitle is what to show for a call of the named tool, empty if it has no name for people or is not known.
+func (a *Agent) ToolTitle(name string) string { return a.titleOf(name) }
