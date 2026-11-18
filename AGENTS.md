@@ -159,7 +159,7 @@ text from a redraw, no leftover stand-in character, no banner.
   turns its history into items (`persist`) and back (`Resume`, `itemFromFile`); messages and results are rebuilt from
   their text so shortening and summaries treat them like new ones, and the rest is replayed raw. `persist` runs at the
   end of `Send`, before the last event, and after `Undo`, `Rewind` and `Compact` (their errors are ignored: the next save
-  writes everything again). The file is named when there is first something to save. **Tests must never touch the real
+  writes everything again). The file is named when there is first something to save. `-p` runs never call `EnableSessions`, so they save nothing. **Tests must never touch the real
   state directory:** set `XDG_STATE_HOME` (the `isolate` helper does) or use a temporary `session.Store`.
 - **Guards.** `guard.go` holds loop detection (window 10, more than 5 repeats); the stream idle timeout is a field
   on `Agent` so tests can shorten it. Cancelling must stay distinguishable from timeouts: only a user cancel

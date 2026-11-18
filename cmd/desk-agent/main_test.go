@@ -11,15 +11,19 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
 
 	"github.com/qsrahman/desk-agent/internal/agent"
 	"github.com/qsrahman/desk-agent/internal/config"
+	"github.com/qsrahman/desk-agent/internal/mcp"
+	"github.com/qsrahman/desk-agent/internal/session"
 	"github.com/qsrahman/desk-agent/internal/tools"
 )
 
@@ -374,41 +378,61 @@ func sessionFiles(t *testing.T) []string {
 	return files
 }
 
-func TestAPromptIsSavedAndContinued(t *testing.T) {
+// seedSession saves a finished conversation for the current directory, as the chat UI would have.
+func seedSession(t *testing.T, prompt string) string {
+	t.Helper()
+	dir, _ := os.Getwd()
+	stateDir, err := mcp.StateDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := session.NewID(time.Now())
+	err = session.NewStore(stateDir).Save(session.File{ID: id, Dir: dir, Model: "m", Created: time.Now(), Updated: time.Now(), Items: []session.Item{
+		{Kind: "user", Raw: json.RawMessage(`{"content":` + strconv.Quote(prompt) + `,"role":"user"}`)},
+		{Kind: "assistant", Raw: json.RawMessage(`{"content":"noted","role":"assistant"}`)},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func TestAPromptRunContinuesASessionButIsNotSaved(t *testing.T) {
 	isolate(t)
 	srv, requests := recordingServer(t)
+	seedSession(t, "first question")
 
-	runOK(t, "-p", "first question", "--base-url", srv.URL)
-	if len(sessionFiles(t)) != 1 {
-		t.Fatalf("session files = %v", sessionFiles(t))
-	}
 	runOK(t, "-p", "second question", "--continue", "--base-url", srv.URL)
 
-	got, _ := json.Marshal(requests()[1]["input"])
+	got, _ := json.Marshal(requests()[0]["input"])
 	if !strings.Contains(string(got), "first question") || !strings.Contains(string(got), "second question") {
 		t.Errorf("the continued request = %s", got)
 	}
-	if len(sessionFiles(t)) != 1 {
-		t.Errorf("--continue must go on in the same file: %v", sessionFiles(t))
+	files := sessionFiles(t)
+	if len(files) != 1 {
+		t.Fatalf("session files = %v", files)
+	}
+	if data, _ := os.ReadFile(files[0]); strings.Contains(string(data), "second question") {
+		t.Error("a -p run added its turn to the session")
 	}
 }
 
 func TestResumeByNameAndByPrefix(t *testing.T) {
 	isolate(t)
 	srv, requests := recordingServer(t)
-	runOK(t, "-p", "remember kiwi", "--base-url", srv.URL)
-	id := strings.TrimSuffix(filepath.Base(sessionFiles(t)[0]), ".json")
+	id := seedSession(t, "remember kiwi")
 
 	runOK(t, "-p", "again", "--resume", id[:8], "--base-url", srv.URL)
 
-	if got, _ := json.Marshal(requests()[1]["input"]); !strings.Contains(string(got), "remember kiwi") {
+	if got, _ := json.Marshal(requests()[0]["input"]); !strings.Contains(string(got), "remember kiwi") {
 		t.Errorf("request = %s", got)
 	}
 }
 
-func TestNoSaveAndSessionsFalseWriteNothing(t *testing.T) {
+func TestPromptRunsWriteNothing(t *testing.T) {
 	isolate(t)
 	srv, _ := recordingServer(t)
+	runOK(t, "-p", "hi", "--base-url", srv.URL)
 	runOK(t, "-p", "hi", "--no-save", "--base-url", srv.URL)
 
 	cfg := filepath.Join(t.TempDir(), "c.json")

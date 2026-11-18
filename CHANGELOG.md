@@ -4,6 +4,11 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Changed
+
+- A `-p` run is never saved as a session: it is a script's call, and one file per call would pile up. `-p` with
+  `--continue` or `--resume` still reads the session, and does not add to it.
+
 ### Fixed
 
 - `auto_compact` no longer announces "Summarizing earlier messages…" every turn when there is nothing it could cut (a

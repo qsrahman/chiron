@@ -226,7 +226,8 @@ func openSessions(a *agent.Agent, cfg config.Config, opts runOptions, workDir st
 	}
 	store := session.NewStore(stateDir)
 	endpoint := endpointOf(cfg.BaseURL)
-	if cfg.Sessions && !opts.noSave {
+	// A one-shot -p run is a script's call, not a conversation: it can continue a session but is never saved.
+	if cfg.Sessions && !opts.noSave && opts.prompt == "" {
 		a.EnableSessions(store, workDir, endpoint)
 	}
 	if !resuming {

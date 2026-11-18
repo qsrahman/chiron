@@ -293,12 +293,12 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
 
 ## Notes
 
-`-p` starts a fresh conversation each time unless you pass `--continue` or `--resume`. Every conversation, `-p` ones
-included, is saved (see [Sessions](#sessions)).
+`-p` starts a fresh conversation each time unless you pass `--continue` or `--resume` (it then continues that session
+without adding to it). A `-p` run is never saved (see [Sessions](#sessions)).
 
 ## Sessions
 
-Every conversation is saved after each turn, and after `/undo`, `/retry` and `/compact`, in
+Every chat conversation (not a `-p` run) is saved after each turn, and after `/undo`, `/retry` and `/compact`, in
 `$XDG_STATE_HOME/desk-agent/sessions/` (`~/.local/state/desk-agent/sessions/`), one JSON file each, named by its start
 time (`20261118-153012-k3f9`). The directory is private (`0700`), so are the files (`0600`), and a file is replaced
 atomically: a failed write leaves the previous one. A conversation that never got an answer writes nothing, and
