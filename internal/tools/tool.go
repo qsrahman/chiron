@@ -128,7 +128,7 @@ func schemaFor[Args any]() (map[string]any, *jsonschema.Resolved, error) {
 		return nil, nil, fmt.Errorf("decoding schema: %w", err)
 	}
 	if params["type"] != "object" {
-		return nil, nil, fmt.Errorf("Args must be a struct, got schema type %v", params["type"])
+		return nil, nil, fmt.Errorf("args must be a struct, got schema type %v", params["type"])
 	}
 	// The API rejects an object schema without "properties", which a tool with no arguments would have.
 	if _, ok := params["properties"]; !ok {

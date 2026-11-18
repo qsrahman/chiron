@@ -27,6 +27,8 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Fixed
 
+- Saving a session reports a failed write: the error of writing the temporary file was dropped, so a half-written file
+  could have replaced the previous one.
 - Two programs saving the same session no longer overwrite each other: the second to write notices that the file has
   changed since its own last write, says so, and continues in a new file.
 - A `max_context_tokens` that is not more than the instructions and tool definitions alone is reported at the start of

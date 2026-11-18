@@ -422,22 +422,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	}
 	switch {
 	case interrupt:
-		if busy {
-			if m.cancelling {
-				return m, tea.Quit
-			}
-			m.cancelling = true
-			m.dropQueue() // what the user typed to follow this turn is not wanted once it is cancelled
-			m.cancel()
-			m.refresh()
-			return m, nil
-		}
-		if m.input.Value() != "" { // a stray Ctrl-C should cost the typed text, not the conversation
-			m.input.Reset()
-			m.quitArmed, m.hint = false, ""
-			return m, nil
-		}
-		return m.confirmQuit("ctrl+c")
+		return m.interruptKey(busy)
 
 	case eof:
 		if !busy && m.input.Value() == "" {
@@ -445,22 +430,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keys.send):
-		text := strings.TrimSpace(m.input.Value())
-		if text == "" {
-			if !busy && !m.starting && len(m.queue.prompts) > 0 { // after an error the queue waits for this
-				return m, m.sendQueued()
-			}
-			return m, nil
-		}
-		m.hist.add(text)
-		if cmd, handled := m.dispatch(text); handled {
-			return m, cmd
-		}
-		if busy || m.starting {
-			m.enqueue(text)
-			return m, nil
-		}
-		return m.submit(text)
+		return m.sendKey(busy)
 
 	case key.Matches(msg, m.keys.scroll):
 		var cmd tea.Cmd
@@ -475,6 +445,46 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.suggest.sel = 0 // the list changed under the selection
 	}
 	return m, cmd
+}
+
+// interruptKey is Ctrl-C: it cancels a running turn (a second press quits), else clears the typed text, else quits.
+func (m Model) interruptKey(busy bool) (Model, tea.Cmd) {
+	if busy {
+		if m.cancelling {
+			return m, tea.Quit
+		}
+		m.cancelling = true
+		m.dropQueue() // what the user typed to follow this turn is not wanted once it is cancelled
+		m.cancel()
+		m.refresh()
+		return m, nil
+	}
+	if m.input.Value() != "" { // a stray Ctrl-C should cost the typed text, not the conversation
+		m.input.Reset()
+		m.quitArmed, m.hint = false, ""
+		return m, nil
+	}
+	return m.confirmQuit("ctrl+c")
+}
+
+// sendKey is Enter: it runs a command, queues the prompt while a turn or the startup is busy, or else sends it.
+func (m Model) sendKey(busy bool) (Model, tea.Cmd) {
+	text := strings.TrimSpace(m.input.Value())
+	if text == "" {
+		if !busy && !m.starting && len(m.queue.prompts) > 0 { // after an error the queue waits for this
+			return m, m.sendQueued()
+		}
+		return m, nil
+	}
+	m.hist.add(text)
+	if cmd, handled := m.dispatch(text); handled {
+		return m, cmd
+	}
+	if busy || m.starting {
+		m.enqueue(text)
+		return m, nil
+	}
+	return m.submit(text)
 }
 
 // confirmQuit quits at once when there is nothing to lose, and otherwise asks for the key to be pressed again.

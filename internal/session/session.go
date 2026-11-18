@@ -84,7 +84,8 @@ func (s *Store) Save(f File) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("writing the session: %w", err)
 	}
 	defer os.Remove(tmp.Name()) // does nothing after a successful rename
-	if _, err := tmp.Write(data); err == nil {
+	_, err = tmp.Write(data)
+	if err == nil {
 		err = tmp.Sync()
 	}
 	if cerr := tmp.Close(); err == nil {

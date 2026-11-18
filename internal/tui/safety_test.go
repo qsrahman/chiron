@@ -22,7 +22,7 @@ func TestSanitize(t *testing.T) {
 		{"carriage return cannot overwrite a line", "safe\rEVIL", "safeEVIL"},
 		{"bell and backspace", "a\x07b\x08c", "abc"},
 		{"C1 controls", "a\u009bb", "ab"},
-		{"bidi overrides and isolates", "a‮b⁦c‏d", "abcd"},
+		{"bidi overrides and isolates", "a\u202eb\u2066c\u200fd", "abcd"},
 		{"invisible tag characters", "a\U000e0041b", "ab"},
 		{"zero-width joiners stay", "👨‍👩", "👨‍👩"},
 		{"delete", "a\x7fb", "ab"},
@@ -39,7 +39,7 @@ func TestSanitize(t *testing.T) {
 // Whatever comes from the model, a tool or the environment, no escape sequence or spoofing character may reach
 // the terminal through the view.
 func TestNothingUnsafeReachesTheScreen(t *testing.T) {
-	const evil = "\x1b]52;c;ZXZpbA==\x07 and \x1b[2J and ‮ and \r end"
+	const evil = "\x1b]52;c;ZXZpbA==\x07 and \x1b[2J and \u202e and \r end"
 	sender := &fakeAgent{events: []agent.Event{
 		agent.TextDelta{Text: "reply " + evil},
 		agent.ToolStarted{CallID: "c1", Name: "tool" + evil, Arguments: `{"path":"` + evil + `"}`},
@@ -53,7 +53,7 @@ func TestNothingUnsafeReachesTheScreen(t *testing.T) {
 	m = pump(t, m, cmd)
 
 	view := m.View().Content
-	for name, bad := range map[string]string{"clipboard escape": "\x1b]52", "clear screen": "\x1b[2J", "bidi override": "‮", "carriage return": "\r", "bell": "\x07"} {
+	for name, bad := range map[string]string{"clipboard escape": "\x1b]52", "clear screen": "\x1b[2J", "bidi override": "\u202e", "carriage return": "\r", "bell": "\x07"} {
 		if strings.Contains(view, bad) {
 			t.Errorf("the view contains %s", name)
 		}
