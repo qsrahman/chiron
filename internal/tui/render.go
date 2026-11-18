@@ -73,6 +73,8 @@ func newMarkdownRenderer(width int, t theme) *glamour.TermRenderer {
 // than the content area: wide code or unbreakable words are cut with an ellipsis, since a line that is
 // too wide would wrap in the terminal and break the layout.
 func (m *Model) render(e entry) string {
+	// Everything shown passes through here, so this is where text from the model, tools and servers is cleaned.
+	e.text, e.name, e.args, e.output = sanitize(e.text), sanitize(e.name), sanitize(e.args), sanitize(e.output)
 	width := m.contentWidth()
 	lines := strings.Split(m.renderEntry(e, width), "\n")
 	for i, line := range lines {

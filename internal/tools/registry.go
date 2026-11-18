@@ -39,3 +39,15 @@ func (r *Registry) Specs() []responses.ToolUnionParam {
 	}
 	return specs
 }
+
+// Names returns the tool names in registration order.
+func (r *Registry) Names() []string {
+	names := make([]string, 0, len(r.list))
+	for _, t := range r.list {
+		names = append(names, t.Name())
+	}
+	return names
+}
+
+// Len returns the number of tools.
+func (r *Registry) Len() int { return len(r.list) }

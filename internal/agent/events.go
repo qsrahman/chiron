@@ -28,6 +28,10 @@ type ToolFinished struct {
 // conversation the next request will start from.
 type Usage struct{ InputTokens, OutputTokens int64 }
 
+// Retry reports that a request is being sent again: a stream broke, or the model sent an empty reply. A
+// front-end should drop the text it streamed for the attempt that failed, since the reply starts over.
+type Retry struct{ Reason string }
+
 // Done marks a completed turn; it is the last event of a successful Send.
 type Done struct{}
 
@@ -39,5 +43,6 @@ func (TextDelta) isEvent()    {}
 func (ToolStarted) isEvent()  {}
 func (ToolFinished) isEvent() {}
 func (Usage) isEvent()        {}
+func (Retry) isEvent()        {}
 func (Done) isEvent()         {}
 func (Error) isEvent()        {}

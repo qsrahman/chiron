@@ -31,10 +31,10 @@ func TestRealAPIReplay(t *testing.T) {
 	ask := func(prompt string) string { return askAgent(t, a, prompt) }
 
 	first := ask("Remember this code word: PINEAPPLE-42. Reply with just OK.")
-	t.Logf("turn 1 answer: %q (history items: %d)", first, len(a.history))
+	t.Logf("turn 1 answer: %q (history items: %d)", first, len(a.history.items))
 
 	second := ask("What was the code word? Reply with just the word.")
-	t.Logf("turn 2 answer: %q (history items: %d)", second, len(a.history))
+	t.Logf("turn 2 answer: %q (history items: %d)", second, len(a.history.items))
 	if !strings.Contains(second, "PINEAPPLE-42") {
 		t.Errorf("second turn did not recall the code word, so history replay may be broken: %q", second)
 	}
@@ -56,7 +56,7 @@ func TestRealAPIToolCall(t *testing.T) {
 	a := realAgent(t, reg)
 
 	first := askAgent(t, a, "Call the lookup_code tool and tell me the code it returns.")
-	t.Logf("turn 1 answer: %q (tool calls: %d, history items: %d)", first, calls.Load(), len(a.history))
+	t.Logf("turn 1 answer: %q (tool calls: %d, history items: %d)", first, calls.Load(), len(a.history.items))
 	if calls.Load() == 0 || !strings.Contains(first, "ZEBRA-7") {
 		t.Errorf("the model did not call the tool and report its result: calls=%d answer=%q", calls.Load(), first)
 	}
@@ -71,13 +71,18 @@ func TestRealAPIToolCall(t *testing.T) {
 // realAgent builds an agent from the default config file and the environment, or skips the test.
 func realAgent(t *testing.T, registry *tools.Registry) *Agent {
 	t.Helper()
-	var file config.Config
-	if path, err := config.DefaultPath(); err == nil {
+	var file config.File
+	path, _ := config.DefaultPath()
+	if path != "" {
+		var err error
 		if file, err = config.Load(path, os.Stderr); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			t.Fatal(err)
 		}
 	}
-	cfg := config.Resolve(file, os.Getenv, "", "")
+	cfg, err := config.Resolve(file, path, os.Getenv("OPENAI_API_KEY"), config.Flags{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if cfg.APIKey == "" && cfg.BaseURL == "" {
 		t.Skip("no API key: set OPENAI_API_KEY or api_key in the config file")
 	}
@@ -95,11 +100,11 @@ func realAgent(t *testing.T, registry *tools.Registry) *Agent {
 	if err != nil {
 		t.Fatal(err)
 	}
-	instructions, err := BuildInstructions(context.Background(), workDir, time.Now())
+	instructions, err := BuildInstructions(context.Background(), workDir, time.Now(), registry.Len() > 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(openai.NewClient(opts...), cfg.Model, instructions, registry)
+	return New(openai.NewClient(opts...), Settings{Model: cfg.Model, ReasoningEffort: cfg.ReasoningEffort, MaxTurns: cfg.MaxTurns, Streaming: cfg.Streaming}, instructions, registry)
 }
 
 // askAgent sends one prompt and returns the streamed answer.

@@ -29,17 +29,21 @@ const projectFileLimit = 32 * 1024
 type promptData struct {
 	WorkDir, Platform, Date, Git string
 
+	Tools       bool   // whether the model has tools: the prompt says nothing about tools when it has none
 	Project     string // contents of the project file, empty when there is none
 	ProjectFile string
 	Truncated   bool
 	Limit       int
 }
 
-// BuildInstructions renders the system prompt for a session working in workDir: the general
-// guidance, an environment block (directory, platform, date, git state) and the project's own
-// AGENTS.md or CLAUDE.md if it has one.
-func BuildInstructions(ctx context.Context, workDir string, now time.Time) (string, error) {
+// BuildInstructions renders the system prompt for a session working in workDir: the general guidance (with
+// the part about tools only if the model has any: tool language in a prompt without tools made some models type
+// calls as text or answer nothing), the project's own AGENTS.md or CLAUDE.md if it has one, and last the
+// environment (directory, platform, date, git state), so that the text that rarely changes comes first and can
+// be cached.
+func BuildInstructions(ctx context.Context, workDir string, now time.Time, hasTools bool) (string, error) {
 	data := promptData{
+		Tools:    hasTools,
 		WorkDir:  workDir,
 		Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		Date:     now.Format(time.DateOnly),

@@ -27,7 +27,7 @@ go test -race ./...   # required whenever concurrency code changes
 Build, vet and test must pass before a commit.
 
 Manual TUI check: build the binary and run it in a real terminal, or drive it through a pseudo-terminal
-(Python `pty`) sending a prompt and `Ctrl-C`; the TUI is not covered by the go tests' real terminal output.
+(Python `pty`) sending a prompt and `Ctrl-C`; the TUI is not covered by the go tests' real terminal output. A pseudo-terminal check races the process exit: poll for it instead of reading it once.
 
 Real-server checks (cost a few tokens, never run by default; skip without a key or base URL). They use the
 default config file and the environment, like the CLI:
@@ -43,7 +43,22 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
 - **The agent core never imports the TUI.** It emits `Event` values; front-ends render them. Approvals and
   questions are events carrying a reply channel.
 - **History is local** (`store=false`). Append response output items unchanged (via `param.Override` and
-  `RawJSON()`); never rebuild them from parsed fields, or reasoning items and unknown fields are lost.
+  `RawJSON()`); never rebuild them from parsed fields, or reasoning items and unknown fields are lost. Items carry
+  their kind (`item` in `history.go`) because a replayed raw item cannot be asked what it is.
+- **What must stay true of a turn** (`turn.go`, pinned by tests):
+  - The history changes only through `history.save`; a turn in progress works on a copy.
+  - Every function call has its output before anything is sent or saved (`answerOpenCalls`).
+  - A turn is saved whole (with its reply or a closing note) or not at all. After at least one completed round, a
+    cancel, failure, guard or step cap keeps the turn with a note, because tools may have had effects; a failure in
+    the first round saves nothing.
+  - The newest turn keeps its reasoning, calls and outputs; earlier turns keep only their messages, and calls and
+    outputs are dropped together.
+  - The note the model reads names the kind of failure (`reasonOf`) and never repeats text a server wrote.
+  - A cancellation stays recognisable (`errors.Is(err, context.Canceled)`) through `describeError`.
+- **Text from the model, tools and servers is sanitised** before display (`sanitize.go`, applied in `render` and to
+  the streamed text and the session info). New code that shows such text must go through the same path.
+- **Config:** unknown keys are an error; the only environment variable is `OPENAI_API_KEY`; the client is always
+  built with an explicit base URL (`newClient`), because the OpenAI library reads `OPENAI_BASE_URL` itself.
 - **Tool errors go to the model** as the tool output text, not as Go errors that abort the loop.
 - **Adding a tool:** define an `Args` struct (`json` tags for names, `jsonschema` tags for descriptions), write
   `func(ctx, Args) (string, error)`, wrap it with `tools.MustNew`, and add it to the registry in `main`. The
@@ -79,8 +94,12 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
 - **Guards.** `guard.go` holds loop detection (window 10, more than 5 repeats); the stream idle timeout is a field
   on `Agent` so tests can shorten it. Cancelling must stay distinguishable from timeouts: only a user cancel
   satisfies `errors.Is(err, context.Canceled)`.
-- **Tests use no network.** Point the SDK at an `httptest` server with `option.WithBaseURL` and scripted SSE.
-  Test the TUI through `Update` with synthetic messages.
+- **Tests use no network.** Point the SDK at an `httptest` server with `option.WithBaseURL` and scripted SSE. The
+  fake server in `agent_test.go` scripts one reply per request (`newFakeServer` for streams, `newScriptedServer` for
+  HTTP errors and JSON) and has builders for the cases a client must handle: a broken stream, an `error` event, an
+  empty, refused, incomplete or failed response, and an API error. Add a builder there when a new case appears. To
+  keep a test off the network when the code builds its own client, inject a transport with
+  `option.WithHTTPClient` (see `newClient`). Test the TUI through `Update` with synthetic messages.
 - **Prompt changes are tested on real models.** Reading a prompt tells you little: tool language in a no-tools prompt
   made some models type calls as text or answer nothing. Compare old and new on scenarios with a pass/fail check each,
   several runs, on the models in use, and pin the sentences the code depends on with tests.

@@ -4,6 +4,42 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-18
+
+### Added
+
+- Turn semantics (from the muagent study): a `history` type whose older turns keep only their messages; a turn that
+  stops after tools ran (cancel, failure, loop guard, step cap) is kept with a closing note and every unanswered
+  call answered as interrupted; a failure in the first round saves nothing.
+- Response handling: incomplete, failed, refused and empty responses are told apart (an empty reply is asked for
+  again once; a cut-off reply keeps its text); a broken stream is retried up to twice with a `Retry` event that
+  clears the streamed text; finished output items are used when `response.completed` carries none (some compatible
+  servers); descriptive API errors with hints (wrong key, model or base URL, quota, too long); unknown tools are
+  answered with the list of available tools.
+- At most 8 read-only tool calls at once and a 20 KiB cap on every tool result, in the agent.
+- Two prompts: with tools and without (no tool language when there are none). The prompt order puts the environment
+  last, and a test pins the sentences the program depends on.
+- Everything shown from the model, tools and servers is sanitised (control characters, escape sequences, carriage
+  returns, bidi overrides, tag characters).
+- Ctrl-C clears typed text; Ctrl-C and Ctrl-D on an empty input need a second press once there is a conversation.
+- Settings `reasoning_effort`, `max_turns` and `streaming`, with flags `--reasoning-effort`, `--max-turns`,
+  `--streaming` and `--no-streaming`.
+- Tests: a scenario-capable fake Responses API, unit tests for history, error descriptions and response
+  classification, and mutation checks (each behaviour was broken on purpose to see its test fail).
+
+### Changed
+
+- **Config:** a key that is not a setting is an error naming the key and the file. The environment now has one
+  variable, `OPENAI_API_KEY`: `OPENAI_BASE_URL` and `DESK_AGENT_MODEL` are no longer read, and the client always gets
+  an explicit base URL, because the OpenAI library would otherwise read `OPENAI_BASE_URL` itself.
+- `agent.New` takes `agent.Settings`; `agent.BuildInstructions` takes whether the model has tools; `config.Load`
+  returns a `config.File` and `config.Resolve` takes the file, its path, the key and the flags.
+- The final reply of a turn is stored as plain text; its reasoning is no longer replayed.
+
+### Fixed
+
+- A turn with no text and no tool call ended silently with an empty answer.
+
 ### Changed (plan)
 
 - Studied muagent's slash commands. Added Phase 3.8 (slash commands, tag v0.3.4: dispatch rules, inline suggestion

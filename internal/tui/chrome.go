@@ -111,6 +111,9 @@ func (m *Model) inputView() string {
 }
 
 func (m *Model) helpView() string {
+	if m.hint != "" {
+		return indent(ansi.Truncate(m.sty.iconRunning.Render(m.hint), m.contentWidth()-1, "…"), 1)
+	}
 	bar := m.help.ShortHelpView(m.keys.helpBindings(m.events != nil, m.cancelling))
 	// The help component still adds an item when not even its ellipsis fits, so cut the line ourselves.
 	return indent(ansi.Truncate(bar, m.contentWidth()-1, "…"), 1)

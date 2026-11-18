@@ -66,6 +66,11 @@ type Model struct {
 	sty      styles
 	markdown *glamour.TermRenderer
 
+	// quitArmed is set by a first Ctrl-C or Ctrl-D on an empty input once there is a conversation, which only
+	// lives in memory: one stray press must not end it. hint is what the help bar says about it.
+	quitArmed bool
+	hint      string
+
 	contextTokens int64 // size of the conversation after the latest response, 0 until known
 
 	width, height int
@@ -82,6 +87,9 @@ func New(sender Sender, info Info) Model {
 	input.MaxHeight = 8
 	input.KeyMap.InsertNewline = keys.newline
 	input.Focus()
+
+	// Whatever the session shows may come from the environment (a directory name, say): clean it once here.
+	info.Version, info.WorkDir, info.Branch, info.Model = sanitize(info.Version), sanitize(info.WorkDir), sanitize(info.Branch), sanitize(info.Model)
 
 	m := Model{
 		sender:   sender,
@@ -166,19 +174,31 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	busy := m.events != nil
+	interrupt, eof := key.Matches(msg, m.keys.interrupt), key.Matches(msg, m.keys.eof)
+	if !interrupt && !eof {
+		m.quitArmed, m.hint = false, "" // any other key takes the warning back
+	}
 	switch {
-	case key.Matches(msg, m.keys.interrupt):
-		if !busy || m.cancelling {
-			return m, tea.Quit
+	case interrupt:
+		if busy {
+			if m.cancelling {
+				return m, tea.Quit
+			}
+			m.cancelling = true
+			m.cancel()
+			m.refresh()
+			return m, nil
 		}
-		m.cancelling = true
-		m.cancel()
-		m.refresh()
-		return m, nil
+		if m.input.Value() != "" { // a stray Ctrl-C should cost the typed text, not the conversation
+			m.input.Reset()
+			m.quitArmed, m.hint = false, ""
+			return m, nil
+		}
+		return m.confirmQuit("ctrl+c")
 
-	case key.Matches(msg, m.keys.eof):
+	case eof:
 		if !busy && m.input.Value() == "" {
-			return m, tea.Quit
+			return m.confirmQuit("ctrl+d")
 		}
 
 	case key.Matches(msg, m.keys.send):
@@ -197,6 +217,17 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+// confirmQuit quits at once when there is nothing to lose, and otherwise asks for the key to be pressed again.
+// The conversation lives only in memory, so one stray press must not end it.
+func (m Model) confirmQuit(pressed string) (Model, tea.Cmd) {
+	if len(m.entries) == 0 || m.quitArmed {
+		return m, tea.Quit
+	}
+	m.quitArmed = true
+	m.hint = "Press " + pressed + " again to quit: the conversation is not saved"
+	return m, nil
 }
 
 func (m Model) submit(text string) (Model, tea.Cmd) {
@@ -227,6 +258,10 @@ func (m *Model) handleEvent(event agent.Event) {
 	switch e := event.(type) {
 	case agent.TextDelta:
 		m.streaming += e.Text
+	case agent.Retry:
+		// The reply starts over, so what was streamed for the failed attempt is dropped.
+		m.streaming = ""
+		m.addEntry(entry{role: roleNotice, text: e.Reason})
 	case agent.ToolStarted:
 		m.commitStreaming() // keep the text the model wrote before the call above its card
 		m.addEntry(entry{role: roleTool, callID: e.CallID, name: e.Name, args: e.Arguments, started: m.now()})
@@ -315,7 +350,7 @@ func (m *Model) refresh() {
 		parts = append(parts, e.rendered)
 	}
 	if m.streaming != "" {
-		parts = append(parts, indent(wrap(m.streaming, m.contentWidth()-gutter), gutter))
+		parts = append(parts, indent(wrap(sanitize(m.streaming), m.contentWidth()-gutter), gutter))
 	}
 	if line := m.activityLine(); line != "" {
 		parts = append(parts, line)

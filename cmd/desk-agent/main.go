@@ -23,6 +23,11 @@ import (
 // version is overridden at build time: -ldflags "-X main.version=v0.1.0".
 var version = "dev"
 
+// openAIBaseURL is used when no base_url is configured. It is always passed to the client explicitly: the SDK
+// would otherwise read OPENAI_BASE_URL itself, which would let a project's environment redirect the key and
+// every prompt.
+const openAIBaseURL = "https://api.openai.com/v1/"
+
 func main() {
 	// Ctrl-C cancels the running turn instead of killing the process mid-write.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -36,9 +41,17 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	showVersion := flags.Bool("version", false, "print version and exit")
 	prompt := flags.String("p", "", "send `prompt` non-interactively, print the answer and exit")
-	model := flags.String("model", "", "model name (default from config, DESK_AGENT_MODEL or built-in)")
-	baseURL := flags.String("base-url", "", "API base URL for OpenAI-compatible servers")
 	configPath := flags.String("config", "", "config file (default ~/.config/desk-agent/config.json)")
+
+	var given config.Flags
+	flags.StringVar(&given.Model, "model", "", "model name (default from the config file, or built in)")
+	flags.StringVar(&given.BaseURL, "base-url", "", "API base URL for OpenAI-compatible servers")
+	flags.StringVar(&given.ReasoningEffort, "reasoning-effort", "", "reasoning effort: none, minimal, low, medium, high, xhigh, max, or default to send none")
+	flags.IntVar(&given.MaxTurns, "max-turns", 0, "most model calls for one prompt (default 25)")
+	// Two flags make a three-state setting: not given, on, off.
+	flags.BoolFunc("streaming", "stream the reply as it arrives (the default)", func(string) error { given.Streaming = ptr(true); return nil })
+	flags.BoolFunc("no-streaming", "send one request and show the whole reply at once", func(string) error { given.Streaming = ptr(false); return nil })
+
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -47,9 +60,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	cfg, err := loadConfig(*configPath, *model, *baseURL, stderr)
+	cfg, err := loadConfig(*configPath, given, stderr)
 	if err == nil {
-		err = start(ctx, cfg, *prompt, stdout)
+		err = start(ctx, cfg, *prompt, stdout, stderr)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "desk-agent:", err)
@@ -58,8 +71,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func ptr[T any](v T) *T { return &v }
+
 // start builds the agent for the current directory and runs either one prompt or the chat UI.
-func start(ctx context.Context, cfg config.Config, prompt string, stdout io.Writer) error {
+func start(ctx context.Context, cfg config.Config, prompt string, stdout, stderr io.Writer) error {
 	// Local servers often need no key, so only insist on one for the OpenAI API.
 	if cfg.APIKey == "" && cfg.BaseURL == "" {
 		return errors.New("no API key: set OPENAI_API_KEY or api_key in the config file")
@@ -68,14 +83,20 @@ func start(ctx context.Context, cfg config.Config, prompt string, stdout io.Writ
 	if err != nil {
 		return fmt.Errorf("finding working directory: %w", err)
 	}
-	instructions, err := agent.BuildInstructions(ctx, workDir, time.Now())
+	registry := &tools.Registry{}
+	instructions, err := agent.BuildInstructions(ctx, workDir, time.Now(), registry.Len() > 0)
 	if err != nil {
 		return err
 	}
-	a := agent.New(newClient(cfg), cfg.Model, instructions, &tools.Registry{})
+	a := agent.New(newClient(cfg), agent.Settings{
+		Model:           cfg.Model,
+		ReasoningEffort: cfg.ReasoningEffort,
+		MaxTurns:        cfg.MaxTurns,
+		Streaming:       cfg.Streaming,
+	}, instructions, registry)
 
 	if prompt != "" {
-		return runPrompt(ctx, a, prompt, stdout)
+		return runPrompt(ctx, a, prompt, stdout, stderr)
 	}
 	return tui.Run(a, tui.Info{
 		Version:       version,
@@ -86,9 +107,9 @@ func start(ctx context.Context, cfg config.Config, prompt string, stdout io.Writ
 	})
 }
 
-// loadConfig reads the config file and applies environment and flag overrides.
+// loadConfig reads the config file and applies the key from the environment and the flags.
 // A missing file is fine for the default path but an error for an explicit --config.
-func loadConfig(path, flagModel, flagBaseURL string, warn io.Writer) (config.Config, error) {
+func loadConfig(path string, given config.Flags, warn io.Writer) (config.Config, error) {
 	explicit := path != ""
 	if !explicit {
 		var err error
@@ -100,16 +121,19 @@ func loadConfig(path, flagModel, flagBaseURL string, warn io.Writer) (config.Con
 	if err != nil && (explicit || !errors.Is(err, fs.ErrNotExist)) {
 		return config.Config{}, err
 	}
-	return config.Resolve(file, os.Getenv, flagModel, flagBaseURL), nil
+	return config.Resolve(file, path, os.Getenv("OPENAI_API_KEY"), given)
 }
 
-// runPrompt sends one prompt and streams the answer to w.
-func runPrompt(ctx context.Context, a *agent.Agent, prompt string, w io.Writer) error {
+// runPrompt sends one prompt and streams the answer to w. After a retry the text of the failed attempt has
+// already been written, so the answer can start over; the notice goes to stderr to say so.
+func runPrompt(ctx context.Context, a *agent.Agent, prompt string, w, notices io.Writer) error {
 	var failure error
 	for event := range a.Send(ctx, prompt) {
 		switch e := event.(type) {
 		case agent.TextDelta:
 			fmt.Fprint(w, e.Text)
+		case agent.Retry:
+			fmt.Fprintf(notices, "\n[%s]\n", e.Reason)
 		case agent.Error:
 			failure = e.Err
 		case agent.Done:
@@ -119,13 +143,18 @@ func runPrompt(ctx context.Context, a *agent.Agent, prompt string, w io.Writer) 
 	return failure
 }
 
-func newClient(cfg config.Config) openai.Client {
-	var opts []option.RequestOption
+// newClient builds the API client. The base URL and the key are always given explicitly, so that what the
+// SDK reads from the environment (OPENAI_BASE_URL among others) cannot decide where they are sent.
+//
+// extra options are applied last; tests use them to replace the HTTP transport.
+func newClient(cfg config.Config, extra ...option.RequestOption) openai.Client {
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = openAIBaseURL
+	}
+	opts := []option.RequestOption{option.WithBaseURL(baseURL)}
 	if cfg.APIKey != "" {
 		opts = append(opts, option.WithAPIKey(cfg.APIKey))
 	}
-	if cfg.BaseURL != "" {
-		opts = append(opts, option.WithBaseURL(cfg.BaseURL))
-	}
-	return openai.NewClient(opts...)
+	return openai.NewClient(append(opts, extra...)...)
 }

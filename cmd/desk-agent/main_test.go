@@ -3,13 +3,22 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/responses"
+
+	"github.com/qsrahman/desk-agent/internal/config"
 )
 
 func TestRunVersion(t *testing.T) {
@@ -33,7 +42,7 @@ func TestRunBadFlag(t *testing.T) {
 func isolate(t *testing.T) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	for _, k := range []string{"OPENAI_API_KEY", "OPENAI_BASE_URL", "DESK_AGENT_MODEL"} {
+	for _, k := range []string{"OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_CUSTOM_HEADERS"} {
 		t.Setenv(k, "")
 	}
 }
@@ -123,3 +132,171 @@ func TestExplicitMissingConfigIsAnError(t *testing.T) {
 		t.Fatalf("exit code = %d, want 1", code)
 	}
 }
+
+const jsonAnswer = `{"id":"r","object":"response","status":"completed","output":[{"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"output_text","text":"4","annotations":[]}]}]}`
+
+// recordingServer answers every request (as a stream, or as JSON to a request that did not ask for one) and
+// records the request bodies.
+func recordingServer(t *testing.T) (*httptest.Server, func() []map[string]any) {
+	t.Helper()
+	var mu sync.Mutex
+	var requests []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]any
+		_ = json.Unmarshal(body, &req)
+		mu.Lock()
+		requests = append(requests, req)
+		mu.Unlock()
+		if req["stream"] == true {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, streamedAnswer)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, jsonAnswer)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func() []map[string]any {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]map[string]any(nil), requests...)
+	}
+}
+
+func runOK(t *testing.T, args ...string) string {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	if code := run(context.Background(), args, &out, &errOut); code != 0 {
+		t.Fatalf("exit code = %d, stderr: %s", code, errOut.String())
+	}
+	return out.String()
+}
+
+func TestSettingsFlagsReachTheRequest(t *testing.T) {
+	isolate(t)
+	srv, requests := recordingServer(t)
+
+	runOK(t, "-p", "hi", "--base-url", srv.URL, "--reasoning-effort", "high")
+	runOK(t, "-p", "hi", "--base-url", srv.URL)
+
+	got := requests()
+	reasoning, _ := got[0]["reasoning"].(map[string]any)
+	if reasoning["effort"] != "high" {
+		t.Errorf("with the flag: reasoning = %v", got[0]["reasoning"])
+	}
+	if _, present := got[1]["reasoning"]; present {
+		t.Errorf("without the flag no reasoning setting may be sent: %v", got[1]["reasoning"])
+	}
+}
+
+func TestNoStreamingSendsOneRequestAndPrintsTheAnswer(t *testing.T) {
+	isolate(t)
+	srv, requests := recordingServer(t)
+
+	out := runOK(t, "-p", "hi", "--base-url", srv.URL, "--no-streaming")
+
+	if out != "4\n" {
+		t.Errorf("stdout = %q", out)
+	}
+	if requests()[0]["stream"] == true {
+		t.Error("--no-streaming must not ask for a stream")
+	}
+}
+
+func TestConfigFileSettingsReachTheRequest(t *testing.T) {
+	isolate(t)
+	srv, requests := recordingServer(t)
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	content := `{"base_url": "` + srv.URL + `", "api_key": "k", "reasoning_effort": "low", "streaming": false}`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// The flag wins over the file: streaming is turned back on.
+	runOK(t, "-p", "hi", "--config", cfgPath)
+	runOK(t, "-p", "hi", "--config", cfgPath, "--streaming")
+
+	got := requests()
+	if reasoning, _ := got[0]["reasoning"].(map[string]any); reasoning["effort"] != "low" || got[0]["stream"] == true {
+		t.Errorf("file settings not applied: %v", got[0])
+	}
+	if got[1]["stream"] != true {
+		t.Errorf("--streaming must win over streaming: false in the file: %v", got[1])
+	}
+}
+
+func TestUnknownConfigKeyStopsWithAMessageNamingIt(t *testing.T) {
+	isolate(t)
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"api_key": "k", "max_turn": 3}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	code := run(context.Background(), []string{"-p", "hi", "--config", cfgPath}, &out, &errOut)
+
+	if code != 1 || !strings.Contains(errOut.String(), "max_turn") {
+		t.Errorf("exit code = %d, stderr = %q; want 1 and a message naming max_turn", code, errOut.String())
+	}
+}
+
+func TestBadSettingValuesAreReported(t *testing.T) {
+	isolate(t)
+	for _, args := range [][]string{
+		{"-p", "hi", "--base-url", "http://x", "--reasoning-effort", "extreme"},
+		{"-p", "hi", "--base-url", "http://x", "--max-turns", "-1"},
+	} {
+		var out, errOut bytes.Buffer
+		if code := run(context.Background(), args, &out, &errOut); code != 1 || errOut.Len() == 0 {
+			t.Errorf("%v: exit code = %d, stderr = %q", args, code, errOut.String())
+		}
+	}
+}
+
+// A project's environment must not be able to send the key and the prompts somewhere else.
+func TestEnvironmentBaseURLCannotRedirectTheKey(t *testing.T) {
+	t.Run("a configured base_url wins", func(t *testing.T) {
+		isolate(t)
+		hostile, hostileRequests := recordingServer(t)
+		trusted, trustedRequests := recordingServer(t)
+		t.Setenv("OPENAI_BASE_URL", hostile.URL)
+
+		runOK(t, "-p", "hi", "--base-url", trusted.URL)
+
+		if len(hostileRequests()) != 0 || len(trustedRequests()) != 1 {
+			t.Errorf("hostile server saw %d requests, trusted %d; want 0 and 1", len(hostileRequests()), len(trustedRequests()))
+		}
+	})
+
+	t.Run("without one the OpenAI address is used", func(t *testing.T) {
+		isolate(t)
+		hostile, hostileRequests := recordingServer(t)
+		t.Setenv("OPENAI_BASE_URL", hostile.URL)
+		t.Setenv("OPENAI_API_KEY", "sk-test")
+
+		// No request leaves the test: the transport only records where it was going.
+		var target *url.URL
+		var authorization string
+		transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			target, authorization = r.URL, r.Header.Get("Authorization")
+			return nil, errors.New("stop here")
+		})
+		client := newClient(config.Config{APIKey: "sk-test"}, option.WithHTTPClient(&http.Client{Transport: transport}), option.WithMaxRetries(0))
+		_, _ = client.Responses.New(context.Background(), responses.ResponseNewParams{Model: "m"})
+
+		if len(hostileRequests()) != 0 {
+			t.Fatalf("OPENAI_BASE_URL redirected the request to %s", hostile.URL)
+		}
+		if target == nil || target.Host != "api.openai.com" || !strings.HasPrefix(target.Path, "/v1/") {
+			t.Errorf("the request went to %v, want https://api.openai.com/v1/...", target)
+		}
+		if authorization != "Bearer sk-test" {
+			t.Errorf("Authorization = %q, want the configured key", authorization)
+		}
+	})
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

@@ -3,7 +3,7 @@
 A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI, and works on your
 machine through tools (files, shell, web, todo, questions) and optional MCP servers.
 
-> **Status: Phase 3.6 (v0.3.2).** You can chat with the model in a terminal UI or send a single prompt from the
+> **Status: Phase 3.7 (v0.3.3).** You can chat with the model in a terminal UI or send a single prompt from the
 > command line. The machinery for tool calls is in place (calls run in parallel when safe, and show up as cards
 > in the chat), but no tools ship yet, so the model still cannot touch your files. Tools and MCP arrive in the
 > next phases; see [PLAN.md](PLAN.md). This README is updated as each phase lands.
@@ -25,13 +25,31 @@ export OPENAI_API_KEY=...
 
 ## What the model is told
 
-Every session starts with a built-in system prompt (guidance on how to work, use tools and communicate) plus an
-environment block: working directory, platform, today's date and the git branch and state. If the working
-directory has an `AGENTS.md` (or, failing that, a `CLAUDE.md`), its contents are added as project instructions,
-cut at 32 KB.
+Every session starts with a built-in system prompt (guidance on how to work and communicate), the project's
+`AGENTS.md` (or, failing that, a `CLAUDE.md`) from the working directory if it has one, cut at 32 KB, and last an
+environment block: working directory, platform, today's date and the git branch and state. The prompt talks about
+tools only when the model has some: with none (the case until tools arrive) it says plainly that it has none,
+because tool language in such a prompt makes some models type tool calls as text or answer nothing.
 
-If the model keeps repeating the same tool call with the same result, the turn is stopped with an error. A
-response stream that goes silent for 2 minutes is abandoned.
+## When things go wrong
+
+- **A stream that breaks** (it ends with no final response, or the connection drops) is sent again, up to twice,
+  with a notice; the text of the failed attempt is dropped from the screen. In `-p` mode that text is already on
+  stdout, so after a retry the answer can start over (the notice goes to stderr).
+- **An empty reply** is asked for again once. A refusal, a failed or incomplete response, or an API error ends the
+  turn with a message; the usual causes come with a hint (wrong key, wrong model or base URL, quota, a conversation
+  that is too long). A reply that was cut off after some text keeps that text in the conversation.
+- **A turn that stops after tools ran** (you pressed Ctrl-C, the server failed, a limit was reached) is kept with a
+  closing note such as `[Stopped after 2 model calls: interrupted by the user]`, and every call that did not finish is
+  answered as interrupted. The model therefore knows what was done, which matters once tools can change things. A
+  failure before any tool ran leaves the conversation as it was.
+- **Limits:** at most `max_turns` model calls (25) for one prompt; a turn that repeats the same tool call with the
+  same result more than 5 times in 10 steps is stopped; a stream that goes silent for 2 minutes is abandoned; at most 8
+  read-only tool calls run at once; a tool result is cut at 20 KiB with a note.
+- **Older turns** keep only their messages. The reasoning, tool calls and tool results of every turn but the newest
+  are dropped from what is sent, which keeps requests small; the model can call a tool again if it needs a result.
+- **Text from the model, tools or servers** is cleaned before it is shown: control characters, escape sequences
+  (clipboard writes, cursor movement), carriage returns and Unicode text-direction overrides never reach the terminal.
 
 ## Using the chat
 
@@ -44,8 +62,8 @@ conversation keeps its history for the whole session. Terminals narrower than 40
 | `Enter` | Send the message (ignored while an answer is streaming; your draft stays) |
 | `Ctrl-J` or `Alt-Enter` | New line in the message |
 | `PgUp` / `PgDn` | Scroll the transcript |
-| `Ctrl-C` | While an answer is streaming: cancel it. Press again to quit. When idle: quit. |
-| `Ctrl-D` | Quit when the input is empty |
+| `Ctrl-C` | While an answer is streaming: cancel it (press again to quit). When idle: clears what you typed; on an empty input it asks you to press it again, since the conversation is not saved, and quits at once if there is no conversation yet. |
+| `Ctrl-D` | On an empty input: quit, with the same second-press protection as `Ctrl-C` (the two count together) |
 
 The top row shows the working directory and git branch on the left and the model, and after the first answer the
 size of the conversation in tokens, on the right. Below the transcript are the input box and a one-line key
@@ -68,6 +86,9 @@ Flags:
 | `-p "prompt"` | Send one prompt, stream the answer to stdout and exit. `Ctrl-C` cancels. Without `-p`, the chat UI starts. |
 | `--model name` | Model to use. |
 | `--base-url url` | API base URL for OpenAI-compatible servers. |
+| `--reasoning-effort level` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; `default` sends none even if the file sets one. Models that do not reason reject the setting, so it is only sent when you set it. |
+| `--max-turns n` | Most model calls for one prompt (default 25). |
+| `--streaming`, `--no-streaming` | Stream the reply as it arrives (the default), or send one request and show the whole reply at once, for servers whose streaming is broken. |
 | `--config path` | Config file (default below). A missing explicit file is an error. |
 | `--version` | Print the version. |
 
@@ -84,6 +105,9 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
   "base_url": "http://localhost:11434/v1",
   "api_key": "${OPENAI_API_KEY}",
   "context_window": 400000,
+  "reasoning_effort": "low",
+  "max_turns": 25,
+  "streaming": true,
   "mcpServers": {
     "context7": {
       "url": "https://mcp.context7.com/mcp",
@@ -100,12 +124,19 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
 }
 ```
 
-- `model`, `base_url`, `api_key`: command-line flags override environment variables (`DESK_AGENT_MODEL`,
-  `OPENAI_BASE_URL`, `OPENAI_API_KEY`), which override the file. `base_url` and `api_key` are optional. The
-  default model is `gpt-5.4-mini`.
+- **Precedence:** command-line flags, then the file, then the defaults (the default model is `gpt-5.4-mini`).
+  The environment has **one** variable, `OPENAI_API_KEY`, which beats `api_key` in the file. There is deliberately
+  no variable for the base URL or the model: one for the base URL would let a project's `.envrc` send your key and
+  every prompt somewhere else, and the common names are exported by other programs. The base URL is always passed
+  to the client explicitly, so the OpenAI library's own reading of `OPENAI_BASE_URL` cannot redirect it either. (The
+  library still reads `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID` and `OPENAI_CUSTOM_HEADERS`; those cannot change where
+  the key goes.) Only this user-level file is read, never one from the working directory.
+- **A key that is not a setting is an error** that names the key and the file, so a typo such as `max_turn` is not
+  silently ignored. `base_url` and `api_key` are optional.
+- `reasoning_effort` (unset sends nothing), `max_turns` and `streaming` correspond to the flags above.
 - `context_window` is optional. With it, the status line shows how much of the context window the conversation
   uses (for example `25.5k tokens (6%)`); without it only the token count appears.
-- `mcpServers` is accepted but ignored until MCP support lands (Phase 4).
+- `mcpServers` is accepted but ignored until MCP support lands (Phase 4b).
 - `"${NAME}"` in any string value is replaced from the environment, so secrets need not live in the file.
   If you do put a key in the file, keep it private: `chmod 600 ~/.config/desk-agent/config.json`.
 - An MCP server is either a local process (`command`, `args`, `env`) or a remote one (`url`, `headers`).

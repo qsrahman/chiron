@@ -22,18 +22,14 @@ import (
 
 // --- fixtures ---
 
+func isCancel(err error) bool { return errors.Is(err, context.Canceled) }
+
 // functionCall is a function_call output item as the API sends it.
 func functionCall(callID, name string, args any) string {
 	arguments, _ := json.Marshal(args)
 	quoted, _ := json.Marshal(string(arguments))
 	return fmt.Sprintf(`{"type":"function_call","id":"fc_%s","call_id":%q,"name":%q,"arguments":%s,"status":"completed"}`,
 		callID, callID, name, quoted)
-}
-
-// completedWith builds a response.completed event holding the given output items.
-func completedWith(items ...string) string {
-	return fmt.Sprintf(`{"type":"response.completed","sequence_number":9,"response":{
-		"id":"resp_x","object":"response","status":"completed","output":[%s]}}`, strings.Join(items, ","))
 }
 
 // callsThenAnswer scripts a model that makes the given calls, then answers "done".
@@ -89,16 +85,16 @@ func newAgentWithTools(t *testing.T, srv *fakeServer, toolList ...tools.Tool) *A
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(srv.client(), "m", "", reg)
+	return New(srv.client(), testSettings("m"), "", reg)
 }
 
 // outputsOf returns the function_call_output items of a request, in order.
 func outputsOf(t *testing.T, req map[string]any) []map[string]any {
 	t.Helper()
 	var out []map[string]any
-	for _, item := range inputItems(t, req) {
-		if item["type"] == "function_call_output" {
-			out = append(out, item)
+	for _, it := range inputItems(t, req) {
+		if it["type"] == "function_call_output" {
+			out = append(out, it)
 		}
 	}
 	return out
@@ -114,6 +110,24 @@ func withoutUsage(events []Event) []Event {
 	return out
 }
 
+// lastNote returns the text of the closing assistant note of the saved history.
+func lastNote(a *Agent) string {
+	items := a.history.items
+	if len(items) == 0 {
+		return ""
+	}
+	last := items[len(items)-1]
+	if last.kind != kindAssistant {
+		return ""
+	}
+	raw, _ := json.Marshal(last.param)
+	var p struct {
+		Content string `json:"content"`
+	}
+	_ = json.Unmarshal(raw, &p)
+	return p.Content
+}
+
 // --- tests ---
 
 func TestToolCallRoundTrip(t *testing.T) {
@@ -123,17 +137,15 @@ func TestToolCallRoundTrip(t *testing.T) {
 
 	events := withoutUsage(drain(t, a.Send(context.Background(), "go")))
 
-	// Events: the call starts and finishes, then the model's final answer streams.
-	var kinds []string
+	var kindsOfEvents []string
 	for _, e := range events {
-		kinds = append(kinds, fmt.Sprintf("%T", e))
+		kindsOfEvents = append(kindsOfEvents, fmt.Sprintf("%T", e))
 	}
 	want := []string{"agent.ToolStarted", "agent.ToolFinished", "agent.TextDelta", "agent.Done"}
-	if strings.Join(kinds, ",") != strings.Join(want, ",") {
-		t.Errorf("events = %v, want %v", kinds, want)
+	if strings.Join(kindsOfEvents, ",") != strings.Join(want, ",") {
+		t.Errorf("events = %v, want %v", kindsOfEvents, want)
 	}
-	started := events[0].(ToolStarted)
-	finished := events[1].(ToolFinished)
+	started, finished := events[0].(ToolStarted), events[1].(ToolFinished)
 	if started.CallID != "call_1" || started.Name != "read" || started.Arguments != `{"name":"a"}` {
 		t.Errorf("ToolStarted = %+v", started)
 	}
@@ -141,7 +153,6 @@ func TestToolCallRoundTrip(t *testing.T) {
 		t.Errorf("ToolFinished = %+v", finished)
 	}
 
-	// The first request advertises the tool; the second carries the call and its output.
 	toolList, _ := srv.request(t, 0)["tools"].([]any)
 	if len(toolList) != 1 || toolList[0].(map[string]any)["name"] != "read" {
 		t.Errorf("tools sent = %v", srv.request(t, 0)["tools"])
@@ -150,12 +161,26 @@ func TestToolCallRoundTrip(t *testing.T) {
 	if len(outs) != 1 || outs[0]["call_id"] != "call_1" || outs[0]["output"] != "result a" {
 		t.Errorf("function_call_output items = %v", outs)
 	}
-	var sawCall bool
-	for _, item := range inputItems(t, srv.request(t, 1)) {
-		sawCall = sawCall || item["type"] == "function_call"
+	if got := shape(inputItems(t, srv.request(t, 1))); got != "user,function_call,function_call_output" {
+		t.Errorf("second request = %s, want the call replayed next to its output", got)
 	}
-	if !sawCall {
-		t.Error("the model's function_call must be replayed next to its output")
+}
+
+func TestReasoningBeforeACallIsReplayed(t *testing.T) {
+	srv := newFakeServer(t,
+		sse(completedWith(reasoningItem, functionCall("c1", "read", nameArgs{"a"}))),
+		sse(textDelta("done"), completed("done")),
+	)
+	a := newAgentWithTools(t, srv, fakeTool("read", true, 0, &recorder{}))
+
+	drain(t, a.Send(context.Background(), "go"))
+
+	items := inputItems(t, srv.request(t, 1))
+	if got := shape(items); got != "user,reasoning,function_call,function_call_output" {
+		t.Fatalf("second request = %s", got)
+	}
+	if items[1]["encrypted_content"] != "ENCRYPTED" {
+		t.Errorf("the reasoning item must come back untouched: %v", items[1])
 	}
 }
 
@@ -173,18 +198,47 @@ func TestReadOnlyCallsRunConcurrently(t *testing.T) {
 	events := drain(t, a.Send(context.Background(), "go"))
 	elapsed := time.Since(begin)
 
-	if _, ok := events[len(events)-1].(Done); !ok {
-		t.Fatalf("last event = %#v", events[len(events)-1])
+	if _, ok := lastEvent(events).(Done); !ok {
+		t.Fatalf("last event = %#v", lastEvent(events))
 	}
 	if elapsed >= 2*delay {
 		t.Errorf("three %v calls took %v: they did not run concurrently", delay, elapsed)
 	}
-	// Outputs go back in call order no matter which call finished first.
 	outs := outputsOf(t, srv.request(t, 1))
 	for i, id := range []string{"c1", "c2", "c3"} {
 		if outs[i]["call_id"] != id || outs[i]["output"] != "result "+string('a'+rune(i)) {
 			t.Errorf("output %d = %v, want call %s", i, outs[i], id)
 		}
+	}
+}
+
+func TestParallelCallsAreCapped(t *testing.T) {
+	var running, peak atomic.Int32
+	slow := tools.MustNew("slow", "tracks how many run at once", true, func(ctx context.Context, _ nameArgs) (string, error) {
+		n := running.Add(1)
+		defer running.Add(-1)
+		for {
+			old := peak.Load()
+			if n <= old || peak.CompareAndSwap(old, n) {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		return "ok", nil
+	})
+	var calls []string
+	for i := range 3 * maxParallelCalls {
+		calls = append(calls, functionCall(fmt.Sprint("c", i), "slow", nameArgs{"x"}))
+	}
+	srv := newFakeServer(t, callsThenAnswer(calls...)...)
+
+	events := drain(t, newAgentWithTools(t, srv, slow).Send(context.Background(), "go"))
+
+	if _, ok := lastEvent(events).(Done); !ok {
+		t.Fatalf("last event = %#v", lastEvent(events))
+	}
+	if got := int(peak.Load()); got > maxParallelCalls || got < 2 {
+		t.Errorf("peak concurrency = %d, want between 2 and %d", got, maxParallelCalls)
 	}
 }
 
@@ -219,7 +273,6 @@ func TestReadOnlyRunsAreSeparatedByMutatingCalls(t *testing.T) {
 
 	drain(t, a.Send(context.Background(), "go"))
 
-	// r1 and r2 overlap; the write waits for both; r3 waits for the write.
 	if log.index(t, "start r2") > log.index(t, "end r1") {
 		t.Errorf("r1 and r2 should overlap: %v", log.log)
 	}
@@ -248,58 +301,79 @@ func TestToolFailuresGoBackToTheModel(t *testing.T) {
 
 	events := drain(t, a.Send(context.Background(), "go"))
 
-	if _, ok := events[len(events)-1].(Done); !ok {
-		t.Fatalf("the turn should still finish, got %#v", events[len(events)-1])
+	if _, ok := lastEvent(events).(Done); !ok {
+		t.Fatalf("the turn should still finish, got %#v", lastEvent(events))
 	}
 	outs := outputsOf(t, srv.request(t, 1))
-	wants := []string{"error: boom", `error: unknown tool "nope"`, "error: invalid arguments", "(no output)"}
+	wants := []string{"error: boom", `error: unknown tool "nope". Available tools: fail, quiet.`, "error: invalid arguments", "(no output)"}
 	for i, want := range wants {
 		if got, _ := outs[i]["output"].(string); !strings.HasPrefix(got, want) {
 			t.Errorf("output %d = %q, want prefix %q", i, got, want)
 		}
 	}
-	// Calls in one concurrent group finish in any order, so compare by call id.
 	failed := map[string]bool{}
 	for _, e := range events {
 		if f, ok := e.(ToolFinished); ok {
 			failed[f.CallID] = f.Failed
 		}
 	}
-	wantFailed := map[string]bool{"c1": true, "c2": true, "c3": true, "c4": false}
-	for id, want := range wantFailed {
+	for id, want := range map[string]bool{"c1": true, "c2": true, "c3": true, "c4": false} {
 		if failed[id] != want {
 			t.Errorf("Failed[%s] = %v, want %v", id, failed[id], want)
 		}
 	}
 }
 
-func TestToolCallsStayInHistoryAcrossTurns(t *testing.T) {
-	log := &recorder{}
-	srv := newFakeServer(t,
-		sse(completedWith(functionCall("c1", "read", nameArgs{"a"}))),
-		sse(textDelta("first"), completed("first")),
-		sse(textDelta("second"), completed("second")),
-	)
-	a := newAgentWithTools(t, srv, fakeTool("read", true, 0, log))
-
-	drain(t, a.Send(context.Background(), "one"))
-	drain(t, a.Send(context.Background(), "two"))
-
-	var types []string
-	for _, item := range inputItems(t, srv.request(t, 2)) {
-		if ty, ok := item["type"].(string); ok {
-			types = append(types, ty)
-		} else {
-			types = append(types, "user-message")
-		}
-	}
-	want := "user-message,function_call,function_call_output,reasoning,message,user-message"
-	if got := strings.Join(types, ","); got != want {
-		t.Errorf("history sent on turn two = %s, want %s", got, want)
+func TestUnknownToolWithNoToolsSaysSo(t *testing.T) {
+	if got := unknownToolText("x", nil); got != `error: unknown tool "x". Available tools: none.` {
+		t.Errorf("got %q", got)
 	}
 }
 
-func TestStepLimitStopsRunawayToolLoop(t *testing.T) {
+func TestLongToolOutputIsCut(t *testing.T) {
+	big := tools.MustNew("big", "returns a lot", true, func(context.Context, nameArgs) (string, error) {
+		return strings.Repeat("é", maxOutputBytes), nil // two bytes each: the cut must not split one
+	})
+	srv := newFakeServer(t, callsThenAnswer(functionCall("c1", "big", nameArgs{"x"}))...)
+
+	drain(t, newAgentWithTools(t, srv, big).Send(context.Background(), "go"))
+
+	out, _ := outputsOf(t, srv.request(t, 1))[0]["output"].(string)
+	if !strings.Contains(out, "[output truncated: ") || !strings.HasSuffix(out, " more characters]") {
+		t.Errorf("output does not say it was cut: ...%q", out[max(0, len(out)-60):])
+	}
+	if len(out) > maxOutputBytes+100 {
+		t.Errorf("output is %d bytes, want about %d", len(out), maxOutputBytes)
+	}
+	if strings.Contains(out, "�") {
+		t.Error("the cut split a multi-byte character")
+	}
+}
+
+func TestOlderTurnsKeepOnlyTheirMessages(t *testing.T) {
+	srv := newFakeServer(t,
+		sse(completedWith(functionCall("c1", "read", nameArgs{"a"}))), sse(textDelta("one"), completed("one")),
+		sse(completedWith(functionCall("c2", "read", nameArgs{"b"}))), sse(textDelta("two"), completed("two")),
+		sse(textDelta("three"), completed("three")),
+	)
+	a := newAgentWithTools(t, srv, fakeTool("read", true, 0, &recorder{}))
+
+	drain(t, a.Send(context.Background(), "q1"))
+	drain(t, a.Send(context.Background(), "q2"))
+	drain(t, a.Send(context.Background(), "q3"))
+
+	// Request 3 is turn 2's first one (index 2); the first of turn 3 is index 4.
+	// Turn 1's tool work is gone, turn 2 (the newest) still has its call and output.
+	if got := shape(inputItems(t, srv.request(t, 4))); got != "user,assistant,user,function_call,function_call_output,assistant,user" {
+		t.Errorf("third turn's request = %s", got)
+	}
+	// While turn 2 ran, turn 1 was the newest and kept everything.
+	if got := shape(inputItems(t, srv.request(t, 2))); got != "user,function_call,function_call_output,assistant,user" {
+		t.Errorf("second turn's first request = %s", got)
+	}
+}
+
+func TestStepLimitKeepsTheTurnWithANote(t *testing.T) {
 	// Every call returns something new, so this is not a repeat and only the step limit can stop it.
 	var n atomic.Int32
 	counter := tools.MustNew("count", "returns a different number each time", true,
@@ -309,59 +383,123 @@ func TestStepLimitStopsRunawayToolLoop(t *testing.T) {
 
 	events := drain(t, a.Send(context.Background(), "go"))
 
-	last, ok := events[len(events)-1].(Error)
-	if !ok || !strings.Contains(last.Err.Error(), "stopped after") {
-		t.Fatalf("last event = %#v, want a step-limit Error", events[len(events)-1])
+	if err := lastError(t, events); !strings.Contains(err.Error(), "Stopped after 25 model calls without a final answer") {
+		t.Fatalf("error = %v", err)
 	}
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-	if len(srv.requests) != maxSteps {
-		t.Errorf("made %d requests, want exactly %d", len(srv.requests), maxSteps)
+	if srv.requestCount() != defaultMaxTurns {
+		t.Errorf("made %d requests, want exactly %d", srv.requestCount(), defaultMaxTurns)
 	}
-	if len(a.history) != 0 {
-		t.Error("a turn that hit the limit must not change history")
+	// The tools ran, so the model must know: the turn is kept, closed with a note.
+	if note := lastNote(a); note != "[Stopped after 25 model calls without a final answer]" {
+		t.Errorf("closing note = %q", note)
 	}
 }
 
-func TestRepeatedToolCallsAreStopped(t *testing.T) {
-	log := &recorder{}
-	// The model asks for the same thing forever and always gets the same answer.
+func TestMaxTurnsIsASetting(t *testing.T) {
+	var n atomic.Int32
+	counter := tools.MustNew("count", "different each time", true,
+		func(context.Context, nameArgs) (string, error) { return fmt.Sprint(n.Add(1)), nil })
+	srv := newFakeServer(t, sse(completedWith(functionCall("c1", "count", nameArgs{"a"}))))
+	reg, _ := tools.NewRegistry(counter)
+	settings := testSettings("m")
+	settings.MaxTurns = 3
+
+	events := drain(t, New(srv.client(), settings, "", reg).Send(context.Background(), "go"))
+
+	if err := lastError(t, events); !strings.Contains(err.Error(), "Stopped after 3 model calls") || srv.requestCount() != 3 {
+		t.Errorf("error = %v, requests = %d", err, srv.requestCount())
+	}
+}
+
+func TestRepeatedToolCallsAreStoppedAndKept(t *testing.T) {
 	srv := newFakeServer(t, sse(completedWith(functionCall("c1", "read", nameArgs{"a"}))))
-	a := newAgentWithTools(t, srv, fakeTool("read", true, 0, log))
+	a := newAgentWithTools(t, srv, fakeTool("read", true, 0, &recorder{}))
 
 	events := drain(t, a.Send(context.Background(), "go"))
 
-	last, ok := events[len(events)-1].(Error)
-	if !ok || !strings.Contains(last.Err.Error(), "repeating the same tool calls") {
-		t.Fatalf("last event = %#v, want a loop Error", events[len(events)-1])
+	if err := lastError(t, events); !strings.Contains(err.Error(), "repeating the same tool calls") {
+		t.Fatalf("error = %v", err)
 	}
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-	if want := loopMaxRepeats + 1; len(srv.requests) != want {
-		t.Errorf("made %d requests, want %d (stopped at the first step over the limit)", len(srv.requests), want)
+	if want := loopMaxRepeats + 1; srv.requestCount() != want {
+		t.Errorf("made %d requests, want %d (stopped at the first step over the limit)", srv.requestCount(), want)
 	}
-	if len(a.history) != 0 {
-		t.Error("a looping turn must not change history")
+	if !strings.Contains(lastNote(a), "Stopped after 6 model calls: stopped: the model keeps repeating") {
+		t.Errorf("closing note = %q", lastNote(a))
 	}
 }
 
-func TestUsageIsReported(t *testing.T) {
-	withUsage := `{"type":"response.completed","sequence_number":3,"response":{"id":"r","object":"response","status":"completed",
-		"output":[{"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hi","annotations":[]}]}],
-		"usage":{"input_tokens":120,"output_tokens":30,"total_tokens":150}}}`
-	srv := newFakeServer(t, sse(withUsage))
-	a := New(srv.client(), "m", "", &tools.Registry{})
+func TestFailureAfterToolsKeepsTheTurn(t *testing.T) {
+	srv := newScriptedServer(t,
+		reply{body: sse(completedWith(functionCall("c1", "write", nameArgs{"x"})))},
+		apiError(500, "server_error", "the server fell over"),
+	)
+	a := newAgentWithTools(t, srv, fakeTool("write", false, 0, &recorder{}))
 
-	events := drain(t, a.Send(context.Background(), "hi"))
+	events := drain(t, a.Send(context.Background(), "go"))
 
-	var got []Usage
-	for _, e := range events {
-		if u, ok := e.(Usage); ok {
-			got = append(got, u)
+	if err := lastError(t, events); !strings.Contains(err.Error(), "API error 500") {
+		t.Fatalf("error = %v", err)
+	}
+	// The write ran. The history keeps it, and the note says why the turn stopped (nothing the server wrote).
+	if got := kinds(a.history.items); got != "user,function_call,function_call_output,assistant" {
+		t.Errorf("history = %s", got)
+	}
+	if lastNote(a) != "[Stopped after 1 model calls: API error 500]" {
+		t.Errorf("closing note = %q", lastNote(a))
+	}
+	if strings.Contains(lastNote(a), "fell over") {
+		t.Error("text from the server must not go into the note the model reads")
+	}
+}
+
+func TestCancelWhileToolRunsKeepsTheTurnAndAnswersTheCall(t *testing.T) {
+	started := make(chan struct{})
+	stopped := make(chan error, 1)
+	blocking := tools.MustNew("block", "waits for cancel", false, func(ctx context.Context, _ nameArgs) (string, error) {
+		close(started)
+		<-ctx.Done()
+		stopped <- ctx.Err()
+		return "", ctx.Err()
+	})
+	var ran atomic.Int32
+	later := tools.MustNew("later", "must not run after a cancel", false, func(context.Context, nameArgs) (string, error) {
+		ran.Add(1)
+		return "ran", nil
+	})
+	srv := newFakeServer(t, sse(completedWith(
+		functionCall("c1", "block", nameArgs{"x"}),
+		functionCall("c2", "later", nameArgs{"x"}),
+	)))
+	a := newAgentWithTools(t, srv, blocking, later)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	events := a.Send(ctx, "go")
+	go func() { <-started; cancel() }()
+	got := drain(t, events)
+
+	if err := lastError(t, got); !isCancel(err) {
+		t.Fatalf("error = %v, want a cancellation", err)
+	}
+	if err := <-stopped; err == nil {
+		t.Error("the tool never saw the cancellation")
+	}
+	if ran.Load() != 0 {
+		t.Error("a call that had not run yet must not start after the cancel")
+	}
+	for _, e := range got {
+		if f, ok := e.(ToolFinished); ok && (!f.Failed || !f.Cancelled || f.Output != interruptedOutput) {
+			t.Errorf("an interrupted call should be failed, cancelled and say so: %+v", f)
 		}
 	}
-	if len(got) != 1 || got[0] != (Usage{InputTokens: 120, OutputTokens: 30}) {
-		t.Errorf("usage events = %+v, want one with 120 in and 30 out", got)
+	if srv.requestCount() != 1 {
+		t.Errorf("the model was asked again after cancellation (%d requests)", srv.requestCount())
+	}
+	// Both calls are in the history with an output, and the note says the user stopped it.
+	if got := kinds(a.history.items); got != "user,function_call,function_call,function_call_output,function_call_output,assistant" {
+		t.Errorf("history = %s", got)
+	}
+	if lastNote(a) != "[Stopped after 1 model calls: interrupted by the user]" {
+		t.Errorf("closing note = %q", lastNote(a))
 	}
 }
 
@@ -379,65 +517,45 @@ func TestSilentStreamIsAbandoned(t *testing.T) {
 	t.Cleanup(func() { close(release); srv.Close() })
 
 	client := openai.NewClient(option.WithBaseURL(srv.URL), option.WithAPIKey("k"), option.WithMaxRetries(0))
-	a := New(client, "m", "", &tools.Registry{})
+	a := New(client, testSettings("m"), "", &tools.Registry{})
 	a.idleTimeout = 150 * time.Millisecond
 
 	begin := time.Now()
 	events := drain(t, a.Send(context.Background(), "hi"))
 
-	last, ok := events[len(events)-1].(Error)
-	if !ok || !strings.Contains(last.Err.Error(), "stopped sending data") {
-		t.Fatalf("last event = %#v, want the idle-timeout Error", events[len(events)-1])
+	err := lastError(t, events)
+	if !strings.Contains(err.Error(), "stopped sending data") {
+		t.Fatalf("error = %v, want the idle-timeout error", err)
 	}
 	if elapsed := time.Since(begin); elapsed > 3*time.Second {
 		t.Errorf("took %v to give up on a stream with a 150ms idle timeout", elapsed)
 	}
-	if errors.Is(last.Err, context.Canceled) {
+	if isCancel(err) {
 		t.Error("an idle timeout is not a user cancellation and must not look like one")
 	}
-	if len(a.history) != 0 {
-		t.Error("history must not change when the stream stalls")
+	if len(retries(events)) != 0 {
+		t.Error("a stalled stream is not retried: it would only stall again")
+	}
+	if len(a.history.items) != 0 {
+		t.Error("history must not change when the stream stalls in the first round")
 	}
 }
 
-func TestCancelWhileToolRuns(t *testing.T) {
-	started := make(chan struct{})
-	stopped := make(chan error, 1)
-	blocking := tools.MustNew("block", "waits for cancel", false, func(ctx context.Context, _ nameArgs) (string, error) {
-		close(started)
-		<-ctx.Done()
-		stopped <- ctx.Err()
-		return "", ctx.Err()
-	})
-	srv := newFakeServer(t, sse(completedWith(functionCall("c1", "block", nameArgs{"x"}))))
-	a := newAgentWithTools(t, srv, blocking)
+func TestUsageIsReported(t *testing.T) {
+	withUsage := `{"type":"response.completed","sequence_number":3,"response":{"id":"r","object":"response","status":"completed",
+		"output":[` + messageItem("hi") + `],
+		"usage":{"input_tokens":120,"output_tokens":30,"total_tokens":150}}}`
+	srv := newFakeServer(t, sse(withUsage))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	events := a.Send(ctx, "go")
-	go func() { <-started; cancel() }()
-	got := drain(t, events)
+	events := drain(t, newTestAgent(srv).Send(context.Background(), "hi"))
 
-	if _, ok := got[len(got)-1].(Error); !ok {
-		t.Fatalf("last event = %#v, want Error", got[len(got)-1])
-	}
-	var finished *ToolFinished
-	for _, e := range got {
-		if f, ok := e.(ToolFinished); ok {
-			finished = &f
+	var got []Usage
+	for _, e := range events {
+		if u, ok := e.(Usage); ok {
+			got = append(got, u)
 		}
 	}
-	if finished == nil || !finished.Failed || !finished.Cancelled {
-		t.Errorf("the interrupted call should be reported as failed and cancelled: %+v", finished)
-	}
-	if err := <-stopped; err == nil {
-		t.Error("the tool never saw the cancellation")
-	}
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-	if len(srv.requests) != 1 {
-		t.Errorf("the model was asked again after cancellation (%d requests)", len(srv.requests))
-	}
-	if len(a.history) != 0 {
-		t.Error("history must not change on a cancelled turn")
+	if len(got) != 1 || got[0] != (Usage{InputTokens: 120, OutputTokens: 30}) {
+		t.Errorf("usage events = %+v, want one with 120 in and 30 out", got)
 	}
 }

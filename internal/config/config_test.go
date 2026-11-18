@@ -16,8 +16,13 @@ func writeConfig(t *testing.T, content string, perm os.FileMode) string {
 	if err := os.WriteFile(path, []byte(content), perm); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(path, perm); err != nil { // WriteFile is subject to the umask
+		t.Fatal(err)
+	}
 	return path
 }
+
+func ptr[T any](v T) *T { return &v }
 
 func TestLoad(t *testing.T) {
 	t.Setenv("TEST_KEY", "sk-from-env")
@@ -26,8 +31,10 @@ func TestLoad(t *testing.T) {
 		"base_url": "http://localhost:11434/v1",
 		"api_key": "${TEST_KEY}",
 		"context_window": 128000,
-		"mcpServers": {"x": {"command": "npx"}},
-		"future_field": true
+		"reasoning_effort": "low",
+		"max_turns": 10,
+		"streaming": false,
+		"mcpServers": {"x": {"command": "npx"}}
 	}`, 0o600)
 
 	var warn bytes.Buffer
@@ -35,27 +42,58 @@ func TestLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Config{Model: "m1", BaseURL: "http://localhost:11434/v1", APIKey: "sk-from-env", ContextWindow: 128000}
-	if got != want {
-		t.Errorf("Load() = %+v, want %+v", got, want)
+	if got.Model != "m1" || got.BaseURL != "http://localhost:11434/v1" || got.APIKey != "sk-from-env" ||
+		got.ContextWindow != 128000 || got.ReasoningEffort != "low" || got.MaxTurns != 10 {
+		t.Errorf("Load() = %+v", got)
+	}
+	if got.Streaming == nil || *got.Streaming {
+		t.Errorf("streaming = %v, want false", got.Streaming)
+	}
+	if len(got.MCPServers) != 1 {
+		t.Errorf("mcpServers should be accepted: %v", got.MCPServers)
 	}
 	if warn.Len() != 0 {
 		t.Errorf("unexpected warning: %s", warn.String())
 	}
 }
 
-func TestLoadMissingFile(t *testing.T) {
-	_, err := Load(filepath.Join(t.TempDir(), "nope.json"), &bytes.Buffer{})
-	if !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("err = %v, want fs.ErrNotExist", err)
+func TestLoadRejectsAKeyThatIsNotASetting(t *testing.T) {
+	path := writeConfig(t, `{"model": "m", "max_turn": 5}`, 0o600)
+
+	_, err := Load(path, &bytes.Buffer{})
+
+	if err == nil {
+		t.Fatal("a typo must be an error, not silently ignored")
+	}
+	for _, want := range []string{"max_turn", path} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should name %q", err, want)
+		}
 	}
 }
 
-func TestLoadInvalidJSON(t *testing.T) {
-	path := writeConfig(t, `{not json`, 0o600)
-	if _, err := Load(path, &bytes.Buffer{}); err == nil {
-		t.Fatal("expected a parse error")
-	}
+func TestLoadErrors(t *testing.T) {
+	t.Run("missing file", func(t *testing.T) {
+		_, err := Load(filepath.Join(t.TempDir(), "nope.json"), &bytes.Buffer{})
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("err = %v, want fs.ErrNotExist", err)
+		}
+	})
+	t.Run("invalid JSON", func(t *testing.T) {
+		if _, err := Load(writeConfig(t, `{not json`, 0o600), &bytes.Buffer{}); err == nil {
+			t.Fatal("expected a parse error")
+		}
+	})
+	t.Run("two objects", func(t *testing.T) {
+		if _, err := Load(writeConfig(t, `{} {}`, 0o600), &bytes.Buffer{}); err == nil {
+			t.Fatal("trailing data must be an error")
+		}
+	})
+	t.Run("wrong type", func(t *testing.T) {
+		if _, err := Load(writeConfig(t, `{"max_turns": "ten"}`, 0o600), &bytes.Buffer{}); err == nil {
+			t.Fatal("a string for a number must be an error")
+		}
+	})
 }
 
 func TestLoadWarnsAboutReadableLiteralKey(t *testing.T) {
@@ -72,13 +110,8 @@ func TestLoadWarnsAboutReadableLiteralKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path := writeConfig(t, tt.content, tt.perm)
-			// WriteFile is subject to the umask, so set the mode explicitly.
-			if err := os.Chmod(path, tt.perm); err != nil {
-				t.Fatal(err)
-			}
 			var warn bytes.Buffer
-			if _, err := Load(path, &warn); err != nil {
+			if _, err := Load(writeConfig(t, tt.content, tt.perm), &warn); err != nil {
 				t.Fatal(err)
 			}
 			if got := strings.Contains(warn.String(), "chmod 600"); got != tt.wantWarn {
@@ -89,41 +122,58 @@ func TestLoadWarnsAboutReadableLiteralKey(t *testing.T) {
 }
 
 func TestResolvePrecedence(t *testing.T) {
-	file := Config{Model: "file-model", BaseURL: "file-url", APIKey: "file-key"}
-	env := func(m map[string]string) func(string) string {
-		return func(k string) string { return m[k] }
-	}
-
+	file := File{Model: "file-model", BaseURL: "file-url", APIKey: "file-key", ReasoningEffort: "low", MaxTurns: 7, Streaming: ptr(false)}
 	tests := []struct {
-		name      string
-		file      Config
-		env       map[string]string
-		flagModel string
-		flagURL   string
-		want      Config
+		name   string
+		file   File
+		apiKey string
+		flags  Flags
+		want   Config
 	}{
-		{"defaults only", Config{}, nil, "", "", Config{Model: DefaultModel}},
-		{"file wins over default", file, nil, "", "", file},
-		{
-			"env wins over file",
-			file,
-			map[string]string{"DESK_AGENT_MODEL": "env-model", "OPENAI_BASE_URL": "env-url", "OPENAI_API_KEY": "env-key"},
-			"", "",
-			Config{Model: "env-model", BaseURL: "env-url", APIKey: "env-key"},
-		},
-		{
-			"flags win over env",
-			file,
-			map[string]string{"DESK_AGENT_MODEL": "env-model", "OPENAI_BASE_URL": "env-url"},
-			"flag-model", "flag-url",
-			Config{Model: "flag-model", BaseURL: "flag-url", APIKey: "file-key"},
-		},
+		{"defaults only", File{}, "", Flags{}, Config{Model: DefaultModel, Streaming: true}},
+		{"file wins over default", file, "", Flags{},
+			Config{Model: "file-model", BaseURL: "file-url", APIKey: "file-key", ReasoningEffort: "low", MaxTurns: 7}},
+		{"the key from the environment wins over the file", file, "env-key", Flags{},
+			Config{Model: "file-model", BaseURL: "file-url", APIKey: "env-key", ReasoningEffort: "low", MaxTurns: 7}},
+		{"flags win over the file", file, "", Flags{Model: "flag-model", BaseURL: "flag-url", ReasoningEffort: "high", MaxTurns: 3, Streaming: ptr(true)},
+			Config{Model: "flag-model", BaseURL: "flag-url", APIKey: "file-key", ReasoningEffort: "high", MaxTurns: 3, Streaming: true}},
+		{"default leaves the effort out", file, "", Flags{ReasoningEffort: "default"},
+			Config{Model: "file-model", BaseURL: "file-url", APIKey: "file-key", MaxTurns: 7}},
+		{"streaming defaults to true when only the effort is set", File{ReasoningEffort: "none"}, "", Flags{},
+			Config{Model: DefaultModel, ReasoningEffort: "none", Streaming: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Resolve(tt.file, env(tt.env), tt.flagModel, tt.flagURL)
+			got, err := Resolve(tt.file, "config.json", tt.apiKey, tt.flags)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if got != tt.want {
 				t.Errorf("Resolve() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveRejectsBadValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		file  File
+		flags Flags
+		want  string
+	}{
+		{"file effort", File{ReasoningEffort: "extreme"}, Flags{}, `reasoning_effort in cfg.json: "extreme" is not one of none, minimal, low, medium, high, xhigh, max`},
+		{"flag effort", File{}, Flags{ReasoningEffort: "extreme"}, `--reasoning-effort: "extreme" is not one of`},
+		{"default is not valid in the file", File{ReasoningEffort: "default"}, Flags{}, `"default" is not one of`},
+		{"file max_turns", File{MaxTurns: -1}, Flags{}, "max_turns in cfg.json must be positive"},
+		{"flag max-turns", File{}, Flags{MaxTurns: -2}, "--max-turns must be positive"},
+		{"context window", File{ContextWindow: -5}, Flags{}, "context_window in cfg.json must not be negative"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Resolve(tt.file, "cfg.json", "", tt.flags)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("err = %v, want it to contain %q", err, tt.want)
 			}
 		})
 	}
