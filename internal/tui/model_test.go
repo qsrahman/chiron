@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"image/color"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -465,6 +466,32 @@ func TestThePlaceholderIsNeverCutOff(t *testing.T) {
 		view := ansi.Strip(sized(&fakeAgent{}, width, 24).View().Content)
 		if !strings.Contains(view, placeholder) && !strings.Contains(view, placeholderShort) {
 			t.Fatalf("width %d: neither form of the hint is on screen:\n%s", width, view)
+		}
+	}
+}
+
+// In a narrow terminal the header keeps the name of the program and the model, and gives up the servers, then the share
+// of the window, then the token count, whole, before it cuts anything in the middle.
+func TestTheHeaderKeepsTheNameAndTheModelAtEveryWidth(t *testing.T) {
+	for width := 40; width <= 130; width++ {
+		m := sized(&fakeAgent{}, width, 24)
+		m.info.ContextWindow = 100000
+		m.status = "mcp 2/3"
+		m.contextTokens = 6400
+
+		header := strings.TrimRight(ansi.Strip(strings.Split(m.headerView(), "\n")[0]), " ")
+
+		if !strings.HasPrefix(strings.TrimSpace(header), "desk-agent") || !strings.Contains(header, "test-model") {
+			t.Fatalf("width %d: the header lost the name or the model: %q", width, header)
+		}
+		if ansi.StringWidth(header) > m.contentWidth() {
+			t.Fatalf("width %d: the header is %d cells wide, want at most %d: %q", width, ansi.StringWidth(header), m.contentWidth(), header)
+		}
+		if strings.Contains(header, "tokens") && !regexp.MustCompile(`\d+(\.\d+)?k tokens( \(\d+%\))?$`).MatchString(header) {
+			t.Fatalf("width %d: the token count is cut off: %q", width, header)
+		}
+		if strings.Contains(header, "mcp") && !strings.Contains(header, "mcp 2/3 · ") {
+			t.Fatalf("width %d: the servers are cut off: %q", width, header)
 		}
 	}
 }

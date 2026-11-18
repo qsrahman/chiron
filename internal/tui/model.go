@@ -469,7 +469,13 @@ func (m *Model) layout() {
 	inputHeight := m.input.Height() + 2 // plus the box border
 	m.help.SetWidth(width - 1)          // the bar drops its last hints instead of overflowing
 	m.viewport.SetWidth(width)
+	// A window at the bottom of the transcript stays there when its height changes (the suggestion list opens and
+	// closes, the queue grows, the terminal is resized): otherwise the next output lands below the fold.
+	atBottom := m.viewport.AtBottom()
 	m.viewport.SetHeight(max(1, m.height-headerHeight-inputHeight-helpHeight-m.suggestionHeight()-m.queueHeight()))
+	if atBottom {
+		m.viewport.GotoBottom()
+	}
 }
 
 // rerender re-styles every entry after a resize or a theme change.

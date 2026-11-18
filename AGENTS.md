@@ -36,6 +36,20 @@ default config file and the environment, like the CLI:
 go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
 ```
 
+## Live end-to-end check
+
+`e2e/run.sh` runs the real binary in a pseudo-terminal and reads the screen through a terminal emulator (pyte, in a
+venv it creates under `e2e/.venv`). Nothing is mocked: the model is the one in your config (or
+`DESK_AGENT_LIVE_BASE_URL` and `DESK_AGENT_LIVE_MODEL`), the MCP server is the test binary of `internal/mcp` run as a
+real stdio process. It costs a few dozen model calls and takes a few minutes; `-k name` runs the scenarios whose name
+contains `name`. It is never part of `go test`. Run it after a change to the UI, the turn loop or MCP, because the
+unit tests look at the model's state and the entries, not at the screen (a command's output that was never refreshed
+onto the screen passed every unit test and was only seen here). When a scenario fails, decide first whether the
+harness or the program is wrong: the emulator must implement every sequence the renderer uses (it needed scroll up
+and down added), and the model is fast, so a prompt that must still be running when the next key is typed has to be
+a slow one (an essay, not a short count). Invariants checked after every turn: nothing in the last column, no stale
+text from a redraw, no leftover stand-in character, no banner.
+
 ## Conventions
 
 - **Do not hand-roll.** Before writing a utility, check `openai-go`, `modelcontextprotocol/go-sdk`,

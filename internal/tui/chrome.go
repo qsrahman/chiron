@@ -23,36 +23,52 @@ const (
 func (m *Model) headerView() string {
 	width := m.contentWidth()
 
-	left := m.sty.brand.Render("desk-agent")
+	brand := m.sty.brand.Render("desk-agent")
+	where := "" // the directory and the branch, which give way before the name does
 	if dir := shortenHome(m.info.WorkDir); dir != "" {
-		left += "  " + m.sty.meta.Render(dir)
+		where += "  " + m.sty.meta.Render(dir)
 	}
 	if m.info.Branch != "" {
-		left += " " + m.sty.toolMeta.Render("on "+m.info.Branch)
+		where += " " + m.sty.toolMeta.Render("on "+m.info.Branch)
 	}
 
-	right := m.sty.meta.Render(sanitize(m.agent.Settings().Model)) + m.sty.toolMeta.Render(m.usageText())
+	// In a narrow terminal the right side gives up what matters least, in this order: the servers, the share of the
+	// context window, the token count. The name of the program and the model stay.
+	model := m.sty.meta.Render(sanitize(m.agent.Settings().Model))
+	status := ""
 	switch {
 	case m.starting:
-		right = m.sty.toolMeta.Render("connecting… · ") + right
+		status = m.sty.toolMeta.Render("connecting… · ")
 	case m.status != "":
-		right = m.sty.toolMeta.Render(m.status+" · ") + right
+		status = m.sty.toolMeta.Render(m.status + " · ")
 	}
-
-	// The left side gives way first when the terminal is narrow.
-	right = ansi.Truncate(right, width, "…")
-	left = ansi.Truncate(left, max(0, width-lipgloss.Width(right)-2), "…")
+	candidates := []string{
+		status + model + m.sty.toolMeta.Render(m.usageText(true)),
+		model + m.sty.toolMeta.Render(m.usageText(true)),
+		model + m.sty.toolMeta.Render(m.usageText(false)),
+		model,
+	}
+	room := width - lipgloss.Width(brand) - 2
+	right := candidates[len(candidates)-1]
+	for _, c := range candidates {
+		if lipgloss.Width(c) <= room {
+			right = c
+			break
+		}
+	}
+	right = ansi.Truncate(right, max(0, room), "…")
+	left := brand + ansi.Truncate(where, max(0, width-lipgloss.Width(right)-2-lipgloss.Width(brand)), "…")
 	gap := strings.Repeat(" ", max(1, width-lipgloss.Width(left)-lipgloss.Width(right)))
 	return left + gap + right + "\n" + m.sty.rule.Render(strings.Repeat("─", width))
 }
 
-// usageText shows how much context the conversation uses, with a percentage when the window is known.
-func (m *Model) usageText() string {
+// usageText shows how much context the conversation uses, with a percentage when the window is known and asked for.
+func (m *Model) usageText(percent bool) string {
 	if m.contextTokens == 0 {
 		return ""
 	}
 	text := " · " + formatTokens(m.contextTokens) + " tokens"
-	if m.info.ContextWindow > 0 {
+	if percent && m.info.ContextWindow > 0 {
 		text += fmt.Sprintf(" (%d%%)", m.contextTokens*100/int64(m.info.ContextWindow))
 	}
 	return text

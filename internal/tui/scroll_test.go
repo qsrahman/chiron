@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // scrollable returns a model whose transcript is longer than the window, scrolled to the bottom.
@@ -50,6 +51,7 @@ func TestUpAndDownScrollTheTranscriptOneLine(t *testing.T) {
 func TestUpAndDownBelongToTheInputWhenThereIsText(t *testing.T) {
 	m := scrollable(t)
 	m.input.SetValue("first line\nsecond line")
+	m.layout() // the input has two rows now, and the window is shorter
 	bottom := m.viewport.YOffset()
 
 	m, _ = update(m, up)
@@ -89,6 +91,7 @@ func TestScrollingKeepsTheSelectedCard(t *testing.T) {
 func TestTheSuggestionListKeepsUpAndDown(t *testing.T) {
 	m := scrollable(t)
 	m.input.SetValue("/")
+	m.layout() // the list is open and the window has its shorter height
 	bottom := m.viewport.YOffset()
 
 	m, _ = update(m, down)
@@ -168,5 +171,38 @@ func TestClicksAndMovementDoNothing(t *testing.T) {
 func TestTheViewAsksTheTerminalForTheWheel(t *testing.T) {
 	if got := newTestModel(&fakeAgent{}).View().MouseMode; got != tea.MouseModeCellMotion {
 		t.Errorf("mouse mode = %v, want the wheel to be reported", got)
+	}
+}
+
+// A window at the bottom stays at the bottom when its height changes, so that what a command says next is in view. (The
+// suggestion list shortens the window while a command is typed; with the position lost, the output of the command
+// ended up below the fold.)
+func TestTheTranscriptKeepsFollowingAcrossAHeightChange(t *testing.T) {
+	m := scrollable(t)
+
+	m, _ = update(m, tea.KeyPressMsg{Code: '/', Text: "/"}) // the suggestion list opens and the window gets shorter
+	if !m.viewport.AtBottom() {
+		t.Fatal("the window left the bottom when the suggestion list opened")
+	}
+	m, _ = typeAndEnter(t, m, "/help")
+
+	if !m.viewport.AtBottom() || m.linesBelow() != 0 {
+		t.Errorf("after the command the window is %d lines above the bottom", m.linesBelow())
+	}
+	if view := ansi.Strip(m.View().Content); !strings.Contains(view, "mouse wheel") {
+		t.Errorf("the last line of the output is not on screen:\n%s", view)
+	}
+}
+
+func TestAWindowThatWasScrolledUpStaysWhereItWasWhenItsHeightChanges(t *testing.T) {
+	m := scrollable(t)
+	m, _ = update(m, up)
+	m, _ = update(m, up)
+	at := m.viewport.YOffset()
+
+	m, _ = update(m, tea.KeyPressMsg{Code: '/', Text: "/"})
+
+	if m.viewport.YOffset() != at {
+		t.Errorf("the offset went from %d to %d: someone who scrolled up wants to stay there", at, m.viewport.YOffset())
 	}
 }

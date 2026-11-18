@@ -4,6 +4,22 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Added
+
+- `e2e/run.sh`: a live end-to-end check of the real binary in a pseudo-terminal, with a real model and a real stdio MCP
+  server, read through a terminal emulator. Thirteen scenarios: startup, markdown and code bands, approvals and cards,
+  the queue and cancel, every command, restart after a server dies, scrolling, resizing, quitting, multi-line input,
+  long output, a failing server, and `-p` with `--yes` and `--no-mcp`.
+
+### Fixed
+
+- A command that says something while the transcript is not refreshed: an unknown command (`/nosuch`) added its message
+  but never showed it.
+- The transcript lost its place at the bottom when the window changed height (the suggestion list opens while a
+  command is typed), so the output of the command landed below the fold. A window at the bottom now stays there.
+- In a narrow terminal the header kept the model, token count and servers and lost the name of the program. It now gives
+  up the servers, then the share of the window, then the token count, in that order, and never cuts the name.
+
 ### Changed
 
 - A margin of one column on the right as well as the left: nothing touches the last column of the terminal.

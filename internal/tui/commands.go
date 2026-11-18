@@ -78,6 +78,7 @@ func (m *Model) dispatch(line string) (tea.Cmd, bool) {
 		return nil, true
 	}
 	m.input.Reset()
+	defer m.refresh() // whatever the command said must reach the screen, an unknown one included
 	if !known {
 		m.say("Unknown command: " + word + ". Type /help to list commands.")
 		return nil, true
@@ -86,7 +87,6 @@ func (m *Model) dispatch(line string) (tea.Cmd, bool) {
 	if err != nil {
 		m.addEntry(entry{role: roleError, text: "Command error: " + err.Error()})
 	}
-	m.refresh()
 	return cmd, true
 }
 

@@ -3,3 +3,7 @@
 *.test
 *.out
 .DS_Store
+
+# live end-to-end check (e2e/run.sh)
+e2e/.venv/
+e2e/__pycache__/

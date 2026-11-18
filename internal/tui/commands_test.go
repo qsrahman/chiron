@@ -317,3 +317,21 @@ func TestEnterRunsACommandWhoseValueIsNotTypedYet(t *testing.T) {
 		t.Errorf("said %q", said(m))
 	}
 }
+
+// The entries are not the screen: what a command says must also be in the transcript the user sees. (A command that
+// said something without a refresh passed every test that looked at the entries, and showed nothing in the real UI.)
+func TestWhatACommandSaysIsInTheTranscriptOnScreen(t *testing.T) {
+	for _, line := range []string{"/nosuch", "/undo", "/retry", "/model", "/model other", "/effort", "/effort bogus", "/context", "/tools", "/servers", "/reset", "/help"} {
+		t.Run(line, func(t *testing.T) {
+			m := sized(&fakeAgent{}, 100, 40)
+
+			m, _ = typeAndEnter(t, m, line)
+
+			last := ansi.Strip(lastEntry(m).rendered)
+			shown := ansi.Strip(m.viewport.GetContent())
+			if first := strings.Fields(last)[0]; !strings.Contains(shown, first) || !strings.Contains(shown, strings.TrimSpace(strings.Split(last, "\n")[0])) {
+				t.Errorf("the transcript on screen does not show what %s said (%q):\n%s", line, last, shown)
+			}
+		})
+	}
+}
