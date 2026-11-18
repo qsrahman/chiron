@@ -10,9 +10,7 @@ internal/config/    config file, env and flag precedence
 internal/agent/     loop, events, history, system prompt (no UI imports)
 internal/tools/     Tool interface, MustNew, Registry (built-in tools are added from Phase 5)
 internal/tui/       Bubble Tea chat UI (model, theme, layout, cards, chrome; golden tests in testdata/)
-internal/tools/     Tool interface, registry, built-in tools
-internal/mcp/       MCP servers adapted to tools.Tool
-internal/tui/       Bubble Tea model / update / view
+internal/mcp/       MCP servers adapted to tools.Tool (Phase 4b)
 ```
 
 Packages are created in the phase that needs them; do not add empty ones.
@@ -83,6 +81,9 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
   satisfies `errors.Is(err, context.Canceled)`.
 - **Tests use no network.** Point the SDK at an `httptest` server with `option.WithBaseURL` and scripted SSE.
   Test the TUI through `Update` with synthetic messages.
+- **Prompt changes are tested on real models.** Reading a prompt tells you little: tool language in a no-tools prompt
+  made some models type calls as text or answer nothing. Compare old and new on scenarios with a pass/fail check each,
+  several runs, on the models in use, and pin the sentences the code depends on with tests.
 - **Comments explain why**, not what. No line-by-line commentary.
 - Config uses `encoding/json`, `os.ExpandEnv` (for `${VAR}` in string values) and the standard `flag` package
   only. Never print `api_key` or MCP `headers`/`env` values in logs or errors.
@@ -114,7 +115,8 @@ Priorities, in order: simple and easy to read, then easy to extend, then efficie
 ## Workflow for every change
 
 1. Write or update tests first when the behaviour is observable.
-2. Implement, then run build, vet and test.
+2. Implement, then run build, vet and test. For a behaviour change, also break the code on purpose and see the
+   test fail (a mutation check): a test that cannot fail proves nothing.
 3. Review and update `PLAN.md`, `README.md`, `AGENTS.md` and `CHANGELOG.md` if the change affects features,
    architecture or conventions.
 4. Commit with a Conventional Commit message (`feat(tools): ...`, `fix(agent): ...`, `docs: ...`). No co-author

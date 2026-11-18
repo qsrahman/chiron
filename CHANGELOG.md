@@ -6,6 +6,17 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Changed (plan)
 
+- Studied muagent (a Python agent) and recorded the findings in `PLAN.md` sections 4.7 and 9.3. Added Phase 3.7
+  (Robustness, tag v0.3.3): keep stopped turns with a note, response classification and retries, stream retry,
+  error hints, central output cap, sanitising, two prompts, Ctrl-C/Ctrl-D protection, strict config (unknown keys
+  rejected, only `OPENAI_API_KEY` from the environment, new `reasoning_effort`, `max_turns` and `streaming`
+  settings) and a scenario-driven fake API. Phase 9 now uses client-side compaction instead of `responses.compact`
+  and prunes the tool work of older turns.
+- `AGENTS.md`: removed duplicate stale lines from the layout list; added the mutation-check and prompt-testing
+  conventions.
+
+### Changed (plan)
+
 - MCP design revised after reading muagent's MCP client: the server's own read-only hint is ignored (only
   `autoApprove` skips a prompt, so MCP calls run one at a time), strict `${VAR}` expansion, URL and redirect checks,
   private stderr logs, unique stable tool names, restart after a lost connection (3 per session), a `tools`

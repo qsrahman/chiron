@@ -1,7 +1,7 @@
 # desk-agent — Product Requirements Document
 
 Status: living document. Update it whenever a change affects scope, architecture or phases.
-Last reviewed: 2026-11-17 (Phase 4 design, MCP).
+Last reviewed: 2026-11-18 (muagent study).
 
 ## 1. Goal
 
@@ -37,8 +37,8 @@ config, glob/grep tools (the model uses `rg`/`find` through `shell`).
 | Tool schemas | Generated from Go structs with `google/jsonschema-go` (`jsonschema.For[T]`) | Already a dependency of the MCP SDK; nothing hand-written. |
 | MCP | Official `github.com/modelcontextprotocol/go-sdk`; stdio servers (`CommandTransport`) and remote HTTP servers (Streamable HTTP client transport) | Official SDK; tools adapt to our `Tool` interface. Both transports are needed by the config. |
 | Config | One file: `$XDG_CONFIG_HOME/desk-agent/config.json`, else `~/.config/desk-agent/config.json`. No per-project config. | Requested. `os.UserConfigDir` would give `~/Library/Application Support` on macOS, so the path is built explicitly. Precedence: flags > env vars > file. |
-| Model | `gpt-5.4-mini` is the intended default; configurable via flag, env `DESK_AGENT_MODEL` or config. | Requested. Model IDs change often, so it is never hard-coded in logic. Confirm the ID against the account when Phase 1 first hits the real API. |
-| API key / endpoint | `api_key` and `base_url` in the config, or `OPENAI_API_KEY` / `OPENAI_BASE_URL` env vars; `--base-url` flag. There is deliberately no `--api-key` flag (shell history, process lists). The resolved values are passed to the client with `option.WithAPIKey` / `option.WithBaseURL`; an API key is only required when `base_url` is unset. | Lets the agent target OpenAI-compatible servers (for example a local one at `http://localhost:11434/v1`). `base_url` is unset by default, which means the OpenAI API. |
+| Model | `gpt-5.4-mini` is the intended default; configurable via `--model` or the config file (the `DESK_AGENT_MODEL` variable is removed in Phase 3.7). | Requested. Model IDs change often, so it is never hard-coded in logic. Confirm the ID against the account when Phase 1 first hits the real API. |
+| API key / endpoint | `api_key` and `base_url` in the config, or the `OPENAI_API_KEY` env var (the `OPENAI_BASE_URL` variable is removed in Phase 3.7); `--base-url` flag. There is deliberately no `--api-key` flag (shell history, process lists). The resolved values are passed to the client with `option.WithAPIKey` / `option.WithBaseURL`; an API key is only required when `base_url` is unset. | Lets the agent target OpenAI-compatible servers (for example a local one at `http://localhost:11434/v1`). `base_url` is unset by default, which means the OpenAI API. |
 | Secrets in config | Every string value goes through `os.ExpandEnv`, so `"${NAME}"` pulls from the environment. The loader warns when the file is readable by group or others. | Keep keys out of the file where possible; no custom expansion code. |
 | Commits | Conventional Commits, no co-author trailer | User preference. |
 | Versioning | Tag `v0.N.0` at the end of each phase | Keep a Changelog + SemVer. |
@@ -119,6 +119,9 @@ synthetic messages. Real-API checks are manual and documented in the README.
 
 - **Which calls ask:** every call to a tool whose `ReadOnly()` is false. Read-only tools never ask and keep running
   concurrently. Mutating calls run one at a time, so at most one prompt is open.
+- **Validate before asking:** the arguments are checked first (a JSON object with the schema's required keys). A call
+  with invalid arguments, or to an unknown tool, is answered with the error (an unknown tool with the list of
+  available ones) and the user is never asked about it.
 - **Event:** `ApprovalRequested{CallID, Tool, Summary, Details, GrantKey, Reply chan<- Decision}`. `Summary` is one
   line ("Run a shell command"); `Details` is what is about to happen (a command, a diff, MCP parameters). The reply
   channel is buffered so the UI never blocks sending the answer.
@@ -187,6 +190,8 @@ Informed by a read of muagent's `mcp_client.py` and `mcp_hub.py` (Python; see se
   cancelling the turn cancels the request.
 - **Shutdown:** servers close in parallel (closing one can take seconds), including servers that failed to start.
 - **Cards:** MCP calls show as `server → tool`, not the mangled name.
+- **Built-in clash:** a built-in tool with the same name as an MCP tool is kept and the MCP tool is left out with a
+  notice (a built-in name containing `__` could clash).
 - **Status:** a line per server at startup (connected with N tools, hidden count, or the error, never a secret) and a
   count in the header. A `/servers` and `/reconnect` command arrive with the slash commands in Phase 9; a reconnect
   would apply between turns so a turn's tools never change under it.
@@ -197,6 +202,59 @@ Informed by a read of muagent's `mcp_client.py` and `mcp_hub.py` (Python; see se
 - **Tests:** `mcp.NewInMemoryTransports()` with a test server; the test binary re-run as a stdio server (including one
   that exits, for the restart rule); an `httptest` server with the SDK's streamable handler to check that headers
   arrive, that a cross-origin redirect does not carry them, and that no secret appears in errors or logs.
+
+### 4.7 Turn semantics and context (Phases 3.7 and 9)
+
+From a read of muagent's `agent.py`, `context.py`, `compaction.py` and `TURN.md`.
+
+**What must stay true** (to be pinned by tests and listed in AGENTS.md when 3.7 lands):
+
+- The history changes in a few places only: save a turn, undo (used by retry), reset, compact. A turn in progress
+  works on a copy.
+- Every function call has its output before anything is sent or saved, and an output never outlives its call; calls
+  and outputs are dropped together.
+- User and assistant messages alternate in the saved history; a turn is saved with a reply or a closing note, or not
+  at all.
+- The newest user message and the summary are never trimmed away.
+- The agent prints nothing and imports no UI; the TUI shows what events say.
+
+**How a turn can end:**
+
+| Ending | Saved? | You see |
+|---|---|---|
+| the model answers | whole turn | the reply |
+| cut off after some text (`incomplete`) | the partial reply | the text, then the reason |
+| failed, refused, no text, other status | nothing, unless a round already ran | the matching message |
+| empty reply | retried once, with a notice | notice, then the reply |
+| stream breaks (no final event, no `error` event, or connection lost) | retried up to twice if nothing ran | notice, streamed text cleared, reply |
+| stream ends with an `error` event | as a failure (the same request would get the same answer) | the server's reason |
+| step cap, loop stop, idle timeout | whole turn with a closing note | the message |
+| context budget exceeded after shortening | whole turn with results dropped, closing note | the message |
+| cancelled (Ctrl-C) | after a completed round: whole turn, open calls answered as interrupted, closing note; before: nothing | `Cancelled` |
+| API or network failure | after a completed round: whole turn with a note; before: nothing | the described error |
+
+**Context budget and compaction (Phase 9):** a budget `max_context_tokens` (default 65,536) counts the whole request:
+instructions, tool definitions and history, not the reply. It is meant to sit well below the model's real window.
+Tokens are estimated at about 4 bytes of UTF-8 each (the opaque encrypted reasoning content left out) and corrected
+with the server's `usage.input_tokens` when present.
+
+- **In a turn,** after each round with tools, if the next request would pass the budget: shorten tool results of earlier
+  rounds, oldest first (a result over 8,000 characters keeps its first 4,000 and last 1,000 with a note that says
+  how much is hidden and that the tool can be called again), then replace what is still too much by a placeholder;
+  then shorten the latest round's results; only if even that does not fit, keep the turn with a note and stop.
+- **Before a turn,** if the next request would pass `compact_at` (0.75) of the budget, summarise the oldest turns with
+  the chat model, keeping about `keep_recent_tokens` (15,000, at most half the trigger) of the newest verbatim, cutting
+  at a turn start so a call stays with its output. The turns go to the model as labelled text, not as a conversation
+  to continue, with no tools. The answer has fixed headings (goal, constraints, progress, decisions, requests in
+  order, exact references, next steps); an `<analysis>` scratchpad is dropped and a missing `<summary>` tag forgiven,
+  since not every model writes it. The previous summary is an input, so there is always one summary. A summary that is
+  empty, has no headings, is longer than what it replaces, or hit the output cap is refused, and the history stays
+  whole. After 3 failures in a row summaries pause until `/compact` works.
+- **The summary** goes first in every request as a user message that says it is notes about what happened and not
+  instructions (it may repeat text from a web page that tried to give orders). It is not an item of the history, so
+  `/undo` and `/retry` keep working on later turns.
+- **A server that refuses a request as too long** (HTTP 400 or 413 with `context_length_exceeded` or similar wording)
+  gets one retry: summarise before the first round, otherwise shorten earlier results.
 
 ## 5. Tools (v1)
 
@@ -237,12 +295,21 @@ Informed by a read of muagent's `mcp_client.py` and `mcp_hub.py` (Python; see se
 }
 ```
 
-- Parsed with `encoding/json`; unknown keys are ignored. Every string value is expanded with `os.ExpandEnv`.
-- Precedence: flags (`--model`, `--base-url`) override env vars (`DESK_AGENT_MODEL`, `OPENAI_BASE_URL`,
-  `OPENAI_API_KEY`), which override the file, which overrides the built-in default model. `base_url` and
-  `api_key` may be omitted. `mcpServers` is parsed from Phase 4 on; until then it is ignored.
+- Parsed with `encoding/json`. Every string value is expanded with `os.ExpandEnv`. **From Phase 3.7:** unknown keys
+  are an error that names the key and the file (a typo like `max_turn` must not be ignored silently); the only
+  environment variable read is `OPENAI_API_KEY` (no variable for the base URL or the model, so a project's `.envrc`
+  cannot redirect the key and the prompts), and the explicit base URL option also stops the SDK from reading
+  `OPENAI_BASE_URL` itself (to be verified).
+- Precedence (until Phase 3.7): flags (`--model`, `--base-url`) override env vars (`DESK_AGENT_MODEL`,
+  `OPENAI_BASE_URL`, `OPENAI_API_KEY`), which override the file, which overrides the built-in default model. From
+  Phase 3.7: flags, then `OPENAI_API_KEY` for the key only, then the file, then the defaults. `base_url` and `api_key`
+  may be omitted. `mcpServers` is parsed from Phase 4b on; until then it is ignored.
+- New settings in Phase 3.7, each with a flag: `reasoning_effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`;
+  unset sends none, because non-reasoning models reject it; the flag also takes `default`), `max_turns` (model calls
+  per prompt, default 25, replaces the fixed constant) and `streaming` (default true; false makes one non-streaming
+  request, for servers with broken SSE).
 - Each `mcpServers` entry may list `"autoApprove": ["tool", ...]`: tools of that server that never prompt (names as
-  the server reports them) and never prompt. Everything else asks: the server's own read-only hint is ignored (section 4.6).
+  the server reports them). Everything else asks: the server's own read-only hint is ignored (section 4.6).
 - Each `mcpServers` entry is either a **stdio server** (`command`, `args`, `env`) or a **remote HTTP server**
   (`url`, `headers`). An entry with both, or with neither, is a config error. `enabled` defaults to true when
   omitted; disabled servers are not started.
@@ -262,13 +329,14 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 3 (done, v0.3.0) | Tool loop only: `Tool` interface and registry, function-call handling, concurrent read-only / serial mutating dispatch, `function_call_output` replay, tool cards in the TUI. Exercised with fake tools defined in tests; no real tools ship. | Three slow fake read-only calls finish in about 1x, not 3x, the time of one; mutating fakes run one at a time in model order; a tool error reaches the model as output and the loop continues. |
 | 3.5 (done, v0.3.1) | Quick wins from the Crush study: a real system prompt (embedded template with an `<env>` block: working directory, platform, date, git state; loads `AGENTS.md`/`CLAUDE.md` from the working directory), loop detection (the same tool call, arguments and output repeated more than 5 times in the last 10 steps stops the turn), a stream idle timeout, and token/context usage read from `response.completed` and shown in the status line | Prompt renders with the env block and project file; a scripted repeating tool call is stopped before the step limit; a stalled stream fails with a clear error; usage appears in the status line. Tagged v0.3.1. |
 | 3.6 (done, v0.3.2) | UI foundation (from the Crush UI study). `internal/tui/theme.go`: a semantic palette (primary, info, success, warning, danger, subtle and muted text, band background; diff colours are added in Phase 5 when diffs exist) with dark and light variants chosen from the terminal background; bands and diff colours are derived from that background with lipgloss `Darken`/`Lighten`/`Alpha`, and the terminal background is never painted. Layout: 1-column margin, text width capped at 120, a 2-column gutter shared by every item, a 1-row gap between items, a left bar in the primary colour on user messages. A one-row header (brand, working directory, git branch; model and context % on the right). Tool cards: arguments parsed into a main parameter plus `key=value` (never raw JSON), state-coloured icon (spinner via `bubbles/spinner` while running, then `✓` / `×`, muted when cancelled), elapsed time for slow calls, output on a background band with a `… (N more lines)` hint, an `ERROR` badge for failures, collapsed to 5 lines; syntax highlighting with chroma (already in the module graph). Input: prompt on the first line only, dynamic height (textarea `DynamicHeight`), focus and busy styles. Bottom help bar built with `bubbles/help` and `key.Binding` (bright key, dim description). Glamour style derived from the theme with no document margin. Welcome screen (name, version, directory, model, hint). Golden-file tests of the main views. No sidebar. | The golden views (welcome, conversation, each card state, error, narrow and wide widths, dark and light themes) match; no raw JSON in card headers; every item shares one gutter; existing behaviour tests still pass. Tagged v0.3.2. |
+| 3.7 | Robustness (from the muagent study, section 9.3 and 4.7). **Agent:** a `history` type (the history changes in few places; earlier turns keep only their messages, so reasoning, calls and outputs of every turn but the newest are removed, calls and outputs together); after at least one completed round a cancel, failure, step cap, loop stop, idle timeout or budget stop keeps the turn, with every unanswered call answered `The user interrupted this call: it did not finish, or did not run.` and a closing note `[Stopped after N model calls: reason]` (a failure in the first round saves nothing); response classification (incomplete keeps its partial text, failed, other status, refused, empty reply retried once with a notice); retry of a broken stream up to twice (no final event and no `error` event, or the connection lost after it began; a `Retry` event makes the TUI clear the streamed text); use of `output_item.done` items when `response.completed` has no output; error hints (401, 403, 404, 429, context overflow); unknown tool answered with the list of available tools; at most 8 read-only calls at once; a central 20 KiB cap on every tool result with a note. **Prompt:** one prompt with tools and one without (no tool language, which made some models type calls as text or answer nothing), the model told the user sees only a short preview of results, stable text first and the volatile environment last for caching, statements about denial and previews pinned by tests. **TUI:** everything from the model, tools and servers is sanitised before display (control characters except newline and tab, escape sequences, carriage returns, bidi overrides and isolates, tag characters); Ctrl-C clears typed text, asks for a second press on an empty input, and Ctrl-D needs two once there is a conversation. **Config:** unknown keys rejected, `DESK_AGENT_MODEL` and `OPENAI_BASE_URL` removed, `reasoning_effort`, `max_turns` and `streaming` added. **Tests:** a scenario-driven fake API (broken stream, error event, overflow 400, empty reply, incomplete, refusal), one helper that isolates config and environment, and a mutation check (break the code, see the test fail) for each behaviour. | Each ending in the table of section 4.7 behaves as specified; an interrupted turn keeps its tool work with a note; a broken stream is retried and the partial text cleared; an empty reply is retried once; escape sequences and bidi overrides never reach the screen; a typo in config.json is an error naming the key; the golden screens are unchanged except where the new behaviour shows. Tagged v0.3.3. |
 | 4a | Approvals and TUI. Agent: a mutating call emits `ApprovalRequested` and waits for the answer or a cancel; session grants; denial text for the model (section 4.5). TUI: centered approval modal (starts on Deny), queued prompts (shown above the input, sent after the turn; Ctrl-C cancels the turn and drops the queue), expandable tool cards (Tab / Shift+Tab select a card when the input is empty, Enter or Space toggle 5 lines versus full output, Esc returns to typing). Exercised with fake mutating tools in tests; no real mutating tool exists until 4b. | Allow, Allow for session and Deny each behave as specified; a denied call is reported to the model and not retried; cancelling closes an open prompt; session grants are scoped by grant key; queued prompts run in order and are dropped on Ctrl-C; cards expand and collapse; golden tests for the modal, the queue and an expanded card. Tagged v0.4.0. |
 | 4b | MCP client (section 4.6): `mcpServers` config (`command`/`args`/`env` or `url`/`headers`, `enabled`, `autoApprove`, `tools`, `instructions`), strict `${VAR}` expansion, URL and redirect checks, parallel background connect with a shared deadline, restart after a lost connection (3 per session), tool adapter with unique names, `server → tool` cards, startup status, private stderr logs. | A real stdio server and an httptest HTTP server both work, including headers; an unapproved MCP call is refused and an `autoApprove`d one is not; a cross-origin redirect does not carry headers; a killed server is restarted by the next call (at most 3 times); a failing or slow server is reported and does not stop the agent; golden test for the startup status. Tagged v0.4.1. |
 | 5 | `read_file` (line-numbered, `offset`/`limit`, default 200 lines, lines cut at 2000 characters), `list_dir`, `write_file`, `edit_file`, working-directory confinement. `edit_file` and `write_file` over an existing file require that it was read in this session and fail if it changed on disk since; a non-unique match returns a message asking for more context or `replace_all`. Edits show a unified diff in the approval prompt (`go-udiff`, already in the module graph). Tool descriptions live in embedded `.md` files. | Reads work and run in parallel; mutations go through the approval prompt; an edit without a prior read, after an outside change, or with an ambiguous match fails cleanly; paths outside the working tree are rejected. |
 | 6 | `shell`: every command asks for approval (no read-only allowlist in v1). Output is capped; the truncation marker names a file holding the full output. No background jobs in v1. | A hung command is killed on cancel and the loop recovers; long output is truncated with a pointer to the full file. |
 | 7 | `todo` (states pending/in_progress/completed, at most one in_progress, shown in the TUI), `ask_user` with typed questions (`yes_no`, `single_choice`, `multi_choice`, `free_text`; at most 5 choices; a description is required) | The model can pause, ask and resume; an invalid question is rejected with a clear error. |
 | 8 | `web_fetch` (web search is decided later; see section 8) | Redirects, size limits and non-HTML handled. |
-| 9 | Session save/resume (JSON files), compaction via `responses.compact` triggered when the context nears the model window (using the usage tracked since Phase 3.5), slash commands | A resumed session continues; a long one compacts. |
+| 9 | Sessions and long conversations. Session save/resume (JSON files in a private state directory: `0700`, files `0600`); prompt history (Up/Down recall, persisted, Ctrl-R search), editing the prompt in `$EDITOR` (`tea.ExecProcess`) and Ctrl-Z suspend; **client-side compaction** (section 4.7, works on any compatible server); slash commands with a description popup, unknown `/word` reported instead of being sent: `/help`, `/retry`, `/undo`, `/reset`, `/clear`, `/tools` (run without asking / allowed this session / ask first), `/servers`, `/reconnect`, `/compact [focus]`, `/summary`, `/context`, `/model`, `/effort`, `/exit`. Settings are read where used so `/model` and `/effort` take effect at once. | A resumed session continues; a long conversation is summarised and still answers questions about the early turns; `/context` shows instructions, tool definitions and history separately; `/retry` and `/undo` leave a valid history. |
 
 ## 8. Open items
 
@@ -343,3 +411,19 @@ a `tools` allow-list with a typo guard, and opt-in server instructions. Decided 
 inherits the full environment (muagent passes only a short allow-list), and a `readOnly` flag per server was not
 chosen (only per-tool `autoApprove`). Not needed in Go: the background thread and event-loop machinery. Not adopted
 now: per-server timeouts, image pass-through, a live tool list.
+
+### 9.3 Lessons from muagent as a whole (2026-11-17)
+
+Read: its README, `CLAUDE.md`, `TOOLS.md`, `TURN.md`, `agent.py`, `responses.py`, `errors.py`, `tools.py`, `console.py`,
+`compaction.py`, `context.py`, `commands.py`, `config.py`, `repl.py`, `prompts.py` and the fake API's header. Adopted
+(Phase 3.7 unless noted): keeping stopped turns with a note, response classification and the empty-reply retry,
+stream retry with a cleared partial text, the output fallback for servers that omit it, error hints, validation
+before approval (4a), the 8-call cap and the central output cap, sanitising everything displayed, two prompts and
+prompt statements pinned by tests, Ctrl-C and Ctrl-D that protect an in-memory conversation, rejecting unknown
+config keys, a single environment variable, `reasoning_effort`, `max_turns` and `streaming`, a scenario-driven fake
+API, mutation checks, and pruning the tool work of older turns. Phase 9 takes its client-side compaction, slash
+commands, history and `$EDITOR` ideas. To do after 4a: a `TURN.md` walkthrough of one turn for this project.
+Decided against copying: its one-line-per-call display with no result (our cards show a preview) and its Python
+thread machinery. Also noted: its tests show prompt wording must be checked on real models (tool language in a no-tools
+prompt made gpt-5.5 type calls as text and gemma4 return nothing, and a rule against typing calls made gpt-5.5 do
+it more often), so prompt changes get pass/fail scenarios run several times on the models in use.
