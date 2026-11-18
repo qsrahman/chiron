@@ -22,8 +22,6 @@ func writeConfig(t *testing.T, content string, perm os.FileMode) string {
 	return path
 }
 
-func ptr[T any](v T) *T { return &v }
-
 func TestLoad(t *testing.T) {
 	t.Setenv("TEST_KEY", "sk-from-env")
 	path := writeConfig(t, `{
@@ -122,7 +120,7 @@ func TestLoadWarnsAboutReadableLiteralKey(t *testing.T) {
 }
 
 func TestResolvePrecedence(t *testing.T) {
-	file := File{Model: "file-model", BaseURL: "file-url", APIKey: "file-key", ReasoningEffort: "low", MaxTurns: 7, Streaming: ptr(false)}
+	file := File{Model: "file-model", BaseURL: "file-url", APIKey: "file-key", ReasoningEffort: "low", MaxTurns: 7, Streaming: new(false)}
 	tests := []struct {
 		name   string
 		file   File
@@ -135,7 +133,7 @@ func TestResolvePrecedence(t *testing.T) {
 			Config{Model: "file-model", BaseURL: "file-url", APIKey: "file-key", ReasoningEffort: "low", MaxTurns: 7}},
 		{"the key from the environment wins over the file", file, "env-key", Flags{},
 			Config{Model: "file-model", BaseURL: "file-url", APIKey: "env-key", ReasoningEffort: "low", MaxTurns: 7}},
-		{"flags win over the file", file, "", Flags{Model: "flag-model", BaseURL: "flag-url", ReasoningEffort: "high", MaxTurns: 3, Streaming: ptr(true)},
+		{"flags win over the file", file, "", Flags{Model: "flag-model", BaseURL: "flag-url", ReasoningEffort: "high", MaxTurns: 3, Streaming: new(true)},
 			Config{Model: "flag-model", BaseURL: "flag-url", APIKey: "file-key", ReasoningEffort: "high", MaxTurns: 3, Streaming: true}},
 		{"default leaves the effort out", file, "", Flags{ReasoningEffort: "default"},
 			Config{Model: "file-model", BaseURL: "file-url", APIKey: "file-key", MaxTurns: 7}},

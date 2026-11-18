@@ -11,7 +11,7 @@ type keyMap struct {
 	eof       key.Binding
 
 	// Used while the suggestion list is open.
-	choose, complete, dismiss key.Binding
+	up, down, complete, dismiss key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -21,7 +21,8 @@ func newKeyMap() keyMap {
 		scroll:    key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("pgup/pgdn", "scroll")),
 		interrupt: key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
 		eof:       key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "quit on an empty input")),
-		choose:    key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "choose")),
+		up:        key.NewBinding(key.WithKeys("up"), key.WithHelp("↑", "previous")),
+		down:      key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "next")),
 		complete:  key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "complete")),
 		dismiss:   key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
 	}

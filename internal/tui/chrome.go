@@ -31,7 +31,7 @@ func (m *Model) headerView() string {
 		left += " " + m.sty.toolMeta.Render("on "+m.info.Branch)
 	}
 
-	right := m.sty.meta.Render(m.info.Model) + m.sty.toolMeta.Render(m.usageText())
+	right := m.sty.meta.Render(sanitize(m.agent.Settings().Model)) + m.sty.toolMeta.Render(m.usageText())
 
 	// The left side gives way first when the terminal is narrow.
 	right = ansi.Truncate(right, width, "…")
@@ -81,7 +81,7 @@ func (m *Model) welcomeView() string {
 		text.Render("An AI coding assistant for your terminal."),
 		"",
 		text.Render("Describe what you want to do, or ask about the code in this directory."),
-		m.sty.toolMeta.Width(width).Render("Enter sends a message. Ctrl+J starts a new line. Ctrl+C cancels or quits."),
+		m.sty.toolMeta.Width(width).Render("Enter sends. / lists commands. Ctrl+J: new line. Ctrl+C: cancel or quit."),
 	}, "\n"), gutter)
 }
 

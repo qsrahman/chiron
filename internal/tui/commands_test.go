@@ -13,7 +13,7 @@ import (
 )
 
 // runLine types line and presses Enter, then returns the model and its command.
-func runLine(t *testing.T, a *fakeSender, line string) (Model, tea.Cmd) {
+func runLine(t *testing.T, a *fakeAgent, line string) (Model, tea.Cmd) {
 	t.Helper()
 	return typeAndEnter(t, newTestModel(a), line)
 }
@@ -40,7 +40,7 @@ func TestCommandListIsWellFormed(t *testing.T) {
 }
 
 func TestHelpListsEveryCommandAndKey(t *testing.T) {
-	m, _ := runLine(t, &fakeSender{}, "/help")
+	m, _ := runLine(t, &fakeAgent{}, "/help")
 
 	var all string
 	for _, e := range m.entries {
@@ -72,7 +72,7 @@ func TestDispatchRules(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.line, func(t *testing.T) {
-			a := &fakeSender{}
+			a := &fakeAgent{}
 			m, _ := runLine(t, a, tt.line)
 			if got := len(a.texts) == 1; got != tt.sent {
 				t.Fatalf("sent = %v, want %v (%v)", got, tt.sent, a.texts)
@@ -85,7 +85,7 @@ func TestDispatchRules(t *testing.T) {
 }
 
 func TestCommandIsRefusedWhileATurnRuns(t *testing.T) {
-	a := &fakeSender{block: true, undoable: true}
+	a := &fakeAgent{block: true, undoable: true}
 	m, _ := typeAndEnter(t, newTestModel(a), "slow")
 
 	m, cmd := typeAndEnter(t, m, "/undo")
@@ -103,7 +103,7 @@ func TestCommandIsRefusedWhileATurnRuns(t *testing.T) {
 }
 
 func TestHandlerErrorIsShownAndTheSessionGoesOn(t *testing.T) {
-	m, _ := runLine(t, &fakeSender{}, "/effort extreme")
+	m, _ := runLine(t, &fakeAgent{}, "/effort extreme")
 
 	e := lastEntry(m)
 	if e.role != roleError || !strings.Contains(e.text, "Command error:") || !strings.Contains(e.text, "none, minimal, low, medium, high, xhigh, max, default") {
@@ -113,20 +113,20 @@ func TestHandlerErrorIsShownAndTheSessionGoesOn(t *testing.T) {
 
 func TestUndoAndRetry(t *testing.T) {
 	t.Run("undo", func(t *testing.T) {
-		m, _ := runLine(t, &fakeSender{undoable: true}, "/undo")
+		m, _ := runLine(t, &fakeAgent{undoable: true}, "/undo")
 		if said(m) != "Last exchange removed" {
 			t.Errorf("said %q", said(m))
 		}
 	})
 	t.Run("retry sends the prompt again", func(t *testing.T) {
-		a := &fakeSender{rewindPrompt: "fix the bug"}
+		a := &fakeAgent{rewindPrompt: "fix the bug"}
 		m, cmd := runLine(t, a, "/retry")
 		if len(a.texts) != 1 || a.texts[0] != "fix the bug" || m.events == nil || cmd == nil {
 			t.Errorf("sent %v, busy %v", a.texts, m.events != nil)
 		}
 	})
 	t.Run("nothing to retry", func(t *testing.T) {
-		a := &fakeSender{}
+		a := &fakeAgent{}
 		m, _ := runLine(t, a, "/retry")
 		if said(m) != "Nothing to retry" || len(a.texts) != 0 {
 			t.Errorf("said %q, sent %v", said(m), a.texts)
@@ -135,15 +135,15 @@ func TestUndoAndRetry(t *testing.T) {
 }
 
 func TestModel(t *testing.T) {
-	a := &fakeSender{settings: agent.Settings{Model: "gpt-x"}}
+	a := &fakeAgent{settings: agent.Settings{Model: "gpt-x"}}
 	m, _ := runLine(t, a, "/model")
 	if said(m) != "Model: gpt-x" {
 		t.Errorf("said %q", said(m))
 	}
 
 	m, _ = typeAndEnter(t, m, "/model Qwen3:8B-Instruct")
-	if a.settings.Model != "Qwen3:8B-Instruct" || m.info.Model != "Qwen3:8B-Instruct" {
-		t.Errorf("the name's case must be kept: agent %q, header %q", a.settings.Model, m.info.Model)
+	if a.settings.Model != "Qwen3:8B-Instruct" {
+		t.Errorf("the name's case must be kept: got %q", a.settings.Model)
 	}
 
 	m, _ = typeAndEnter(t, m, "/model two words")
@@ -153,7 +153,7 @@ func TestModel(t *testing.T) {
 }
 
 func TestEffort(t *testing.T) {
-	a := &fakeSender{}
+	a := &fakeAgent{}
 	m, _ := runLine(t, a, "/effort")
 	if said(m) != "Reasoning effort: model default" {
 		t.Errorf("said %q", said(m))
@@ -173,7 +173,7 @@ func TestEffort(t *testing.T) {
 }
 
 func TestResetAndClear(t *testing.T) {
-	a := &fakeSender{events: []agent.Event{agent.TextDelta{Text: "hi"}, agent.Done{}}}
+	a := &fakeAgent{events: []agent.Event{agent.TextDelta{Text: "hi"}, agent.Done{}}}
 	m, cmd := runLine(t, a, "hello")
 	m = pump(t, m, cmd)
 
@@ -190,7 +190,7 @@ func TestResetAndClear(t *testing.T) {
 
 func TestExitAndQuitLeaveAtOnce(t *testing.T) {
 	for _, line := range []string{"/exit", "/quit"} {
-		a := &fakeSender{conversation: true}
+		a := &fakeAgent{conversation: true}
 		m := newTestModel(a)
 		m.addEntry(entry{role: roleUser, text: "earlier"}) // a conversation would make Ctrl-C ask first
 		if _, cmd := typeAndEnter(t, m, line); !isQuit(cmd) {
@@ -200,7 +200,7 @@ func TestExitAndQuitLeaveAtOnce(t *testing.T) {
 }
 
 func TestContextRows(t *testing.T) {
-	a := &fakeSender{estimate: agent.ContextEstimate{Instructions: 1200, Tools: 3400, ToolCount: 4, History: 56789, LastInput: 61000}}
+	a := &fakeAgent{estimate: agent.ContextEstimate{Instructions: 1200, Tools: 3400, ToolCount: 4, History: 56789, LastInput: 61000}}
 	m := newTestModel(a)
 	m.info.ContextWindow = 128000
 	m, _ = typeAndEnter(t, m, "/context")
@@ -222,7 +222,7 @@ func TestSuggestionsFollowTheInput(t *testing.T) {
 		}
 		return out
 	}
-	m := newTestModel(&fakeSender{})
+	m := newTestModel(&fakeAgent{})
 
 	m.input.SetValue("hello")
 	if len(labels(m)) != 0 {
@@ -255,7 +255,7 @@ func TestSuggestionKeys(t *testing.T) {
 		next, _ := update(m, tea.KeyPressMsg{Code: code})
 		return next
 	}
-	m := newTestModel(&fakeSender{})
+	m := newTestModel(&fakeAgent{})
 	m.input.SetValue("/re")
 
 	m = press(m, tea.KeyDown)
@@ -288,7 +288,7 @@ func TestSuggestionKeys(t *testing.T) {
 }
 
 func TestListShrinksTheTranscript(t *testing.T) {
-	m := sized(&fakeSender{}, 80, 24)
+	m := sized(&fakeAgent{}, 80, 24)
 	before := m.viewport.Height()
 	m.input.SetValue("/")
 	m.layout()
@@ -298,7 +298,7 @@ func TestListShrinksTheTranscript(t *testing.T) {
 }
 
 func TestNoSuggestionsDuringATurn(t *testing.T) {
-	m, _ := typeAndEnter(t, newTestModel(&fakeSender{block: true}), "slow")
+	m, _ := typeAndEnter(t, newTestModel(&fakeAgent{block: true}), "slow")
 	m.input.SetValue("/")
 
 	if list, _ := m.suggestions(); len(list) != 0 {
@@ -309,7 +309,7 @@ func TestNoSuggestionsDuringATurn(t *testing.T) {
 
 // With nothing typed after the command, Enter runs it: the list is only showing what could follow.
 func TestEnterRunsACommandWhoseValueIsNotTypedYet(t *testing.T) {
-	m, _ := typeAndEnter(t, newTestModel(&fakeSender{}), "/effort ")
+	m, _ := typeAndEnter(t, newTestModel(&fakeAgent{}), "/effort ")
 
 	if said(m) != "Reasoning effort: model default" {
 		t.Errorf("said %q", said(m))

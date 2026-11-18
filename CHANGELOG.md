@@ -4,6 +4,18 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Fixed
+
+- Ctrl-C and Ctrl-D ask before quitting whenever a conversation is in memory: `/clear` no longer lets a quit through
+  and `/reset` no longer asks.
+- A tool result with invalid UTF-8 near its start is no longer cut to a few bytes.
+
+### Changed
+
+- The header reads the model name from the agent, so `Info.Model` is gone and `/model` has one place to update.
+- The suggestion list uses the key map (`up`, `down`, `complete`, `dismiss`) like every other binding.
+- The welcome text mentions `/` for commands.
+
 ## [0.3.4] - 2026-11-18
 
 ### Added

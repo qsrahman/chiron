@@ -49,8 +49,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&given.ReasoningEffort, "reasoning-effort", "", "reasoning effort: none, minimal, low, medium, high, xhigh, max, or default to send none")
 	flags.IntVar(&given.MaxTurns, "max-turns", 0, "most model calls for one prompt (default 25)")
 	// Two flags make a three-state setting: not given, on, off.
-	flags.BoolFunc("streaming", "stream the reply as it arrives (the default)", func(string) error { given.Streaming = ptr(true); return nil })
-	flags.BoolFunc("no-streaming", "send one request and show the whole reply at once", func(string) error { given.Streaming = ptr(false); return nil })
+	flags.BoolFunc("streaming", "stream the reply as it arrives (the default)", func(string) error { given.Streaming = new(true); return nil })
+	flags.BoolFunc("no-streaming", "send one request and show the whole reply at once", func(string) error { given.Streaming = new(false); return nil })
 
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -70,8 +70,6 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	return 0
 }
-
-func ptr[T any](v T) *T { return &v }
 
 // start builds the agent for the current directory and runs either one prompt or the chat UI.
 func start(ctx context.Context, cfg config.Config, prompt string, stdout, stderr io.Writer) error {
@@ -102,7 +100,6 @@ func start(ctx context.Context, cfg config.Config, prompt string, stdout, stderr
 		Version:       version,
 		WorkDir:       workDir,
 		Branch:        agent.GitBranch(ctx, workDir),
-		Model:         cfg.Model,
 		ContextWindow: cfg.ContextWindow,
 	})
 }

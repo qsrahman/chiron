@@ -40,8 +40,7 @@ type Info struct {
 	Version       string
 	WorkDir       string
 	Branch        string // empty outside a git repository
-	Model         string
-	ContextWindow int // tokens; 0 when unknown
+	ContextWindow int    // tokens; 0 when unknown
 }
 
 // eventMsg carries one agent event into Update; turnClosedMsg means the channel is closed.
@@ -103,7 +102,7 @@ func New(a Agent, info Info) Model {
 	input.Focus()
 
 	// Whatever the session shows may come from the environment (a directory name, say): clean it once here.
-	info.Version, info.WorkDir, info.Branch, info.Model = sanitize(info.Version), sanitize(info.WorkDir), sanitize(info.Branch), sanitize(info.Model)
+	info.Version, info.WorkDir, info.Branch = sanitize(info.Version), sanitize(info.WorkDir), sanitize(info.Branch)
 
 	m := Model{
 		agent:    a,
@@ -250,7 +249,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 // confirmQuit quits at once when there is nothing to lose, and otherwise asks for the key to be pressed again.
 // The conversation lives only in memory, so one stray press must not end it.
 func (m Model) confirmQuit(pressed string) (Model, tea.Cmd) {
-	if len(m.entries) == 0 || m.quitArmed {
+	if !m.agent.HasConversation() || m.quitArmed {
 		return m, tea.Quit
 	}
 	m.quitArmed = true

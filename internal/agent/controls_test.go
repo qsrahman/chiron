@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/openai/openai-go/v3/responses"
 
@@ -147,5 +148,27 @@ func TestContextEstimateAddsTheParts(t *testing.T) {
 	}
 	if after.History <= 0 || after.Total() != after.Instructions+after.Tools+after.History {
 		t.Errorf("after = %+v", after)
+	}
+}
+
+func TestCapOutputCutsOnACharacterBoundary(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+	}{
+		{"multi-byte text", strings.Repeat("€", maxOutputBytes)},
+		{"invalid bytes early on", "ok\xff" + strings.Repeat("a", maxOutputBytes+10)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := capOutput(tt.text)
+			head, _, _ := strings.Cut(got, "\n[output truncated")
+			if len(head) < maxOutputBytes-3 || len(head) > maxOutputBytes {
+				t.Errorf("kept %d bytes, want about %d", len(head), maxOutputBytes)
+			}
+			if tt.name == "multi-byte text" && !utf8.ValidString(head) {
+				t.Error("the cut split a character")
+			}
+		})
 	}
 }

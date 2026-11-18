@@ -23,6 +23,7 @@ type item struct {
 
 const (
 	kindUser       = "user"
+	kindReasoning  = "reasoning"
 	kindAssistant  = "assistant"
 	kindCall       = "function_call"
 	kindCallOutput = "function_call_output"
@@ -76,7 +77,7 @@ func answerOpenCalls(items []item) []item {
 
 // isToolWork reports the items that only matter while a turn runs and for the turn after it.
 func isToolWork(kind string) bool {
-	return kind == "reasoning" || kind == kindCall || kind == kindCallOutput
+	return kind == kindReasoning || kind == kindCall || kind == kindCallOutput
 }
 
 // history is the conversation as the next request starts from it. It changes in four places only: save, undo
@@ -99,7 +100,7 @@ func (h *history) begin(prompt string) []item {
 func (h *history) undo() bool {
 	for i := len(h.items) - 1; i >= 0; i-- {
 		if h.items[i].kind == kindUser {
-			h.items = slices.Clone(h.items[:i])
+			h.items = h.items[:i]
 			h.lastSaved = false
 			return true
 		}

@@ -3,10 +3,10 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/openai/openai-go/v3"
@@ -57,7 +57,7 @@ func (t typedTool[Args]) Run(ctx context.Context, arguments string) (string, err
 	if arguments != "" {
 		// Unknown fields are rejected so the model learns about a misspelt argument instead of silently
 		// getting default behaviour.
-		dec := json.NewDecoder(bytes.NewReader([]byte(arguments)))
+		dec := json.NewDecoder(strings.NewReader(arguments))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&args); err != nil {
 			return "", fmt.Errorf("invalid arguments: %w", err)

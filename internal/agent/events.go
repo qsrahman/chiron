@@ -36,7 +36,7 @@ type Retry struct{ Reason string }
 type Done struct{}
 
 // Error marks a failed or cancelled turn; it is the last event of an unsuccessful Send.
-// The conversation history is left as it was before the turn.
+// A turn that failed before any tool ran leaves the history as it was; one that stopped after tool work is kept.
 type Error struct{ Err error }
 
 func (TextDelta) isEvent()    {}

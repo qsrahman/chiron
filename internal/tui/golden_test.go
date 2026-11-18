@@ -62,7 +62,7 @@ func sized(sender Agent, width, height int) Model {
 // succeeds, one fails) and a closing remark.
 func conversation(t *testing.T, width, height int) Model {
 	t.Helper()
-	sender := &fakeSender{events: []agent.Event{
+	sender := &fakeAgent{events: []agent.Event{
 		agent.TextDelta{Text: "I'll check the project layout first.\n\n## Summary\n\nHere is what I found:\n\n- `main.go` starts the app\n- `internal/agent` runs the **conversation loop**\n\n```go\nfunc main() {\n\tfmt.Println(\"hi\")\n}\n```\n"},
 		agent.ToolStarted{CallID: "c1", Name: "read_file", Arguments: `{"path":"main.go","limit":200}`},
 		agent.ToolFinished{CallID: "c1", Name: "read_file", Output: "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hi\")\n}\n\n// end"},
@@ -78,7 +78,7 @@ func conversation(t *testing.T, width, height int) Model {
 }
 
 func TestGoldenWelcome(t *testing.T) {
-	checkGolden(t, "welcome_80x24", screen(sized(&fakeSender{}, 80, 24)))
+	checkGolden(t, "welcome_80x24", screen(sized(&fakeAgent{}, 80, 24)))
 }
 
 func TestGoldenConversation(t *testing.T) {
@@ -97,7 +97,7 @@ func TestGoldenConversation(t *testing.T) {
 }
 
 func TestGoldenRunningTool(t *testing.T) {
-	sender := &fakeSender{block: true}
+	sender := &fakeAgent{block: true}
 	m := sized(sender, 100, 24)
 	m, _ = typeAndEnter(t, m, "run the slow tests")
 	t.Cleanup(func() { m.cancel() })
@@ -111,7 +111,7 @@ func TestGoldenRunningTool(t *testing.T) {
 }
 
 func TestGoldenErrorAndCancelled(t *testing.T) {
-	sender := &fakeSender{events: []agent.Event{
+	sender := &fakeAgent{events: []agent.Event{
 		agent.TextDelta{Text: "Working on it"},
 		agent.ToolStarted{CallID: "c1", Name: "shell", Arguments: `{"command":"sleep 100"}`},
 		agent.ToolFinished{CallID: "c1", Name: "shell", Output: "error: context canceled", Failed: true, Cancelled: true},
@@ -125,7 +125,7 @@ func TestGoldenErrorAndCancelled(t *testing.T) {
 }
 
 func TestGoldenMultilineInput(t *testing.T) {
-	m := sized(&fakeSender{}, 80, 24)
+	m := sized(&fakeAgent{}, 80, 24)
 	m.input.SetValue("first line\nsecond line\nthird line")
 	m, _ = update(m, tea.WindowSizeMsg{Width: 80, Height: 24}) // any message re-lays out the input
 
@@ -140,14 +140,14 @@ func TestGoldenMultilineInput(t *testing.T) {
 func TestNoLineIsWiderThanTheTerminal(t *testing.T) {
 	for _, width := range []int{40, 50, 80, 100, 160, 220} {
 		for name, build := range map[string]func() Model{
-			"welcome":      func() Model { return sized(&fakeSender{}, width, 30) },
+			"welcome":      func() Model { return sized(&fakeAgent{}, width, 30) },
 			"conversation": func() Model { return conversation(t, width, 40) },
 			"help": func() Model {
-				m, _ := typeAndEnter(t, sized(&fakeSender{}, width, 40), "/help")
+				m, _ := typeAndEnter(t, sized(&fakeAgent{}, width, 40), "/help")
 				return m
 			},
 			"suggestions": func() Model {
-				m := sized(&fakeSender{}, width, 30)
+				m := sized(&fakeAgent{}, width, 30)
 				m.input.SetValue("/")
 				next, _ := update(m, tea.WindowSizeMsg{Width: width, Height: 30})
 				return next
@@ -173,12 +173,12 @@ func TestTextIsCappedOnWideTerminals(t *testing.T) {
 }
 
 func TestGoldenHelp(t *testing.T) {
-	m, _ := typeAndEnter(t, sized(&fakeSender{}, 80, 40), "/help")
+	m, _ := typeAndEnter(t, sized(&fakeAgent{}, 80, 40), "/help")
 	checkGolden(t, "help_80x40", screen(m))
 }
 
 func TestGoldenSuggestions(t *testing.T) {
-	m := sized(&fakeSender{}, 80, 24)
+	m := sized(&fakeAgent{}, 80, 24)
 	m.input.SetValue("/")
 	m, _ = update(m, tea.WindowSizeMsg{Width: 80, Height: 24}) // any message re-lays out the screen
 	checkGolden(t, "suggestions_80x24", screen(m))
@@ -189,7 +189,7 @@ func TestGoldenSuggestions(t *testing.T) {
 }
 
 func TestGoldenContext(t *testing.T) {
-	a := &fakeSender{estimate: agent.ContextEstimate{Instructions: 1200, Tools: 3400, ToolCount: 4, History: 56789, LastInput: 61000}}
+	a := &fakeAgent{estimate: agent.ContextEstimate{Instructions: 1200, Tools: 3400, ToolCount: 4, History: 56789, LastInput: 61000}}
 	m := sized(a, 80, 24)
 	m.info.ContextWindow = 128000
 	m, _ = typeAndEnter(t, m, "/context")

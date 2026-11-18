@@ -15,18 +15,19 @@ func estimateTokens(v any) int {
 // tokens estimates one history item. The opaque encrypted content of a reasoning item is left out: the API counts
 // the few tokens of reasoning it holds, not its length.
 func (it item) tokens() int {
+	if it.kind != kindReasoning {
+		return estimateTokens(it.param)
+	}
 	raw, err := json.Marshal(it.param)
 	if err != nil {
 		return 0
 	}
-	if it.kind == "reasoning" {
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(raw, &fields) == nil {
-			delete(fields, "encrypted_content")
-			raw, _ = json.Marshal(fields)
-		}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return estimateTokens(it.param)
 	}
-	return len(raw)/4 + 1
+	delete(fields, "encrypted_content")
+	return estimateTokens(fields)
 }
 
 // ContextEstimate is the size of what the next request would carry, in estimated tokens.

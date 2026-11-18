@@ -48,7 +48,7 @@ func TestThemeSwitchChangesColours(t *testing.T) {
 		agent.Done{},
 	}
 	card := func(bg color.Color) string {
-		m := sized(&fakeSender{events: events}, 80, 24)
+		m := sized(&fakeAgent{events: events}, 80, 24)
 		m, _ = update(m, tea.BackgroundColorMsg{Color: bg})
 		m, cmd := typeAndEnter(t, m, "x")
 		return lastEntry(pump(t, m, cmd)).rendered
@@ -67,7 +67,7 @@ func TestThemeSwitchChangesColours(t *testing.T) {
 }
 
 func TestUserMessagesCarryTheBrandColour(t *testing.T) {
-	m := newTestModel(&fakeSender{})
+	m := newTestModel(&fakeAgent{})
 	e := entry{role: roleUser, text: "hello"}
 	// 167;139;250 is the dark theme's primary colour (#A78BFA).
 	if got := m.render(e); !strings.Contains(got, "38;2;167;139;250") {
@@ -92,7 +92,7 @@ func TestEntriesHaveNoLeadingOrTrailingBlankRows(t *testing.T) {
 }
 
 func TestHeadingsHaveNoMarkdownMarkers(t *testing.T) {
-	m := newTestModel(&fakeSender{})
+	m := newTestModel(&fakeAgent{})
 	for _, md := range []string{"# One", "## Two", "### Three", "#### Four"} {
 		out := ansi.Strip(m.markdownText(md, 80))
 		if strings.Contains(out, "#") {
@@ -102,7 +102,7 @@ func TestHeadingsHaveNoMarkdownMarkers(t *testing.T) {
 }
 
 func TestUserMessageIsAShadedBlock(t *testing.T) {
-	m := newTestModel(&fakeSender{})
+	m := newTestModel(&fakeAgent{})
 	rendered := m.render(entry{role: roleUser, text: "a question\nover two lines"})
 	// 35;35;41 is the dark theme's fallback band (#232329): the block must be shaded on every row.
 	for i, line := range strings.Split(rendered, "\n") {
@@ -120,7 +120,7 @@ func TestUserMessageIsAShadedBlock(t *testing.T) {
 func TestCodeColoursFollowTheTheme(t *testing.T) {
 	const md = "```go\nfunc main() { fmt.Println(\"hi\") }\n```"
 	render := func(dark bool) string {
-		m := newTestModel(&fakeSender{})
+		m := newTestModel(&fakeAgent{})
 		m.applyTheme(newTheme(dark, nil))
 		return m.markdownText(md, 80)
 	}

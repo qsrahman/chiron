@@ -96,9 +96,9 @@ func capOutput(text string) string {
 	if len(text) <= maxOutputBytes {
 		return text
 	}
-	kept := text[:maxOutputBytes]
-	for !utf8.ValidString(kept) { // the cut may fall inside a multi-byte character
-		kept = kept[:len(kept)-1]
+	cut := maxOutputBytes
+	for !utf8.RuneStart(text[cut]) { // the cut may fall inside a multi-byte character
+		cut--
 	}
-	return fmt.Sprintf("%s\n[output truncated: %d more characters]", kept, utf8.RuneCountInString(text[len(kept):]))
+	return fmt.Sprintf("%s\n[output truncated: %d more characters]", text[:cut], utf8.RuneCountInString(text[cut:]))
 }

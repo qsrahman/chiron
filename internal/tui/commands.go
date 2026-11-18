@@ -125,7 +125,6 @@ func (m *Model) modelCommand(arg string) (tea.Cmd, error) {
 		return nil, errors.New("a model name has no spaces")
 	}
 	m.agent.SetModel(arg)
-	m.info.Model = sanitize(arg)
 	m.contextTokens = 0
 	m.say("Model set to " + arg)
 	return nil, nil

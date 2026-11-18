@@ -14,8 +14,8 @@ import (
 	"github.com/qsrahman/desk-agent/internal/agent"
 )
 
-// fakeSender replays scripted events, or with block set waits for cancellation like a slow model.
-type fakeSender struct {
+// fakeAgent replays scripted events, or with block set waits for cancellation like a slow model.
+type fakeAgent struct {
 	events []agent.Event
 	block  bool
 
@@ -31,16 +31,22 @@ type fakeSender struct {
 	conversation bool
 }
 
-func (f *fakeSender) Reset()                                 { f.resets++ }
-func (f *fakeSender) Undo() bool                             { return f.undoable }
-func (f *fakeSender) HasConversation() bool                  { return f.conversation }
-func (f *fakeSender) Settings() agent.Settings               { return f.settings }
-func (f *fakeSender) SetModel(model string)                  { f.settings.Model = model }
-func (f *fakeSender) SetReasoningEffort(e string)            { f.settings.ReasoningEffort = e }
-func (f *fakeSender) ContextEstimate() agent.ContextEstimate { return f.estimate }
-func (f *fakeSender) Rewind() (string, bool)                 { return f.rewindPrompt, f.rewindPrompt != "" }
+func (f *fakeAgent) Reset()                { f.resets++ }
+func (f *fakeAgent) Undo() bool            { return f.undoable }
+func (f *fakeAgent) HasConversation() bool { return f.conversation }
+func (f *fakeAgent) Settings() agent.Settings {
+	s := f.settings
+	if s.Model == "" {
+		s.Model = "test-model"
+	}
+	return s
+}
+func (f *fakeAgent) SetModel(model string)                  { f.settings.Model = model }
+func (f *fakeAgent) SetReasoningEffort(e string)            { f.settings.ReasoningEffort = e }
+func (f *fakeAgent) ContextEstimate() agent.ContextEstimate { return f.estimate }
+func (f *fakeAgent) Rewind() (string, bool)                 { return f.rewindPrompt, f.rewindPrompt != "" }
 
-func (f *fakeSender) Send(ctx context.Context, text string) <-chan agent.Event {
+func (f *fakeAgent) Send(ctx context.Context, text string) <-chan agent.Event {
 	f.texts = append(f.texts, text)
 	f.ctx = ctx
 	ch := make(chan agent.Event)
@@ -59,7 +65,7 @@ func (f *fakeSender) Send(ctx context.Context, text string) <-chan agent.Event {
 }
 
 func newTestModel(s Agent) Model {
-	return New(s, Info{Version: "v0.0.0-test", WorkDir: "/work/demo", Branch: "main", Model: "test-model"})
+	return New(s, Info{Version: "v0.0.0-test", WorkDir: "/work/demo", Branch: "main"})
 }
 
 func ctrl(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl} }
@@ -116,7 +122,7 @@ func typeAndEnter(t *testing.T, m Model, text string) (Model, tea.Cmd) {
 func lastEntry(m Model) entry { return m.entries[len(m.entries)-1] }
 
 func TestSubmitStreamsThenRendersMarkdown(t *testing.T) {
-	sender := &fakeSender{events: []agent.Event{
+	sender := &fakeAgent{events: []agent.Event{
 		agent.TextDelta{Text: "Here is **bold"},
 		agent.TextDelta{Text: "** text"},
 		agent.Done{},
@@ -147,7 +153,7 @@ func TestSubmitStreamsThenRendersMarkdown(t *testing.T) {
 }
 
 func TestPartialTextIsVisibleWhileStreaming(t *testing.T) {
-	sender := &fakeSender{block: true}
+	sender := &fakeAgent{block: true}
 	m, _ := typeAndEnter(t, newTestModel(sender), "hi")
 	t.Cleanup(func() { m.cancel() })
 
@@ -162,7 +168,7 @@ func TestPartialTextIsVisibleWhileStreaming(t *testing.T) {
 }
 
 func TestEnterIsIgnoredWhenEmptyOrBusy(t *testing.T) {
-	sender := &fakeSender{block: true}
+	sender := &fakeAgent{block: true}
 	m := newTestModel(sender)
 
 	m, cmd := update(m, enter)
@@ -182,7 +188,7 @@ func TestEnterIsIgnoredWhenEmptyOrBusy(t *testing.T) {
 }
 
 func TestCtrlCCancelsTurnThenQuits(t *testing.T) {
-	sender := &fakeSender{block: true}
+	sender := &fakeAgent{block: true}
 	m, wait := typeAndEnter(t, newTestModel(sender), "slow")
 
 	m, cmd := update(m, ctrl('c'))
@@ -212,13 +218,13 @@ func TestCtrlCCancelsTurnThenQuits(t *testing.T) {
 }
 
 func TestCtrlCQuitsWhenIdle(t *testing.T) {
-	if _, cmd := update(newTestModel(&fakeSender{}), ctrl('c')); !isQuit(cmd) {
+	if _, cmd := update(newTestModel(&fakeAgent{}), ctrl('c')); !isQuit(cmd) {
 		t.Error("Ctrl-C while idle should quit")
 	}
 }
 
 func TestCtrlDQuitsOnlyWithEmptyInput(t *testing.T) {
-	m := newTestModel(&fakeSender{})
+	m := newTestModel(&fakeAgent{})
 	if _, cmd := update(m, ctrl('d')); !isQuit(cmd) {
 		t.Error("Ctrl-D with an empty input should quit")
 	}
@@ -229,7 +235,7 @@ func TestCtrlDQuitsOnlyWithEmptyInput(t *testing.T) {
 }
 
 func TestErrorIsShownAndPartialTextKept(t *testing.T) {
-	sender := &fakeSender{events: []agent.Event{
+	sender := &fakeAgent{events: []agent.Event{
 		agent.TextDelta{Text: "half an ans"},
 		agent.Error{Err: errors.New("boom")},
 	}}
@@ -245,7 +251,7 @@ func TestErrorIsShownAndPartialTextKept(t *testing.T) {
 }
 
 func TestResizeRelayoutsAndRerenders(t *testing.T) {
-	sender := &fakeSender{events: []agent.Event{agent.TextDelta{Text: "# Title"}, agent.Done{}}}
+	sender := &fakeAgent{events: []agent.Event{agent.TextDelta{Text: "# Title"}, agent.Done{}}}
 	m, cmd := typeAndEnter(t, newTestModel(sender), "hi")
 	m = pump(t, m, cmd)
 
@@ -260,7 +266,7 @@ func TestResizeRelayoutsAndRerenders(t *testing.T) {
 }
 
 func TestLightBackgroundSwitchesTheme(t *testing.T) {
-	m := newTestModel(&fakeSender{})
+	m := newTestModel(&fakeAgent{})
 	if !m.th.dark {
 		t.Fatal("dark should be the default")
 	}
@@ -271,7 +277,7 @@ func TestLightBackgroundSwitchesTheme(t *testing.T) {
 }
 
 func TestToolCardsShowProgressAndResult(t *testing.T) {
-	sender := &fakeSender{events: []agent.Event{
+	sender := &fakeAgent{events: []agent.Event{
 		agent.TextDelta{Text: "Let me look."},
 		agent.ToolStarted{CallID: "c1", Name: "read_file", Arguments: `{"path":"a.go"}`},
 		agent.ToolStarted{CallID: "c2", Name: "list_dir", Arguments: `{"path":"."}`},
@@ -305,7 +311,7 @@ func TestToolCardsShowProgressAndResult(t *testing.T) {
 }
 
 func TestRunningToolCardHasNoResultMarker(t *testing.T) {
-	m := newTestModel(&fakeSender{block: true})
+	m := newTestModel(&fakeAgent{block: true})
 	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "shell", Arguments: `{"command":"sleep 5"}`}})
 
 	card := lastEntry(m)
@@ -316,7 +322,7 @@ func TestRunningToolCardHasNoResultMarker(t *testing.T) {
 }
 
 func TestToolPreviewIsShortened(t *testing.T) {
-	m := newTestModel(&fakeSender{})
+	m := newTestModel(&fakeAgent{})
 	m, _ = update(m, tea.WindowSizeMsg{Width: 30, Height: 20})
 	lines := []string{"line1", "line2", "line3 " + strings.Repeat("x", 100), "line4", "line5", "line6", "line7", "line8", "line9"}
 
@@ -335,7 +341,7 @@ func TestToolPreviewIsShortened(t *testing.T) {
 }
 
 func TestOneHiddenLineIsShownInstead(t *testing.T) {
-	m := newTestModel(&fakeSender{})
+	m := newTestModel(&fakeAgent{})
 	six := "a\nb\nc\nd\ne\nf" // one more than the preview: "1 more line" would save nothing
 	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "read_file", Arguments: "{}"}})
 	m, _ = update(m, eventMsg{agent.ToolFinished{CallID: "c1", Name: "read_file", Output: six}})
@@ -359,7 +365,7 @@ func TestHeaderShowsContextUsage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := New(&fakeSender{}, Info{Model: "m", ContextWindow: tt.window})
+			m := New(&fakeAgent{}, Info{ContextWindow: tt.window})
 			m, _ = update(m, eventMsg{tt.usage})
 
 			status := ansi.Strip(m.headerView())
@@ -374,7 +380,7 @@ func TestHeaderShowsContextUsage(t *testing.T) {
 }
 
 func TestUsageIsShownWhileBusyAndLatestWins(t *testing.T) {
-	m := newTestModel(&fakeSender{block: true})
+	m := newTestModel(&fakeAgent{block: true})
 	m, _ = typeAndEnter(t, m, "hi")
 	t.Cleanup(func() { m.cancel() })
 

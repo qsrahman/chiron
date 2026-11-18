@@ -40,13 +40,14 @@ func TestSanitize(t *testing.T) {
 // the terminal through the view.
 func TestNothingUnsafeReachesTheScreen(t *testing.T) {
 	const evil = "\x1b]52;c;ZXZpbA==\x07 and \x1b[2J and ‮ and \r end"
-	sender := &fakeSender{events: []agent.Event{
+	sender := &fakeAgent{events: []agent.Event{
 		agent.TextDelta{Text: "reply " + evil},
 		agent.ToolStarted{CallID: "c1", Name: "tool" + evil, Arguments: `{"path":"` + evil + `"}`},
 		agent.ToolFinished{CallID: "c1", Name: "tool", Output: "output " + evil},
 		agent.Error{Err: errors.New("failed " + evil)},
 	}}
-	m := New(sender, Info{Version: "v" + evil, WorkDir: "/dir" + evil, Branch: "main" + evil, Model: "model" + evil})
+	sender.settings.Model = "model" + evil
+	m := New(sender, Info{Version: "v" + evil, WorkDir: "/dir" + evil, Branch: "main" + evil})
 	m, _ = update(m, tea.WindowSizeMsg{Width: 120, Height: 40})
 	m, cmd := typeAndEnter(t, m, "user pasted "+evil)
 	m = pump(t, m, cmd)
@@ -67,7 +68,7 @@ func TestNothingUnsafeReachesTheScreen(t *testing.T) {
 }
 
 func TestRetryClearsTheStreamedTextAndShowsANotice(t *testing.T) {
-	sender := &fakeSender{block: true}
+	sender := &fakeAgent{block: true}
 	m, _ := typeAndEnter(t, newTestModel(sender), "hi")
 	t.Cleanup(func() { m.cancel() })
 
@@ -89,7 +90,7 @@ func TestRetryClearsTheStreamedTextAndShowsANotice(t *testing.T) {
 
 func withConversation(t *testing.T) Model {
 	t.Helper()
-	sender := &fakeSender{events: []agent.Event{agent.TextDelta{Text: "answer"}, agent.Done{}}}
+	sender := &fakeAgent{conversation: true, events: []agent.Event{agent.TextDelta{Text: "answer"}, agent.Done{}}}
 	m, cmd := typeAndEnter(t, newTestModel(sender), "hello")
 	return pump(t, m, cmd)
 }
@@ -154,8 +155,29 @@ func TestAnyOtherKeyTakesTheQuitWarningBack(t *testing.T) {
 
 func TestNothingToLoseQuitsAtOnce(t *testing.T) {
 	for _, press := range []rune{'c', 'd'} {
-		if _, cmd := update(newTestModel(&fakeSender{}), ctrl(press)); !isQuit(cmd) {
+		if _, cmd := update(newTestModel(&fakeAgent{}), ctrl(press)); !isQuit(cmd) {
 			t.Errorf("ctrl+%c with no conversation should quit at once", press)
 		}
+	}
+}
+
+// The conversation, not the transcript, is what a quit would lose: /clear empties the screen only.
+func TestQuitStillAsksAfterClear(t *testing.T) {
+	m := withConversation(t)
+	m, _ = typeAndEnter(t, m, "/clear")
+
+	if _, cmd := update(m, ctrl('c')); isQuit(cmd) {
+		t.Error("Ctrl-C quit at once although the conversation is still in memory")
+	}
+}
+
+func TestQuitDoesNotAskAfterReset(t *testing.T) {
+	a := &fakeAgent{conversation: true}
+	m := newTestModel(a)
+	m.addEntry(entry{role: roleUser, text: "old"})
+	a.conversation = false // what /reset does to the agent
+
+	if _, cmd := update(m, ctrl('c')); !isQuit(cmd) {
+		t.Error("nothing is left to lose, so Ctrl-C should quit")
 	}
 }

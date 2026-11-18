@@ -5,6 +5,7 @@ import (
 	"unicode"
 
 	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -57,18 +58,18 @@ func (m *Model) suggestions() (list []suggestion, typed bool) {
 }
 
 // suggestKey handles the keys of an open list and reports whether it used the key.
-func (m *Model) suggestKey(msg interface{ String() string }, list []suggestion, typed bool) bool {
+func (m *Model) suggestKey(msg tea.KeyPressMsg, list []suggestion, typed bool) bool {
 	m.sel = min(m.sel, len(list)-1)
-	switch msg.String() {
-	case "up":
+	switch {
+	case key.Matches(msg, m.keys.up):
 		m.sel = (m.sel + len(list) - 1) % len(list)
-	case "down":
+	case key.Matches(msg, m.keys.down):
 		m.sel = (m.sel + 1) % len(list)
-	case "esc":
+	case key.Matches(msg, m.keys.dismiss):
 		m.dismissed = m.input.Value()
-	case "tab":
+	case key.Matches(msg, m.keys.complete):
 		m.acceptSuggestion(list[m.sel])
-	case "enter":
+	case key.Matches(msg, m.keys.send):
 		chosen := list[m.sel]
 		// Complete a partly typed word; run what is typed when it is already whole (or nothing was typed).
 		if !typed || strings.EqualFold(strings.TrimSpace(chosen.accept), strings.TrimSpace(m.input.Value())) {
@@ -122,5 +123,5 @@ func (m *Model) suggestionView() string {
 
 // suggestionHelp is what the help bar shows while the list is open.
 func (k keyMap) suggestionHelp() []key.Binding {
-	return []key.Binding{k.choose, k.complete, k.dismiss}
+	return []key.Binding{k.up, k.down, k.complete, k.dismiss}
 }

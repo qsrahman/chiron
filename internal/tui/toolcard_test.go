@@ -42,7 +42,7 @@ func TestToolParams(t *testing.T) {
 }
 
 func TestCardHeaderNeverShowsRawJSON(t *testing.T) {
-	m := newTestModel(&fakeSender{})
+	m := newTestModel(&fakeAgent{})
 	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "read_file", Arguments: `{"path":"main.go","limit":200}`}})
 
 	plain := ansi.Strip(lastEntry(m).rendered)
@@ -55,7 +55,7 @@ func TestCardHeaderNeverShowsRawJSON(t *testing.T) {
 }
 
 func TestSlowCallsShowTheirDuration(t *testing.T) {
-	m := newTestModel(&fakeSender{})
+	m := newTestModel(&fakeAgent{})
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	now := start
 	m.now = func() time.Time { return now }
@@ -73,7 +73,7 @@ func TestSlowCallsShowTheirDuration(t *testing.T) {
 }
 
 func TestSpinnerAnimatesWhileBusyAndStopsWhenIdle(t *testing.T) {
-	m := newTestModel(&fakeSender{block: true})
+	m := newTestModel(&fakeAgent{block: true})
 	m, _ = typeAndEnter(t, m, "go")
 	t.Cleanup(func() { m.cancel() })
 	m, _ = update(m, eventMsg{agent.ToolStarted{CallID: "c1", Name: "shell", Arguments: `{}`}})
@@ -87,14 +87,14 @@ func TestSpinnerAnimatesWhileBusyAndStopsWhenIdle(t *testing.T) {
 		t.Error("the running card did not advance its spinner frame")
 	}
 
-	idle := newTestModel(&fakeSender{})
+	idle := newTestModel(&fakeAgent{})
 	if _, cmd := update(idle, spinner.TickMsg{}); cmd != nil {
 		t.Error("an idle model must stop the spinner ticks")
 	}
 }
 
 func TestInputGrowsWithItsTextAndShrinksTheTranscript(t *testing.T) {
-	m := sized(&fakeSender{}, 80, 24)
+	m := sized(&fakeAgent{}, 80, 24)
 	one := m.viewport.Height()
 
 	m.input.SetValue("a\nb\nc\nd")
