@@ -42,7 +42,10 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
 venv it creates under `e2e/.venv`). Nothing is mocked: the model is the one in your config (or
 `DESK_AGENT_LIVE_BASE_URL` and `DESK_AGENT_LIVE_MODEL`), the MCP server is the test binary of `internal/mcp` run as a
 real stdio process. It costs a few dozen model calls and takes a few minutes; `-k name` runs the scenarios whose name
-contains `name`. It is never part of `go test`. Run it after a change to the UI, the turn loop or MCP, because the
+contains `name`. The `toolbox_*` scenarios use the `toolbox` server of your own config file when it has one (and skip
+otherwise): files are written and edited only in a temporary working directory and checked on disk afterwards, the
+shell runs `echo`, one page is fetched and one Brave search is made, and your `autoApprove` list decides which calls
+ask. It is never part of `go test`. Run it after a change to the UI, the turn loop or MCP, because the
 unit tests look at the model's state and the entries, not at the screen (a command's output that was never refreshed
 onto the screen passed every unit test and was only seen here). When a scenario fails, decide first whether the
 harness or the program is wrong: the emulator must implement every sequence the renderer uses (it needed scroll up

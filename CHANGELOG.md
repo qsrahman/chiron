@@ -11,6 +11,11 @@ All notable changes to the codebase are documented in this file. Format follows 
   the queue and cancel, every command, restart after a server dies, scrolling, resizing, quitting, multi-line input,
   long output, a failing server, and `-p` with `--yes` and `--no-mcp`.
 
+- Five more live scenarios that use the real `toolbox` MCP server of the config file: its 7 tools and which ask first,
+  `write_file`, `read_file`, `edit_file` and `read_multiple_files` with the files checked on disk, `shell` (the
+  approval dialog shows the command decoded, a denied call is not retried), `fetch_url`, `brave_web_search`, and a
+  result over the output cap.
+
 ### Fixed
 
 - A command that says something while the transcript is not refreshed: an unknown command (`/nosuch`) added its message

@@ -54,7 +54,7 @@ class Stream(pyte.ByteStream):
 class Term:
     """The program, its pseudo-terminal and the screen the user would see."""
 
-    def __init__(self, argv, env=None, rows=40, cols=120):
+    def __init__(self, argv, env=None, rows=40, cols=120, cwd=None):
         self.rows, self.cols = rows, cols
         self.screen = Screen(cols, rows)
         self.stream = Stream(self.screen)
@@ -64,6 +64,8 @@ class Term:
         if pid == 0:
             # The window has its size before the program starts, as in a real terminal.
             fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+            if cwd:
+                os.chdir(cwd)
             os.environ.update({"TERM": "xterm-256color", **(env or {})})
             os.execv(argv[0], argv)
         self.pid, self.fd = pid, fd

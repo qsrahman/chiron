@@ -61,10 +61,10 @@ def local_server(**extra):
     return {"command": MCP, "env": env, **extra}
 
 
-def start(servers=None, args=(), rows=40, cols=120, config="default"):
+def start(servers=None, args=(), rows=40, cols=120, config="default", cwd=None):
     path = write_config(config, servers if servers is not None else {"local": local_server()})
     env = {"XDG_STATE_HOME": os.path.join(WORK, "state")}
-    return Term([BIN, "--config", path, *args], env=env, rows=rows, cols=cols)
+    return Term([BIN, "--config", path, *args], env=env, rows=rows, cols=cols, cwd=cwd)
 
 
 def preflight():
@@ -96,12 +96,13 @@ def say(t, prompt, where=None):
     settle(t, where or prompt[:30])
 
 
-def ask_for_tool(t, prompt, retry=None):
+def ask_for_tool(t, prompt, retry=None, settle=0.5):
     """Sends a prompt that should make the model call a tool, and waits for the approval dialog."""
     for p in (prompt, retry or prompt + " You must call the tool; do not answer in words first."):
         t.type(p)
         try:
             t.wait_for("Approval needed", 60)
+            t.pump(settle)  # the frame may still be arriving in pieces
             return
         except Failure:
             settle(t, "no tool call")
@@ -185,13 +186,13 @@ def approval_and_cards():
     t = start()
     try:
         t.wait_for("mcp 1/1", 30)
-        ask_for_tool(t, "Call the local__echo tool with the text hello. Call it exactly once.")
+        # a key typed right after the dialog opened must not answer it, so none of the settling time is spent first
+        ask_for_tool(t, "Call the local__echo tool with the text hello. Call it exactly once.", settle=0)
+        t.send("y", 0.3)
+        t.contains("Approval needed", "a key right after the dialog opened answered it")
         for text in ("local → echo", "text: hello", "Runs: ", "Allow", "Deny", "For the session"):
             t.contains(text, f"the dialog is missing {text!r}")
         t.expect("\\u0026" not in t.text, "the dialog shows a JSON escape")
-        # a key typed right after the dialog opened must not answer it
-        t.send("y", 0.3)
-        t.contains("Approval needed", "a key right after the dialog opened answered it")
         answer(t, "n")
         settle(t, "after deny")
         t.contains("⊘", "the denied call has no denied card")
@@ -522,8 +523,166 @@ def non_interactive():
         raise Failure("--no-mcp still ran an MCP tool")
 
 
+# --- the real toolbox server of the user's config ---------------------------------------------------------------
+
+def toolbox_entry():
+    """The user's own `toolbox` MCP server, as configured (its secrets stay in the environment, never read here)."""
+    try:
+        with open(os.path.expanduser("~/.config/desk-agent/config.json")) as f:
+            return json.load(f)["mcpServers"]["toolbox"]
+    except (OSError, KeyError):
+        return None
+
+
+def toolbox_term(**kw):
+    entry = toolbox_entry()
+    if entry is None:
+        raise Skip("no toolbox server in the config file")
+    entry = {**entry, "enabled": True}
+    scratch = tempfile.mkdtemp(prefix="tb-", dir=WORK)
+    t = start(servers={"toolbox": entry}, cwd=scratch, config="toolbox", **kw)
+    t.scratch = scratch
+    try:
+        t.wait_for(re.compile(r"mcp \d/1"), 90)
+    except Failure:
+        t.close()
+        raise
+    if "mcp 1/1" not in t.text:  # too slow for the startup deadline (npx): the way in is /reconnect
+        t.contains("did not start within", "the toolbox failed for a reason other than being slow")
+        t.type("/reconnect toolbox")
+        t.wait_for("mcp 1/1", 90, "the toolbox to join after /reconnect")
+    return t
+
+
+def toolbox_startup():
+    t = toolbox_term()
+    try:
+        t.type("/servers")
+        t.contains("connected · 7 tools", "the toolbox does not offer the 7 tools it should")
+        t.type("/tools")
+        t.wait_for("ask first", 10)
+        flat = " ".join(t.text.split())
+        for name in ("toolbox__edit_file", "toolbox__write_file", "toolbox__shell"):
+            t.expect(name in flat.split("ask first")[-1], f"{name} should ask first")
+        t.expect("toolbox__read_file" in flat.split("run without asking")[-1].split("ask first")[0], "read_file should run without asking")
+    finally:
+        t.close()
+
+
+def toolbox_files():
+    t = toolbox_term()
+    try:
+        path = os.path.join(t.scratch, "hello.txt")
+        ask_for_tool(t, "Use the toolbox__write_file tool to create the file hello.txt containing exactly two lines: "
+                        "'first line' and 'second line'. Call it exactly once.")
+        for text in ("toolbox → write_file", "Runs: npx", "content:"):
+            t.contains(text, f"the dialog is missing {text!r}")
+        t.expect("\\n" not in t.text.split("Approval needed")[-1], "the dialog shows an escaped newline instead of the lines")
+        answer(t, "y")
+        settle(t, "after write_file")
+        t.expect(os.path.exists(path), "the file was not written")
+        t.expect(open(path).read().strip().splitlines() == ["first line", "second line"], f"wrong content: {open(path).read()!r}")
+
+        # a read-style tool runs without asking
+        t.type("Use toolbox__read_file to read hello.txt and tell me its second line.")
+        t.wait_for("read_file", 60)
+        t.idle()
+        invariants(t, "after read_file")
+        t.lacks("Approval needed", "read_file asked although the config trusts it")
+        t.contains("toolbox → read_file")
+        t.contains("second line")
+
+        ask_for_tool(t, "Use toolbox__edit_file to replace the text 'second line' with 'SECOND LINE' in hello.txt. Call it exactly once.")
+        t.contains("toolbox → edit_file")
+        answer(t, "y")
+        settle(t, "after edit_file")
+        t.expect("SECOND LINE" in open(path).read(), f"the edit did not reach the disk: {open(path).read()!r}")
+
+        with open(os.path.join(t.scratch, "other.txt"), "w") as f:
+            f.write("other file\n")
+        t.type("Use toolbox__read_multiple_files to read hello.txt and other.txt, then say DONE.")
+        t.wait_for("read_multiple_files", 60)
+        t.idle()
+        invariants(t, "after read_multiple_files")
+        t.lacks("Approval needed")
+    finally:
+        t.close()
+
+
+def toolbox_shell():
+    t = toolbox_term()
+    try:
+        ask_for_tool(t, "Use the toolbox__shell tool to run exactly this command: echo hello-from-shell && pwd")
+        t.contains("toolbox → shell")
+        t.contains("command: echo hello-from-shell && pwd", "the dialog does not show the command decoded, on one line")
+        t.expect("\\u0026" not in t.text, "the dialog shows a JSON escape")
+        # denying tells the model, which must not retry
+        answer(t, "n")
+        settle(t, "after deny")
+        t.contains("denied by you")
+        calls = t.text.count("toolbox → shell")
+        t.expect(calls == 1, f"the denied call was retried ({calls} cards)")
+
+        ask_for_tool(t, "Run the same shell command again with toolbox__shell: echo hello-from-shell && pwd")
+        answer(t, "y")
+        settle(t, "after shell")
+        y = row_of(t, "toolbox → shell")
+        y = max(i for i, l in enumerate(t.lines) if "toolbox → shell" in l and "⊘" not in l)
+        t.expect(re.search(r"\d+ lines?", t.lines[y]), "the shell card does not say how much it returned")
+        t.send(TAB, 0.3)
+        t.send(TAB, 0.3) if "▸" not in t.text else None
+        t.send(ENTER, 0.5)
+        t.contains("hello-from-shell", "the opened card does not show the command's output")
+    finally:
+        t.close()
+
+
+def toolbox_fetch_and_search():
+    t = toolbox_term()
+    try:
+        t.type("Use toolbox__fetch_url to fetch https://example.com and tell me the page's heading.")
+        t.wait_for("fetch_url", 90)
+        t.idle(180)
+        invariants(t, "after fetch_url")
+        t.lacks("Approval needed", "fetch_url asked although the config trusts it")
+        t.contains("toolbox → fetch_url")
+        t.expect(re.search(r"\d+ lines?", t.lines[row_of(t, "✓ toolbox → fetch_url")]), "the fetch card has no line count")
+        t.contains("Example Domain")
+
+        t.type("Use toolbox__brave_web_search to search for 'Go programming language' once, and name one result.")
+        t.wait_for("brave_web_search", 90)
+        t.idle(180)
+        invariants(t, "after brave_web_search")
+        t.contains("toolbox → brave_web_search")
+        if "ERROR" in t.text.split("brave_web_search")[-1][:400]:
+            raise Skip("the search failed (key, quota or network): " + " ".join(t.text.split("brave_web_search")[-1][:300].split()))
+    finally:
+        t.close()
+
+
+def toolbox_large_output():
+    t = toolbox_term()
+    try:
+        plan = os.path.join(ROOT, "PLAN.md")
+        t.type(f"Use toolbox__read_file to read {plan} and tell me its first heading.")
+        t.wait_for("read_file", 60)
+        t.idle(180)
+        invariants(t, "after a large read")
+        t.contains("toolbox → read_file")
+        t.send(TAB, 0.3)
+        t.send(ENTER, 0.6)
+        for _ in range(60):  # to the end of the opened card
+            t.send(PGDN, 0.05)
+        t.pump(0.5)
+        t.contains("[output truncated", "a result over the cap is not cut with a note")
+        t.send(ENTER, 0.4)
+    finally:
+        t.close()
+
+
 SCENARIOS = [startup_and_chat, markdown, approval_and_cards, queue_and_cancel, commands, restart_after_death, scrolling,
-             resize, quit_protection, multiline_input, long_output_card, failing_server_and_flags, non_interactive]
+             resize, quit_protection, multiline_input, long_output_card, failing_server_and_flags, non_interactive,
+             toolbox_startup, toolbox_files, toolbox_shell, toolbox_fetch_and_search, toolbox_large_output]
 
 
 def main():
