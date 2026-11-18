@@ -14,6 +14,7 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Changed
 
+- Wrapped lines of a list item sit under the item's text, not under its bullet (glamour does not do this).
 - The header reads the model name from the agent, so `Info.Model` is gone and `/model` has one place to update.
 - The suggestion list uses the key map (`up`, `down`, `complete`, `dismiss`) like every other binding.
 - The welcome text mentions `/` for commands.
