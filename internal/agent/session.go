@@ -98,7 +98,20 @@ func (a *Agent) SessionID() string {
 	return a.saving.id
 }
 
-// Resume makes a saved conversation the current one. Call it before the first turn. Reasoning items are left out
+// ResumeSession makes the saved session with this ID the current conversation, in place of the one in memory, which
+// is already saved. Call it between turns. Nothing changes when the session cannot be read or does not hold up.
+func (a *Agent) ResumeSession(id string) error {
+	if a.saving == nil {
+		return ErrSessionsOff
+	}
+	f, err := a.saving.store.Load(id)
+	if err != nil {
+		return err
+	}
+	return a.Resume(f, a.saving.endpoint)
+}
+
+// Resume makes a saved conversation the current one. Call it between turns. Reasoning items are left out
 // when another model or server wrote them, because they only make sense to the one that did. A file whose calls and
 // outputs do not match is refused, since the API would refuse the history.
 func (a *Agent) Resume(f session.File, endpoint string) error {
@@ -133,7 +146,7 @@ func (a *Agent) Resume(f session.File, endpoint string) error {
 			break
 		}
 	}
-	a.lastInput = 0
+	a.lastInput, a.summaryFailures = 0, 0
 	if a.saving != nil {
 		a.saving.id, a.saving.created = f.ID, f.Created // goes on in the same file
 		a.saving.title = cmp.Or(f.Title, a.firstPrompt())
@@ -208,7 +221,6 @@ func (a *Agent) Messages() []Message {
 // SessionInfo describes a saved session for a list.
 type SessionInfo struct {
 	ID      string
-	Dir     string
 	Updated time.Time
 	Prompt  string // the first thing the user asked
 	Turns   int
@@ -218,20 +230,18 @@ type SessionInfo struct {
 // ErrSessionsOff is returned by ListSessions when saving is not enabled.
 var ErrSessionsOff = errors.New("sessions are off (sessions: false in the config file, or --no-save)")
 
-// ListSessions lists the saved sessions of this directory, or of every directory with all, the newest first and at
-// most SessionListLimit of them.
-func (a *Agent) ListSessions(all bool) ([]SessionInfo, error) {
+// ListSessions lists the saved sessions of this directory, the newest first and at most SessionListLimit of them.
+func (a *Agent) ListSessions() ([]SessionInfo, error) {
 	if a.saving == nil {
 		return nil, ErrSessionsOff
 	}
-	infos, err := a.saving.store.List(func(i session.Info) bool { return all || i.Dir == a.saving.workDir }, SessionListLimit)
+	infos, err := a.saving.store.List(func(i session.Info) bool { return i.Dir == a.saving.workDir }, SessionListLimit)
 	if err != nil {
 		return nil, err
 	}
 	var out []SessionInfo
 	for _, i := range infos {
-		info := SessionInfo{ID: i.ID, Dir: i.Dir, Updated: i.Updated, Current: i.ID == a.saving.id, Prompt: i.Title, Turns: i.Turns}
-		out = append(out, info)
+		out = append(out, SessionInfo{ID: i.ID, Updated: i.Updated, Current: i.ID == a.saving.id, Prompt: i.Title, Turns: i.Turns})
 	}
 	return out, nil
 }

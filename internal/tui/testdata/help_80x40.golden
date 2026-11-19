@@ -15,7 +15,7 @@
    /reset             Forget the conversation and start over
    /retry             Send the last prompt again
    /servers           List the MCP servers and how they are doing
-   /sessions [all]    List saved sessions (resume with --resume ID)
+   /sessions          Choose a saved session of this directory to resume
    /summary           Show the summary that stands for the oldest turns
    /tools             List the tools and which of them ask before they run
    /undo              Remove the last exchange from the conversation

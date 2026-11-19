@@ -256,19 +256,19 @@ func TestListSessionsDescribesThem(t *testing.T) {
 	drain(t, a.Send(context.Background(), "what is up"))
 	drain(t, a.Send(context.Background(), "and now"))
 
-	list, err := a.ListSessions(false)
+	list, err := a.ListSessions()
 	if err != nil || len(list) != 1 {
 		t.Fatalf("%v %v", list, err)
 	}
-	if s := list[0]; s.Turns != 2 || s.Prompt != "what is up" || !s.Current || s.Dir != "/work" {
+	if s := list[0]; s.Turns != 2 || s.Prompt != "what is up" || !s.Current {
 		t.Errorf("info = %+v", s)
 	}
-	if _, err := newTestAgent(srv).ListSessions(false); err != ErrSessionsOff {
+	if _, err := newTestAgent(srv).ListSessions(); err != ErrSessionsOff {
 		t.Errorf("error = %v", err)
 	}
 }
 
-func TestListSessionsIsPerDirectoryUnlessAll(t *testing.T) {
+func TestListSessionsIsPerDirectory(t *testing.T) {
 	store := session.NewStore(t.TempDir())
 	srv := newScriptedServer(t, chatReply("one"), chatReply("two"))
 	here := saved(t, srv, store)
@@ -277,11 +277,55 @@ func TestListSessionsIsPerDirectoryUnlessAll(t *testing.T) {
 	drain(t, here.Send(context.Background(), "here"))
 	drain(t, elsewhere.Send(context.Background(), "there"))
 
-	if list, _ := here.ListSessions(false); len(list) != 1 || list[0].Prompt != "here" {
+	if list, _ := here.ListSessions(); len(list) != 1 || list[0].Prompt != "here" {
 		t.Errorf("this directory: %+v", list)
 	}
-	if list, _ := here.ListSessions(true); len(list) != 2 {
-		t.Errorf("all: %+v", list)
+}
+
+func TestResumeSessionReplacesTheConversationInPlace(t *testing.T) {
+	store := session.NewStore(t.TempDir())
+	srv := newScriptedServer(t, chatReply("one"), chatReply("two"), chatReply("three"))
+	old := saved(t, srv, store)
+	drain(t, old.Send(context.Background(), "the old question"))
+	oldID := old.SessionID()
+
+	a := saved(t, srv, store)
+	drain(t, a.Send(context.Background(), "the current question"))
+	currentID := a.SessionID()
+
+	if err := a.ResumeSession(oldID); err != nil {
+		t.Fatal(err)
+	}
+	if a.SessionID() != oldID {
+		t.Errorf("session = %q, want %q", a.SessionID(), oldID)
+	}
+	if msgs := a.Messages(); len(msgs) != 2 || msgs[0].Text != "the old question" {
+		t.Errorf("messages = %+v", msgs)
+	}
+	drain(t, a.Send(context.Background(), "a follow-up"))
+	if got, _ := store.Load(oldID); len(got.Items) != 4 {
+		t.Errorf("the follow-up went to %d items in the resumed file, want 4", len(got.Items))
+	}
+	if got, _ := store.Load(currentID); len(got.Items) != 2 {
+		t.Errorf("the session left behind changed: %d items", len(got.Items))
+	}
+}
+
+func TestResumeSessionThatFailsChangesNothing(t *testing.T) {
+	store := session.NewStore(t.TempDir())
+	srv := newScriptedServer(t, chatReply("one"))
+	a := saved(t, srv, store)
+	drain(t, a.Send(context.Background(), "keep me"))
+	id := a.SessionID()
+
+	if err := a.ResumeSession("no-such-session"); err == nil {
+		t.Error("an unknown session was resumed")
+	}
+	if a.SessionID() != id || len(a.Messages()) != 2 {
+		t.Errorf("the conversation changed: %q, %+v", a.SessionID(), a.Messages())
+	}
+	if err := newTestAgent(srv).ResumeSession(id); err != ErrSessionsOff {
+		t.Errorf("error = %v", err)
 	}
 }
 
@@ -297,7 +341,7 @@ func TestTheListKeepsTheFirstPromptAndTheTurnsAfterASummary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	list, _ := a.ListSessions(false)
+	list, _ := a.ListSessions()
 	if len(list) != 1 || list[0].Turns != 4 || !strings.HasPrefix(list[0].Prompt, "question 1") {
 		t.Errorf("list = %+v, want 4 turns and the first question", list)
 	}
@@ -311,7 +355,7 @@ func TestTheListKeepsTheFirstPromptAndTheTurnsAfterASummary(t *testing.T) {
 	if _, err := b.persist(); err != nil {
 		t.Fatal(err)
 	}
-	if again, _ := b.ListSessions(false); again[0].Turns != 4 || !strings.HasPrefix(again[0].Prompt, "question 1") {
+	if again, _ := b.ListSessions(); again[0].Turns != 4 || !strings.HasPrefix(again[0].Prompt, "question 1") {
 		t.Errorf("after a resume and a save: %+v", again[0])
 	}
 

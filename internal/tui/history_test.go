@@ -409,13 +409,19 @@ func TestAResumedConversationShowsHowItsCallsEndedAndTheToolsTitles(t *testing.T
 	}
 }
 
-func TestTheSessionListSaysWhenItIsCutShort(t *testing.T) {
+func TestThePickerSaysWhenItIsCutShortAndScrollsToTheSelection(t *testing.T) {
 	var list []agent.SessionInfo
 	for i := 0; i < agent.SessionListLimit; i++ {
 		list = append(list, agent.SessionInfo{ID: fmt.Sprint("s-", i), Turns: 1})
 	}
 	m, _ := typeAndEnter(t, newTestModel(&fakeAgent{sessions: list}), "/sessions")
-	if !strings.Contains(said(m), "Showing the newest 20") {
-		t.Errorf("said:\n%s", said(m))
+	if got := screen(m); !strings.Contains(got, "the newest 20") || strings.Contains(got, "s-15") {
+		t.Errorf("screen:\n%s", got)
+	}
+	for i := 0; i < 15; i++ {
+		m, _ = update(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	if got := screen(m); !strings.Contains(got, "▸ s-15") || strings.Contains(got, "s-0 ") {
+		t.Errorf("the selection is not in view:\n%s", got)
 	}
 }

@@ -399,12 +399,12 @@ func seedSession(t *testing.T, prompt string) string {
 	return id
 }
 
-func TestAPromptRunContinuesASessionButIsNotSaved(t *testing.T) {
+func TestAPromptRunResumesASessionButIsNotSaved(t *testing.T) {
 	isolate(t)
 	srv, requests := recordingServer(t)
 	seedSession(t, "first question")
 
-	runOK(t, "-p", "second question", "--continue", "--base-url", srv.URL)
+	runOK(t, "-p", "second question", "--resume", "--base-url", srv.URL)
 
 	got, _ := json.Marshal(requests()[0]["input"])
 	if !strings.Contains(string(got), "first question") || !strings.Contains(string(got), "second question") {
@@ -457,10 +457,13 @@ func TestResumeProblemsAreReported(t *testing.T) {
 		code int
 		want string
 	}{
-		{"nothing to continue", []string{"--continue"}, 1, "no saved session"},
+		{"nothing to resume", []string{"--resume"}, 1, "no saved session"},
 		{"unknown name", []string{"--resume", "nope"}, 1, "no session"},
 		{"not an id", []string{"--resume", "../x"}, 1, "not a session id"},
-		{"both flags", []string{"--continue", "--resume", "a"}, 2, "not both"},
+		{"the = form", []string{"--resume=nope"}, 1, "no session"},
+		{"a stray argument", []string{"stray"}, 2, "unexpected argument"},
+		{"a second argument", []string{"--resume", "a", "b"}, 2, "unexpected argument"},
+		{"the old flag", []string{"--continue"}, 2, "not defined"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -496,14 +499,14 @@ func TestASymlinkedDirectoryFindsTheSessionsOfTheRealOne(t *testing.T) {
 	}
 	t.Chdir(link)
 
-	runOK(t, "-p", "again", "--continue", "--base-url", srv.URL)
+	runOK(t, "-p", "again", "--resume", "--base-url", srv.URL)
 
 	if got, _ := json.Marshal(requests()[0]["input"]); !strings.Contains(string(got), "seen through a link") {
-		t.Errorf("--continue from a symlink missed the session: %s", got)
+		t.Errorf("--resume from a symlink missed the session: %s", got)
 	}
 }
 
-func TestContinueWarnsAboutADamagedFileNewerThanTheSession(t *testing.T) {
+func TestBareResumeWarnsAboutADamagedFileNewerThanTheSession(t *testing.T) {
 	isolate(t)
 	srv, _ := recordingServer(t)
 	seedSession(t, "kept")
@@ -513,7 +516,7 @@ func TestContinueWarnsAboutADamagedFileNewerThanTheSession(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	args := []string{"-p", "hi", "--continue", "--base-url", srv.URL}
+	args := []string{"-p", "hi", "--resume", "--base-url", srv.URL}
 	if code := run(context.Background(), args, &out, &errOut); code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut.String())
 	}

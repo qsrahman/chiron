@@ -818,7 +818,7 @@ def prompt_history():
 
 
 def sessions():
-    work = os.path.join(WORK, "sessions-dir")  # its own directory: --continue picks the latest session of the directory
+    work = os.path.join(WORK, "sessions-dir")  # its own directory: a bare --resume picks the latest session of the directory
     os.makedirs(work, exist_ok=True)
     t = start(servers={}, config="sessions", cwd=work)
     try:
@@ -827,15 +827,17 @@ def sessions():
         t.contains("No saved sessions yet")
         say(t, "The code word is PINEAPPLE-42. Reply with just OK.", "the fact")
         t.type("/sessions")
+        t.contains("Resume a session of this directory")
         t.contains("(this one)")
         t.contains("1 turn")
+        t.send(ESC, 0.4)
         t.send(CTRL_C, 0.3)
         t.send(CTRL_C, 0.8)
         t.expect(t.exited() == 0, "two Ctrl-C did not quit")
     finally:
         t.close()
 
-    t = start(servers={}, config="sessions", cwd=work, args=["--continue"])
+    t = start(servers={}, config="sessions", cwd=work, args=["--resume"])
     try:
         t.wait_for("Resumed session", 10)
         t.contains("PINEAPPLE-42", "the earlier prompt is not shown again")
@@ -845,11 +847,25 @@ def sessions():
         t.idle()
         t.type("/sessions")
         t.contains("2 turns")
+        t.send(ESC, 0.4)
         t.type("/undo")
         t.type("/retry")
         t.wait_for("Working", 20)
         t.idle()
         invariants(t, "retry after resume")
+    finally:
+        t.close()
+
+    # A fresh conversation in the same directory picks the saved session from the list: no model call is needed.
+    t = start(servers={}, config="sessions", cwd=work)
+    try:
+        t.wait_for("/help", 10)
+        t.type("/sessions")
+        t.contains("Resume a session of this directory")
+        t.send(ENTER, 0.6)
+        t.contains("Resumed session")
+        t.contains("PINEAPPLE-42", "the saved conversation is shown after choosing it")
+        invariants(t, "after choosing a session")
         return t
     finally:
         t.close()

@@ -145,6 +145,8 @@ func (m *Model) helpView() string {
 	switch {
 	case m.search.open:
 		bindings = m.keys.searchHelp()
+	case m.picker.open:
+		bindings = m.keys.pickerHelp()
 	case m.approval.open:
 		bindings = m.keys.approvalHelp()
 	case m.cards.selected >= 0:

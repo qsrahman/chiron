@@ -43,7 +43,7 @@ Type `/` in the chat to list them; Up/Down choose, Tab completes, Esc closes. Th
 | `/copy [code]` | Copy the last answer, or its last code block, to the clipboard (through the terminal, which must support OSC 52; control characters are removed first) |
 | `/context` | Estimated size of the instructions, tools, summary and history, and how much of the budget is used |
 | `/compact [focus]` | Summarize the oldest turns with the model to free context; `focus` says what the summary must keep |
-| `/sessions [all]` | List the saved conversations of this directory, or of every directory with `all` |
+| `/sessions` | Choose one of the saved conversations of this directory and resume it in place of this one |
 | `/summary` | Show the summary that stands for the oldest turns |
 
 A lone `/word` that is no command is reported and not sent; a longer line such as `/usr/bin is missing` is a prompt.
@@ -226,8 +226,7 @@ Flags:
 | `--reasoning-effort level` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; `default` sends none even if the file sets one. Models that do not reason reject the setting, so it is only sent when you set it. |
 | `--max-turns n` | Most model calls for one prompt (default 25). |
 | `--streaming`, `--no-streaming` | Stream the reply as it arrives (the default), or send one request and show the whole reply at once, for servers whose streaming is broken. |
-| `--continue` | Resume the latest saved conversation of this directory. |
-| `--resume id` | Resume the saved conversation named `id`, or the only one whose name starts with it (`/sessions all` lists them). |
+| `--resume [id]` | Resume the latest saved conversation of this directory, or the one named `id` (or the only one whose name starts with it). `--resume id` and `--resume=id` both work. |
 | `--no-save` | Do not save this conversation. |
 | `--config path` | Config file (default below). A missing explicit file is an error. |
 | `--version` | Print the version. |
@@ -293,7 +292,7 @@ One file, `~/.config/chiron/config.json` (or `$XDG_CONFIG_HOME/chiron/config.jso
 
 ## Notes
 
-`-p` starts a fresh conversation each time unless you pass `--continue` or `--resume` (it then continues that session
+`-p` starts a fresh conversation each time unless you pass `--resume` (it then continues that session
 without adding to it). A `-p` run is never saved (see [Sessions](#sessions)).
 
 ## Sessions
@@ -304,11 +303,12 @@ time (`20261118-153012-k3f9`). The directory is private (`0700`), so are the fil
 atomically: a failed write leaves the previous one. A conversation that never got an answer writes nothing, and
 `/reset` starts a new file and keeps the old one.
 
-- **Resume** with `--continue` (the latest of the current directory) or `--resume ID`. The messages and the tool calls
+- **Resume** with `--resume` (the latest of the current directory) or `--resume ID`. The messages and the tool calls
   of the newest turn are shown again, the model sees the whole saved history, and the conversation goes on in the
-  same file. `/sessions` lists the ones of this directory, `/sessions all` every directory (the newest 20). A directory is known by its real
-  path, so a symlink to it finds the same sessions. `--continue` takes the session written last and warns about damaged
-  files it had to pass over, since one of them may have been the one you meant.
+  same file. Inside the chat, `/sessions` opens a list of the sessions of this directory (the newest 20): choose one
+  with the arrow keys and Enter, and it replaces the conversation on screen, which is already saved. A directory is
+  known by its real path, so a symlink to it finds the same sessions. A bare `--resume` takes the session written last
+  and warns about damaged files it had to pass over, since one of them may have been the one you meant.
 - **Two programs, one session:** if another chiron has written the file since this one did, this one does not
   overwrite it: it says so and goes on in a new file.
 - **Reasoning items** are dropped when you resume with another model or server than the one that wrote them, and when

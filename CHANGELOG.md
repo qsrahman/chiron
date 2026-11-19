@@ -4,6 +4,16 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Changed
+
+- **`--continue` is gone; `--resume` takes an optional ID.** `--resume` alone resumes the latest session of this
+  directory (it warns about damaged files it passed over, as `--continue` did), `--resume ID` and `--resume=ID` a named
+  one. A second ID, or any other stray argument, is an error.
+- **`/sessions` is a picker.** It lists the saved sessions of this directory (the newest 20, with the current one
+  marked); the arrow keys and Enter resume the chosen one in place of the conversation on screen, which is already
+  saved, and Esc closes the list. `/sessions all` is gone. `Agent.ListSessions` has no `all` argument and
+  `Agent.ResumeSession(id)` is new; a session that cannot be loaded changes nothing and the error is shown.
+
 ## [0.7.0] - 2026-11-19
 
 ### Changed

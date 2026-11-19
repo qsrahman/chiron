@@ -41,7 +41,9 @@ type fakeAgent struct {
 	sessionID   string
 	sessions    []agent.SessionInfo
 	sessionsErr error
-	listedAll   bool
+	resumed     string // the ID ResumeSession was last asked for
+	resumeErr   error
+	resumedMsgs []agent.Message // what Messages returns once a session was resumed
 	titles      map[string]string
 }
 
@@ -62,12 +64,16 @@ func (f *fakeAgent) Compact(_ context.Context, focus string) (agent.Compaction, 
 	f.compactFocus = focus
 	return f.compaction, f.compactErr
 }
-func (f *fakeAgent) Messages() []agent.Message    { return f.messages }
-func (f *fakeAgent) SessionID() string            { return f.sessionID }
-func (f *fakeAgent) ToolTitle(name string) string { return f.titles[name] }
-func (f *fakeAgent) ListSessions(all bool) ([]agent.SessionInfo, error) {
-	f.listedAll = all
-	return f.sessions, f.sessionsErr
+func (f *fakeAgent) Messages() []agent.Message                  { return f.messages }
+func (f *fakeAgent) SessionID() string                          { return f.sessionID }
+func (f *fakeAgent) ToolTitle(name string) string               { return f.titles[name] }
+func (f *fakeAgent) ListSessions() ([]agent.SessionInfo, error) { return f.sessions, f.sessionsErr }
+func (f *fakeAgent) ResumeSession(id string) error {
+	if f.resumeErr != nil {
+		return f.resumeErr
+	}
+	f.resumed, f.sessionID, f.messages = id, id, f.resumedMsgs
+	return nil
 }
 func (f *fakeAgent) Summary() string                        { return f.summary }
 func (f *fakeAgent) ContextEstimate() agent.ContextEstimate { return f.estimate }

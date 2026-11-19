@@ -36,7 +36,8 @@ type Agent interface {
 	Compact(ctx context.Context, focus string) (agent.Compaction, error)
 	Summary() string
 	Messages() []agent.Message
-	ListSessions(all bool) ([]agent.SessionInfo, error)
+	ListSessions() ([]agent.SessionInfo, error)
+	ResumeSession(id string) error
 	SessionID() string
 	ToolTitle(name string) string
 	ToolList() agent.ToolList
@@ -136,6 +137,7 @@ type Model struct {
 	hist     *promptHistory // the prompts sent so far, for Up and Down and Ctrl-R
 	recall   recallState    // where Up and Down have got to
 	search   searchState    // Ctrl-R
+	picker   pickerState    // /sessions
 	suggest  suggestState   // the list that opens while a command is typed
 	approval approval       // the modal that asks about a tool call
 	queue    queueState     // prompts typed during a turn
@@ -398,6 +400,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.searchKey(msg)
 		return m, nil
 	}
+	if m.picker.open {
+		m.pickerKey(msg)
+		return m, nil
+	}
 	switch {
 	case key.Matches(msg, m.keys.search):
 		m.startSearch()
@@ -615,7 +621,7 @@ func (m *Model) layout() {
 	// A window at the bottom of the transcript stays there when its height changes (the suggestion list opens and
 	// closes, the queue grows, the terminal is resized): otherwise the next output lands below the fold.
 	atBottom := m.viewport.AtBottom()
-	m.viewport.SetHeight(max(1, m.height-headerHeight-inputHeight-helpHeight-m.suggestionHeight()-m.queueHeight()-m.searchHeight()))
+	m.viewport.SetHeight(max(1, m.height-headerHeight-inputHeight-helpHeight-m.suggestionHeight()-m.queueHeight()-m.searchHeight()-m.pickerHeight()))
 	if atBottom {
 		m.viewport.GotoBottom()
 	}
@@ -688,6 +694,9 @@ func (m Model) View() tea.View {
 	}
 	if search := m.searchView(); search != "" {
 		parts = append(parts, search)
+	}
+	if picker := m.pickerView(); picker != "" {
+		parts = append(parts, picker)
 	}
 	if list := m.suggestionView(); list != "" {
 		parts = append(parts, list)

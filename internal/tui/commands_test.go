@@ -404,33 +404,83 @@ func TestWhatACommandSaysIsInTheTranscriptOnScreen(t *testing.T) {
 	}
 }
 
-func TestSessionsListsThemAndMarksTheCurrentOne(t *testing.T) {
-	a := &fakeAgent{sessions: []agent.SessionInfo{
+// sessionList is a small list of sessions, the first of which is the current one.
+func sessionList() []agent.SessionInfo {
+	return []agent.SessionInfo{
 		{ID: "20261118-100000-abcd", Turns: 3, Prompt: "fix the\nbuild", Current: true},
 		{ID: "20261117-090000-wxyz", Turns: 1, Prompt: "hello"},
-	}}
-	m, _ := typeAndEnter(t, newTestModel(a), "/sessions")
-	got := said(m)
-	for _, want := range []string{"20261118-100000-abcd (this one)", "3 turns", "fix the …", "20261117-090000-wxyz", "1 turn"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("/sessions is missing %q:\n%s", want, got)
-		}
 	}
 }
 
-func TestSessionsAllShowsTheDirectory(t *testing.T) {
-	a := &fakeAgent{sessions: []agent.SessionInfo{{ID: "a-1", Dir: "/work/demo", Turns: 1, Prompt: "hi"}}}
-	m, _ := typeAndEnter(t, newTestModel(a), "/sessions all")
-	if !a.listedAll || !strings.Contains(said(m), "/work/demo") {
-		t.Errorf("listedAll = %v, said:\n%s", a.listedAll, said(m))
+func TestSessionsOpensAPickerOfThisDirectory(t *testing.T) {
+	a := &fakeAgent{sessions: sessionList()}
+	m, _ := typeAndEnter(t, newTestModel(a), "/sessions")
+	if !m.picker.open {
+		t.Fatal("the picker did not open")
 	}
-	m, _ = typeAndEnter(t, newTestModel(a), "/sessions")
-	if a.listedAll || strings.Contains(said(m), "/work/demo") {
-		t.Errorf("the plain list must not ask for every directory")
+	got := screen(m)
+	for _, want := range []string{"Resume a session of this directory", "20261118-100000-abcd", "(this one)", "3 turns", "fix the …", "20261117-090000-wxyz", "1 turn"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the picker is missing %q:\n%s", want, got)
+		}
 	}
-	m, _ = typeAndEnter(t, newTestModel(a), "/sessions bogus")
-	if !strings.Contains(said(m), "unknown argument") {
-		t.Errorf("said:\n%s", said(m))
+	m, _ = typeAndEnter(t, newTestModel(a), "/sessions all")
+	if m.picker.open || !strings.Contains(said(m), "takes no argument") {
+		t.Errorf("an argument was accepted:\n%s", said(m))
+	}
+}
+
+func TestThePickerResumesTheChosenSessionInPlace(t *testing.T) {
+	a := &fakeAgent{sessions: sessionList(), resumedMsgs: []agent.Message{
+		{Role: "user", Text: "hello"},
+		{Role: "assistant", Text: "hi there"},
+	}}
+	m, cmd := typeAndEnter(t, newTestModel(a), "say something")
+	m = pump(t, m, cmd)
+	m, _ = typeAndEnter(t, m, "/sessions")
+	m, _ = update(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, _ = update(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if a.resumed != "20261117-090000-wxyz" || m.picker.open {
+		t.Fatalf("resumed %q, picker open %v", a.resumed, m.picker.open)
+	}
+	got := screen(m)
+	for _, want := range []string{"hello", "hi there", "Resumed session 20261117-090000-wxyz"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the screen is missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "say something") {
+		t.Errorf("the earlier conversation is still shown:\n%s", got)
+	}
+}
+
+func TestThePickerCanBeClosedAndNeverResumesTheCurrentSession(t *testing.T) {
+	a := &fakeAgent{sessions: sessionList()}
+	m, _ := typeAndEnter(t, newTestModel(a), "/sessions")
+	m, _ = update(m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.picker.open || a.resumed != "" {
+		t.Errorf("Esc: open %v, resumed %q", m.picker.open, a.resumed)
+	}
+
+	m, _ = typeAndEnter(t, m, "/sessions") // the current session is the first row
+	m, _ = update(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if a.resumed != "" || !strings.Contains(said(m), "Already in session 20261118-100000-abcd") {
+		t.Errorf("resumed %q, said:\n%s", a.resumed, said(m))
+	}
+}
+
+func TestAFailedResumeShowsTheErrorAndKeepsTheConversation(t *testing.T) {
+	a := &fakeAgent{sessions: sessionList(), resumeErr: errors.New("session is damaged")}
+	m, cmd := typeAndEnter(t, newTestModel(a), "keep me")
+	m = pump(t, m, cmd)
+	m, _ = typeAndEnter(t, m, "/sessions")
+	m, _ = update(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	m, _ = update(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	got := screen(m)
+	if !strings.Contains(got, "Could not resume: session is damaged") || !strings.Contains(got, "keep me") {
+		t.Errorf("screen:\n%s", got)
 	}
 }
 
@@ -440,7 +490,7 @@ func TestSessionsWhenOffOrEmpty(t *testing.T) {
 		t.Errorf("said:\n%s", said(m))
 	}
 	m, _ = typeAndEnter(t, newTestModel(&fakeAgent{}), "/sessions")
-	if !strings.Contains(said(m), "No saved sessions yet") {
+	if m.picker.open || !strings.Contains(said(m), "No saved sessions yet") {
 		t.Errorf("said:\n%s", said(m))
 	}
 }

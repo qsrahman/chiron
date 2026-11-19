@@ -55,13 +55,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	// Two flags make a three-state setting: not given, on, off.
 	noMCP := flags.Bool("no-mcp", false, "do not start the MCP servers of the config file")
 	noSave := flags.Bool("no-save", false, "do not save this conversation")
-	cont := flags.Bool("continue", false, "resume the latest saved conversation of this directory")
-	resume := flags.String("resume", "", "resume the saved conversation named `ID` (or the start of its name)")
+	var resume resumeFlag
+	flags.Var(&resume, "resume", "resume the latest saved conversation of this directory, or the one named ID (--resume ID or --resume=ID)")
 	yes := flags.Bool("yes", false, "allow every tool call without asking (in -p mode, calls that would ask are denied without it)")
 	flags.BoolFunc("streaming", "stream the reply as it arrives (the default)", func(string) error { given.Streaming = new(true); return nil })
 	flags.BoolFunc("no-streaming", "send one request and show the whole reply at once", func(string) error { given.Streaming = new(false); return nil })
 
-	if err := flags.Parse(args); err != nil {
+	if !parseFlags(flags, args, &resume, stderr) {
 		return 2
 	}
 	if *showVersion {
@@ -69,14 +69,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	if *cont && *resume != "" {
-		fmt.Fprintln(stderr, "chiron: use --continue or --resume, not both")
-		return 2
-	}
-
 	cfg, err := loadConfig(*configPath, given, stderr)
 	if err == nil {
-		err = start(ctx, cfg, runOptions{prompt: *prompt, autoApprove: *yes, noMCP: *noMCP, noSave: *noSave, cont: *cont, resume: *resume}, stdout, stderr)
+		err = start(ctx, cfg, runOptions{prompt: *prompt, autoApprove: *yes, noMCP: *noMCP, noSave: *noSave, resume: resume}, stdout, stderr)
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "chiron:", err)
@@ -85,14 +80,51 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// resumeFlag is --resume with an optional ID: bare it means the latest session of this directory. The flag package
+// gives a bare flag no value and reads "--resume ID" as a flag followed by an argument, which parseFlags joins up.
+type resumeFlag struct {
+	set bool
+	id  string // empty: the latest session
+}
+
+func (r *resumeFlag) IsBoolFlag() bool { return true }
+func (r *resumeFlag) String() string   { return r.id }
+
+func (r *resumeFlag) Set(value string) error {
+	r.set = true
+	if value != "true" { // what the flag package passes for a bare flag; an ID never looks like it
+		r.id = value
+	}
+	return nil
+}
+
+// parseFlags parses args and takes the word after a bare --resume as its ID. The flag package stops at the first
+// word that is no flag, so the rest is parsed again. It reports false, after saying why, when the line is wrong.
+func parseFlags(flags *flag.FlagSet, args []string, resume *resumeFlag, stderr io.Writer) bool {
+	for {
+		if err := flags.Parse(args); err != nil {
+			return false
+		}
+		rest := flags.Args()
+		switch {
+		case len(rest) == 0:
+			return true
+		case resume.set && resume.id == "":
+			resume.id, args = rest[0], rest[1:]
+		default:
+			fmt.Fprintf(stderr, "chiron: unexpected argument %q\n", rest[0])
+			return false
+		}
+	}
+}
+
 // runOptions are the choices of one run that are not settings of the agent.
 type runOptions struct {
 	prompt      string // one prompt to send and print, instead of the chat UI
 	autoApprove bool   // --yes
 	noMCP       bool   // --no-mcp
 	noSave      bool   // --no-save
-	cont        bool   // --continue
-	resume      string // --resume
+	resume      resumeFlag
 }
 
 // start builds the agent for the current directory and runs either one prompt or the chat UI.
@@ -215,7 +247,7 @@ func newClient(cfg config.Config, extra ...option.RequestOption) openai.Client {
 // openSessions turns on saving, and resumes a saved conversation when asked to. Resuming works even when saving is
 // off. Without a home directory there is nowhere to keep sessions: that is an error only for a resume.
 func openSessions(a *agent.Agent, cfg config.Config, opts runOptions, workDir string, stderr io.Writer) error {
-	resuming := opts.cont || opts.resume != ""
+	resuming := opts.resume.set
 	stateDir, err := config.StateDir()
 	if err != nil {
 		if resuming {
@@ -229,7 +261,7 @@ func openSessions(a *agent.Agent, cfg config.Config, opts runOptions, workDir st
 	if real, err := filepath.EvalSymlinks(workDir); err == nil {
 		workDir = real
 	}
-	// A one-shot -p run is a script's call, not a conversation: it can continue a session but is never saved.
+	// A one-shot -p run is a script's call, not a conversation: it can resume a session but is never saved.
 	if cfg.Sessions && !opts.noSave && opts.prompt == "" {
 		a.EnableSessions(store, workDir, endpoint)
 	}
@@ -237,14 +269,14 @@ func openSessions(a *agent.Agent, cfg config.Config, opts runOptions, workDir st
 		return nil
 	}
 	var f session.File
-	if opts.cont {
+	if opts.resume.id == "" {
 		var damaged []string
 		f, damaged, err = store.Latest(workDir)
 		for _, d := range damaged { // one of them may have been the session meant
 			fmt.Fprintln(stderr, "chiron: warning:", d)
 		}
 	} else {
-		f, err = store.Load(opts.resume)
+		f, err = store.Load(opts.resume.id)
 	}
 	if err != nil {
 		return err
