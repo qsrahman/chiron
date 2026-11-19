@@ -4,6 +4,8 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-19
+
 ### Changed
 
 - **Renamed from desk-agent to chiron.** The binary, the module path (`github.com/qsrahman/chiron`) and the `cmd/`
