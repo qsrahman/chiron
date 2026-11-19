@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 // adapted returns the adapter for one tool of an in-memory server.

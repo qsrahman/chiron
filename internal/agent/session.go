@@ -11,7 +11,7 @@ import (
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
 
-	"github.com/qsrahman/desk-agent/internal/session"
+	"github.com/qsrahman/chiron/internal/session"
 )
 
 // saving is where the conversation is written after every change, and what identifies the file.
@@ -49,7 +49,7 @@ func (a *Agent) persist() (note string, err error) {
 	now := time.Now()
 	if s.id != "" {
 		if cur, err := s.store.Stamp(s.id); err == nil && !cur.IsZero() && !cur.Equal(s.stamp) {
-			note = fmt.Sprintf("Another desk-agent has written session %s: this conversation goes on in a new file", s.id)
+			note = fmt.Sprintf("Another chiron has written session %s: this conversation goes on in a new file", s.id)
 			s.id = ""
 		}
 	}

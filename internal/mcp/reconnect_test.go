@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qsrahman/desk-agent/internal/config"
+	"github.com/qsrahman/chiron/internal/config"
 )
 
 // switchable is an environment that a test changes between the start of the servers and a reconnect.

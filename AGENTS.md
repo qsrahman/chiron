@@ -5,7 +5,7 @@ Read [PLAN.md](PLAN.md) first for goals, decisions and the phase table.
 ## Layout
 
 ```
-cmd/desk-agent/     main: flags, wiring, -p mode
+cmd/chiron/     main: flags, wiring, -p mode
 internal/config/    config file, env and flag precedence
 internal/agent/     loop, events, history, system prompt (no UI imports)
 internal/tools/     Tool interface, MustNew, Registry (built-in tools are added from Phase 5)
@@ -41,7 +41,7 @@ go test -tags=integration -run TestRealAPI -v -count=1 ./internal/agent
 
 `e2e/run.sh` runs the real binary in a pseudo-terminal and reads the screen through a terminal emulator (pyte, in a
 venv it creates under `e2e/.venv`). Nothing is mocked: the model is the one in your config (or
-`DESK_AGENT_LIVE_BASE_URL` and `DESK_AGENT_LIVE_MODEL`), the MCP server is the test binary of `internal/mcp` run as a
+`CHIRON_LIVE_BASE_URL` and `CHIRON_LIVE_MODEL`), the MCP server is the test binary of `internal/mcp` run as a
 real stdio process. It costs a few dozen model calls and takes a few minutes; `-k name` runs the scenarios whose name
 contains `name`. The `toolbox_*` scenarios use the `toolbox` server of your own config file when it has one (and skip
 otherwise): files are written and edited only in a temporary working directory and checked on disk afterwards, the

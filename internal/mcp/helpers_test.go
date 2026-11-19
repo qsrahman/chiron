@@ -14,8 +14,8 @@ import (
 // The test binary doubles as a stdio MCP server: a test starts it as a command with one of these modes in its
 // environment.
 const (
-	modeVar   = "DESK_AGENT_TEST_MCP_MODE"
-	dieLogVar = "DESK_AGENT_TEST_DIE_LOG"
+	modeVar   = "CHIRON_TEST_MCP_MODE"
+	dieLogVar = "CHIRON_TEST_DIE_LOG"
 )
 
 func TestMain(m *testing.M) {

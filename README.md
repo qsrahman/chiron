@@ -1,4 +1,4 @@
-# desk-agent
+# chiron
 
 A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI, and works on your
 machine through tools (files, shell, web, todo, questions) and optional MCP servers.
@@ -17,10 +17,10 @@ machine through tools (files, shell, web, todo, questions) and optional MCP serv
 ## Build and run
 
 ```bash
-go build -o desk-agent ./cmd/desk-agent
+go build -o chiron ./cmd/chiron
 export OPENAI_API_KEY=...
-./desk-agent                                              # interactive chat
-./desk-agent -p "Explain what a goroutine is in two sentences"   # one prompt, answer on stdout
+./chiron                                              # interactive chat
+./chiron -p "Explain what a goroutine is in two sentences"   # one prompt, answer on stdout
 ```
 
 ## Slash commands
@@ -109,7 +109,7 @@ and prints failures to stderr. `--no-mcp` starts none.
   asking.
 - **Local servers** run with this program's environment plus their own `env`. They can therefore see variables such
   as `OPENAI_API_KEY`: only start servers you trust. Their error output goes to
-  `~/.local/state/desk-agent/mcp/<server>.log` (`$XDG_STATE_HOME` is honoured), a private file that is emptied at each
+  `~/.local/state/chiron/mcp/<server>.log` (`$XDG_STATE_HOME` is honoured), a private file that is emptied at each
   launch; it never reaches the screen.
 - **Remote servers** need an `https` URL (`http` only for localhost) without a user name or password in it. The
   configured headers go to that host only, and a redirect to another address is refused.
@@ -237,7 +237,7 @@ process lists.
 
 ## Configuration
 
-One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/config.json`):
+One file, `~/.config/chiron/config.json` (or `$XDG_CONFIG_HOME/chiron/config.json`):
 
 ```json
 {
@@ -284,7 +284,7 @@ One file, `~/.config/desk-agent/config.json` (or `$XDG_CONFIG_HOME/desk-agent/co
   uses (for example `25.5k tokens (6%)`); without it only the token count appears.
 - `mcpServers` is described in [MCP servers](#mcp-servers). A typo in an entry is an error, like any other key.
 - `"${NAME}"` in any string value is replaced from the environment, so secrets need not live in the file.
-  If you do put a key in the file, keep it private: `chmod 600 ~/.config/desk-agent/config.json`.
+  If you do put a key in the file, keep it private: `chmod 600 ~/.config/chiron/config.json`.
 - An MCP server is either a local process (`command`, `args`, `env`) or a remote one (`url`, `headers`), plus
   `enabled` (default true) and `autoApprove`. Giving both `command` and `url`, or neither, is an error.
 - Custom `base_url` servers must implement the OpenAI Responses API; some OpenAI-side features may not work
@@ -299,7 +299,7 @@ without adding to it). A `-p` run is never saved (see [Sessions](#sessions)).
 ## Sessions
 
 Every chat conversation (not a `-p` run) is saved after each turn, and after `/undo`, `/retry` and `/compact`, in
-`$XDG_STATE_HOME/desk-agent/sessions/` (`~/.local/state/desk-agent/sessions/`), one JSON file each, named by its start
+`$XDG_STATE_HOME/chiron/sessions/` (`~/.local/state/chiron/sessions/`), one JSON file each, named by its start
 time (`20261118-153012-k3f9`). The directory is private (`0700`), so are the files (`0600`), and a file is replaced
 atomically: a failed write leaves the previous one. A conversation that never got an answer writes nothing, and
 `/reset` starts a new file and keeps the old one.
@@ -309,14 +309,14 @@ atomically: a failed write leaves the previous one. A conversation that never go
   same file. `/sessions` lists the ones of this directory, `/sessions all` every directory (the newest 20). A directory is known by its real
   path, so a symlink to it finds the same sessions. `--continue` takes the session written last and warns about damaged
   files it had to pass over, since one of them may have been the one you meant.
-- **Two programs, one session:** if another desk-agent has written the file since this one did, this one does not
+- **Two programs, one session:** if another chiron has written the file since this one did, this one does not
   overwrite it: it says so and goes on in a new file.
 - **Reasoning items** are dropped when you resume with another model or server than the one that wrote them, and when
   you switch with `/model`; they only make sense to the model that produced them. Everything else is kept.
 - **Opt out** with `"sessions": false` in the config file or `--no-save` for one run. Resuming still works with
   saving off. The files hold your prompts, the answers and tool results, and the working directory; they are not
   pruned, so delete old ones by hand.
-- **Prompt history** (`Up`, `Ctrl-R`) is kept next to them, in `$XDG_STATE_HOME/desk-agent/history` (private, the last 1,000
+- **Prompt history** (`Up`, `Ctrl-R`) is kept next to them, in `$XDG_STATE_HOME/chiron/history` (private, the last 1,000
   prompts, one JSON string a line, no repeats in a row, and a prompt that starts with a space is not remembered, as in a
   shell, for what should leave no trace), and follows the same switch: with sessions off, prompts are
   remembered for the current run only.

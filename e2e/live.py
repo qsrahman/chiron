@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Live end-to-end scenarios for desk-agent. See e2e/run.sh. Needs a reachable model (the one in your config, or
-DESK_AGENT_LIVE_BASE_URL and DESK_AGENT_LIVE_MODEL), and pyte."""
+"""Live end-to-end scenarios for chiron. See e2e/run.sh. Needs a reachable model (the one in your config, or
+CHIRON_LIVE_BASE_URL and CHIRON_LIVE_MODEL), and pyte."""
 
 import argparse
 import json
@@ -16,8 +16,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from harness import *  # noqa: E402,F401,F403
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WORK = tempfile.mkdtemp(prefix="desk-agent-live-")
-BIN, MCP = os.path.join(WORK, "desk-agent"), os.path.join(WORK, "mcp.test")
+WORK = tempfile.mkdtemp(prefix="chiron-live-")
+BIN, MCP = os.path.join(WORK, "chiron"), os.path.join(WORK, "mcp.test")
 MANY_LINES = "\n".join(f"row {i}" for i in range(1, 41))
 
 
@@ -28,16 +28,16 @@ class Skip(Exception):
 # --- setup ---------------------------------------------------------------------------------------------------
 
 def build():
-    for args in (["go", "build", "-o", BIN, "./cmd/desk-agent"], ["go", "test", "-c", "-o", MCP, "./internal/mcp"]):
+    for args in (["go", "build", "-o", BIN, "./cmd/chiron"], ["go", "test", "-c", "-o", MCP, "./internal/mcp"]):
         subprocess.run(args, cwd=ROOT, check=True)
 
 
 def user_settings():
     """The model and server of the user's own config, without the key."""
-    base, model = os.environ.get("DESK_AGENT_LIVE_BASE_URL"), os.environ.get("DESK_AGENT_LIVE_MODEL")
+    base, model = os.environ.get("CHIRON_LIVE_BASE_URL"), os.environ.get("CHIRON_LIVE_MODEL")
     if base is None or model is None:
         try:
-            with open(os.path.expanduser("~/.config/desk-agent/config.json")) as f:
+            with open(os.path.expanduser("~/.config/chiron/config.json")) as f:
                 cfg = json.load(f)
             base = cfg.get("base_url", "") if base is None else base
             model = cfg.get("model", "") if model is None else model
@@ -57,7 +57,7 @@ def write_config(name, servers, **extra):
 
 
 def local_server(**extra):
-    env = {"DESK_AGENT_TEST_MCP_MODE": "serve", "E2E_LINES": MANY_LINES}
+    env = {"CHIRON_TEST_MCP_MODE": "serve", "E2E_LINES": MANY_LINES}
     return {"command": MCP, "env": env, **extra}
 
 
@@ -72,7 +72,7 @@ def preflight():
     r = subprocess.run([BIN, "--config", path, "-p", "Reply with exactly: PONG"], capture_output=True, text=True, timeout=120,
                        env={**os.environ, "XDG_STATE_HOME": os.path.join(WORK, "state")})
     if "PONG" not in r.stdout:
-        raise SystemExit(f"the model is not reachable (stdout {r.stdout!r}, stderr {r.stderr!r}): set DESK_AGENT_LIVE_BASE_URL and DESK_AGENT_LIVE_MODEL")
+        raise SystemExit(f"the model is not reachable (stdout {r.stdout!r}, stderr {r.stderr!r}): set CHIRON_LIVE_BASE_URL and CHIRON_LIVE_MODEL")
 
 
 # --- helpers -------------------------------------------------------------------------------------------------
@@ -83,7 +83,7 @@ def invariants(t, where):
     t.expect(not margin, f"{where}: line(s) {margin} touch the last column, which is the margin")
     for text in ("Working", "Cancelling", "rking…", "", "Welcome"):
         t.lacks(text, f"{where}: the screen shows {text!r}")
-    t.expect("desk-agent" in t.lines[0], f"{where}: the header is gone")
+    t.expect("chiron" in t.lines[0], f"{where}: the header is gone")
 
 
 def settle(t, where):
@@ -145,7 +145,7 @@ def startup_and_chat():
         prompt = t.find("❯ ")
         t.expect(prompt is not None and not t.screen.cursor.hidden, "no cursor shown")
         t.expect((t.screen.cursor.x, t.screen.cursor.y) == (prompt[0] + 2, prompt[1]), f"the cursor is at {(t.screen.cursor.x, t.screen.cursor.y)}, not at the start of the input {(prompt[0] + 2, prompt[1])}")
-        t.expect(t.screen.title.startswith("desk-agent"), f"window title {t.screen.title!r}")
+        t.expect(t.screen.title.startswith("chiron"), f"window title {t.screen.title!r}")
         t.type("Write a 200 word essay about the sea.", enter=True)
         t.wait_for("Working", 20)
         t.expect(t.screen.title.startswith("●"), f"the title does not show the work: {t.screen.title!r}")
@@ -393,7 +393,7 @@ def scrolling():
         for _ in range(12):
             t.send(PGDN, 0.2)
         t.lacks("below", "scrolling back down did not reach the bottom")
-        t.expect("desk-agent" in t.lines[0], "the header is gone")
+        t.expect("chiron" in t.lines[0], "the header is gone")
         # typing is not scrolling
         t.send("abc", 0.3)
         t.contains("abc")
@@ -411,7 +411,7 @@ def resize():
             t.resize(rows, cols)
             t.pump(0.6)
             t.expect(t.exit_code is None, f"the program died at {cols}x{rows}")
-            t.expect("desk-agent" in t.lines[0], f"no header at {cols}x{rows}")
+            t.expect("chiron" in t.lines[0], f"no header at {cols}x{rows}")
             t.expect("/help" in t.text, f"no hint in the input at {cols}x{rows}")
             wide = [i for i, l in enumerate(t.screen.display) if len(l.rstrip()) > cols - 1]
             t.expect(not wide, f"{cols}x{rows}: lines {wide} touch the last column")
@@ -546,7 +546,7 @@ def non_interactive():
 def toolbox_entry():
     """The user's own `toolbox` MCP server, as configured (its secrets stay in the environment, never read here)."""
     try:
-        with open(os.path.expanduser("~/.config/desk-agent/config.json")) as f:
+        with open(os.path.expanduser("~/.config/chiron/config.json")) as f:
             return json.load(f)["mcpServers"]["toolbox"]
     except (OSError, KeyError):
         return None
@@ -804,7 +804,7 @@ def prompt_history():
     finally:
         t.close()
 
-    path = os.path.join(WORK, "state", "desk-agent", "history")
+    path = os.path.join(WORK, "state", "chiron", "history")
     t.expect(os.stat(path).st_mode & 0o777 == 0o600, "the history file is not private")
     t = start(servers={}, config="history")
     try:

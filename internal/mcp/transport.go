@@ -16,7 +16,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/qsrahman/desk-agent/internal/config"
+	"github.com/qsrahman/chiron/internal/config"
 )
 
 // terminateDuration is how long a stdio server gets to exit after its input is closed, before it is signalled.

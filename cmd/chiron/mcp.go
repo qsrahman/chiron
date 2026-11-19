@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
-	"github.com/qsrahman/desk-agent/internal/config"
-	"github.com/qsrahman/desk-agent/internal/mcp"
-	"github.com/qsrahman/desk-agent/internal/tools"
-	"github.com/qsrahman/desk-agent/internal/tui"
+	"github.com/qsrahman/chiron/internal/agent"
+	"github.com/qsrahman/chiron/internal/config"
+	"github.com/qsrahman/chiron/internal/mcp"
+	"github.com/qsrahman/chiron/internal/tools"
+	"github.com/qsrahman/chiron/internal/tui"
 )
 
 // startMCP launches the configured servers, and returns at once. It returns nil when there is nothing to start: no

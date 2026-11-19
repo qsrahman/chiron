@@ -10,7 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
+	"github.com/qsrahman/chiron/internal/agent"
 )
 
 func TestToolParams(t *testing.T) {

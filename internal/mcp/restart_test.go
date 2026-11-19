@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qsrahman/desk-agent/internal/config"
+	"github.com/qsrahman/chiron/internal/config"
 )
 
 // restartable starts one stdio server and returns the hub and where its "die" tool records that it ran.

@@ -26,7 +26,7 @@ const (
 func (m *Model) headerView() string {
 	width := m.contentWidth()
 
-	brand := m.sty.brand.Render("desk-agent")
+	brand := m.sty.brand.Render("chiron")
 	where := "" // the directory and the branch, which give way before the name does
 	if dir := shortenHome(m.info.WorkDir); dir != "" {
 		where += "  " + m.sty.meta.Render(dir)
@@ -196,7 +196,7 @@ func (m *Model) inputStyles() {
 // works (●), waits for an answer (▲), or, when the window did not have the focus at the time, has finished (✓) or failed
 // (✗). The tab of a terminal you are not looking at then says what it wants.
 func (m *Model) windowTitle() string {
-	title := "desk-agent"
+	title := "chiron"
 	if dir := sanitize(filepath.Base(m.info.WorkDir)); dir != "" && dir != "." && dir != "/" {
 		title += " · " + dir
 	}

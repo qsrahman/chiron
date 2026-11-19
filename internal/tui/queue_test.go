@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
+	"github.com/qsrahman/chiron/internal/agent"
 )
 
 // busyWith returns a model whose first turn is running, with the given prompts queued behind it.

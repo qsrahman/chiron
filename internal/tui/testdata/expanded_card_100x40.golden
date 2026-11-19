@@ -1,4 +1,4 @@
- desk-agent  /work/demo on main                                                          test-model
+ chiron  /work/demo on main                                                              test-model
  ──────────────────────────────────────────────────────────────────────────────────────────────────
  ▸ ✓ read_file  f0.go                                                                      14 lines
       row 1

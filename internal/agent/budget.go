@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"unicode/utf8"
 
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 const (

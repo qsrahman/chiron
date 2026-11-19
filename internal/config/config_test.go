@@ -191,7 +191,7 @@ func TestDefaultPath(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := filepath.Join("/xdg", "desk-agent", "config.json"); got != want {
+		if want := filepath.Join("/xdg", "chiron", "config.json"); got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
 	})
@@ -202,7 +202,7 @@ func TestDefaultPath(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := filepath.Join("/home/u", ".config", "desk-agent", "config.json"); got != want {
+		if want := filepath.Join("/home/u", ".config", "chiron", "config.json"); got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
 	})

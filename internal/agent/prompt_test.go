@@ -35,7 +35,7 @@ func TestInstructionsContainEnvironment(t *testing.T) {
 	out := render(t, dir)
 
 	for _, want := range []string{
-		"You are desk-agent",
+		"You are chiron",
 		"Working directory: " + dir,
 		"Platform: " + runtime.GOOS + "/" + runtime.GOARCH,
 		"Today's date: 2026-11-17",

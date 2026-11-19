@@ -13,8 +13,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/qsrahman/desk-agent/internal/session"
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/session"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 const endpoint = "http://localhost:11434"
@@ -356,7 +356,7 @@ func TestAnotherWritersFileIsNotOverwrittenAndTheConversationGoesOnElsewhere(t *
 
 	events := drain(t, a.Send(context.Background(), "second"))
 
-	if !hasNotice(events, "Another desk-agent has written session") {
+	if !hasNotice(events, "Another chiron has written session") {
 		t.Errorf("notices = %q", notices(events))
 	}
 	if a.SessionID() == first || a.SessionID() == "" {

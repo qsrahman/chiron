@@ -3,7 +3,7 @@ package agent
 import (
 	"slices"
 
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 // The methods below are what the slash commands use. They are called between turns, never while one runs: the

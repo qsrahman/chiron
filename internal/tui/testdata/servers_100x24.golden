@@ -1,9 +1,9 @@
- desk-agent  /work/demo on main                                                          test-model
+ chiron  /work/demo on main                                                              test-model
  ──────────────────────────────────────────────────────────────────────────────────────────────────
    docs    connected · 2 tools (3 hidden) · ~1,240 tokens of definitions · started again 1 time ·
-           log /home/u/.local/state/desk-agent/mcp/docs.log
+           log /home/u/.local/state/chiron/mcp/docs.log
    web     connected · 1 tool · ~90 tokens of definitions
-   broken  failed: did not start within 10s · log /home/u/.local/state/desk-agent/mcp/broken.log
+   broken  failed: did not start within 10s · log /home/u/.local/state/chiron/mcp/broken.log
 
 
 

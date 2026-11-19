@@ -1,4 +1,4 @@
-// Package mcp connects desk-agent to MCP servers and presents their tools as tools.Tool.
+// Package mcp connects chiron to MCP servers and presents their tools as tools.Tool.
 package mcp
 
 import (

@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
+	"github.com/qsrahman/chiron/internal/agent"
 )
 
 // messages runs a command and returns what it produced within a moment, looking inside batches. A command that waits
@@ -52,18 +52,18 @@ func TestTheViewAsksForFocusReports(t *testing.T) {
 
 func TestWindowTitleSaysWhatTheProgramIsDoing(t *testing.T) {
 	m := newTestModel(&fakeAgent{block: true}) // the working directory is /work/demo
-	if got := m.View().WindowTitle; got != "desk-agent · demo" {
+	if got := m.View().WindowTitle; got != "chiron · demo" {
 		t.Errorf("idle title = %q", got)
 	}
 
 	m, _ = typeAndEnter(t, m, "go")
 	t.Cleanup(func() { m.cancel() })
-	if got := m.View().WindowTitle; got != "● desk-agent · demo" {
+	if got := m.View().WindowTitle; got != "● chiron · demo" {
 		t.Errorf("working title = %q", got)
 	}
 
 	m, _ = update(m, eventMsg{agent.ApprovalRequested{CallID: "c", Tool: "t", Summary: "s", Reply: make(chan agent.Decision, 1)}})
-	if got := m.View().WindowTitle; got != "▲ desk-agent · demo" {
+	if got := m.View().WindowTitle; got != "▲ chiron · demo" {
 		t.Errorf("title while it waits for an answer = %q", got)
 	}
 }
@@ -104,12 +104,12 @@ func TestARunThatEndsWhileTheWindowIsNotInFrontRingsAndMarksTheTitle(t *testing.
 	if !rings(cmd) {
 		t.Error("no bell although the window was not in front")
 	}
-	if got := m.View().WindowTitle; got != "✓ desk-agent · demo" {
+	if got := m.View().WindowTitle; got != "✓ chiron · demo" {
 		t.Errorf("title = %q", got)
 	}
 
 	m, _ = update(m, tea.FocusMsg{})
-	if got := m.View().WindowTitle; got != "desk-agent · demo" {
+	if got := m.View().WindowTitle; got != "chiron · demo" {
 		t.Errorf("coming back should clear the mark, got %q", got)
 	}
 }
@@ -121,7 +121,7 @@ func TestAFailedRunIsMarkedAsFailed(t *testing.T) {
 
 	m, cmd := update(m, turnClosedMsg{})
 
-	if !rings(cmd) || m.View().WindowTitle != "✗ desk-agent · demo" {
+	if !rings(cmd) || m.View().WindowTitle != "✗ chiron · demo" {
 		t.Errorf("title %q", m.View().WindowTitle)
 	}
 }

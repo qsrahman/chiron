@@ -15,13 +15,13 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
-	"github.com/qsrahman/desk-agent/internal/config"
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/agent"
+	"github.com/qsrahman/chiron/internal/config"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 // The test binary doubles as a stdio MCP server when this variable says so.
-const serveVar = "DESK_AGENT_TEST_SERVE_MCP"
+const serveVar = "CHIRON_TEST_SERVE_MCP"
 
 func TestMain(m *testing.M) {
 	if os.Getenv(serveVar) == "" {
@@ -146,7 +146,7 @@ func TestNoMCPStartsNoServers(t *testing.T) {
 	if got := requests(); len(got) != 1 || strings.Contains(got[0], "local__echo") {
 		t.Errorf("--no-mcp still offered the server's tools: %v", got)
 	}
-	if entries, _ := os.ReadDir(filepath.Join(os.Getenv("XDG_STATE_HOME"), "desk-agent", "mcp")); len(entries) != 0 {
+	if entries, _ := os.ReadDir(filepath.Join(os.Getenv("XDG_STATE_HOME"), "chiron", "mcp")); len(entries) != 0 {
 		t.Error("--no-mcp still started a server (it left a log)")
 	}
 }
@@ -155,14 +155,14 @@ func TestAServerThatFailsIsReportedAndTheRunGoesOn(t *testing.T) {
 	isolate(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	model, _ := modelServer(t)
-	servers := `{"broken": {"command": "/nonexistent/for-test", "env": {"K": "${DESK_AGENT_TEST_UNSET}"}}, "fine": {"command": "` + os.Args[0] + `", "env": {"` + serveVar + `": "1"}}}`
+	servers := `{"broken": {"command": "/nonexistent/for-test", "env": {"K": "${CHIRON_TEST_UNSET}"}}, "fine": {"command": "` + os.Args[0] + `", "env": {"` + serveVar + `": "1"}}}`
 
 	var out, errOut bytes.Buffer
 	if code := run(context.Background(), []string{"-p", "go", "--config", mcpConfig(t, model.URL, servers)}, &out, &errOut); code != 0 {
 		t.Fatalf("exit code %d, stderr: %s", code, errOut.String())
 	}
 
-	if !strings.Contains(errOut.String(), "mcp broken: failed") || !strings.Contains(errOut.String(), "${DESK_AGENT_TEST_UNSET}") {
+	if !strings.Contains(errOut.String(), "mcp broken: failed") || !strings.Contains(errOut.String(), "${CHIRON_TEST_UNSET}") {
 		t.Errorf("stderr = %q, want the failed server and the variable it needs", errOut.String())
 	}
 	if strings.Contains(errOut.String(), "mcp fine") {
@@ -229,7 +229,7 @@ func TestTheAllowListHidesToolsAndATypoFailsTheServer(t *testing.T) {
 func TestReconnectGivesTheAgentTheToolsOfAServerThatJoined(t *testing.T) {
 	isolate(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	const needed = "DESK_AGENT_TEST_SWITCH"
+	const needed = "CHIRON_TEST_SWITCH"
 	cfg := config.Config{
 		BaseURL: "http://127.0.0.1:1",
 		MCPServers: map[string]config.MCPServer{

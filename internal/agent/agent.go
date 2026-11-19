@@ -7,7 +7,7 @@ import (
 
 	"github.com/openai/openai-go/v3"
 
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 // defaultMaxTurns bounds the model calls for one prompt, so a model that keeps calling tools cannot run (and

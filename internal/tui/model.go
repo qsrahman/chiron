@@ -18,7 +18,7 @@ import (
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
+	"github.com/qsrahman/chiron/internal/agent"
 )
 
 // Agent is what the UI uses of the agent: *agent.Agent implements it, and tests use a fake. The slash commands

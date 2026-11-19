@@ -3,7 +3,7 @@ package agent
 import (
 	"encoding/json"
 
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 // tokens estimates one history item. The opaque encrypted content of a reasoning item is left out: the API counts

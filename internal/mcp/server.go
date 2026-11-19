@@ -12,7 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/qsrahman/desk-agent/internal/config"
+	"github.com/qsrahman/chiron/internal/config"
 )
 
 // maxRestarts is how often a server that died is started again by a call, per session. /reconnect starts afresh.
@@ -76,7 +76,7 @@ func (s *server) transport(appendLog bool) (sdk.Transport, error) {
 
 // connect opens a session over the transport and has it watched.
 func (s *server) connect(ctx context.Context, transport sdk.Transport, version string) (*sdk.ClientSession, error) {
-	client := sdk.NewClient(&sdk.Implementation{Name: "desk-agent", Version: version}, &sdk.ClientOptions{KeepAlive: keepAlive})
+	client := sdk.NewClient(&sdk.Implementation{Name: "chiron", Version: version}, &sdk.ClientOptions{KeepAlive: keepAlive})
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
 		return nil, err

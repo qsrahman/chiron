@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/qsrahman/desk-agent/internal/config"
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/config"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 // defaultTimeout is the one deadline all servers share for starting, counted from the launch.

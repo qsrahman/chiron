@@ -1,4 +1,4 @@
-module github.com/qsrahman/desk-agent
+module github.com/qsrahman/chiron
 
 go 1.27.4
 

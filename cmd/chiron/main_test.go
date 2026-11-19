@@ -20,10 +20,10 @@ import (
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
-	"github.com/qsrahman/desk-agent/internal/config"
-	"github.com/qsrahman/desk-agent/internal/session"
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/agent"
+	"github.com/qsrahman/chiron/internal/config"
+	"github.com/qsrahman/chiron/internal/session"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 func TestRunVersion(t *testing.T) {
@@ -31,7 +31,7 @@ func TestRunVersion(t *testing.T) {
 	if code := run(context.Background(), []string{"--version"}, &out, &errOut); code != 0 {
 		t.Fatalf("exit code = %d, want 0 (stderr: %s)", code, errOut.String())
 	}
-	if !strings.Contains(out.String(), "desk-agent") {
+	if !strings.Contains(out.String(), "chiron") {
 		t.Errorf("stdout = %q, want it to contain the program name", out.String())
 	}
 }
@@ -373,7 +373,7 @@ func TestRunPromptDeniesCallsThatNeedApprovalUnlessYes(t *testing.T) {
 
 func sessionFiles(t *testing.T) []string {
 	t.Helper()
-	files, _ := filepath.Glob(filepath.Join(os.Getenv("XDG_STATE_HOME"), "desk-agent", "sessions", "*.json"))
+	files, _ := filepath.Glob(filepath.Join(os.Getenv("XDG_STATE_HOME"), "chiron", "sessions", "*.json"))
 	return files
 }
 
@@ -507,7 +507,7 @@ func TestContinueWarnsAboutADamagedFileNewerThanTheSession(t *testing.T) {
 	isolate(t)
 	srv, _ := recordingServer(t)
 	seedSession(t, "kept")
-	bad := filepath.Join(os.Getenv("XDG_STATE_HOME"), "desk-agent", "sessions", "zz-damaged.json")
+	bad := filepath.Join(os.Getenv("XDG_STATE_HOME"), "chiron", "sessions", "zz-damaged.json")
 	if err := os.WriteFile(bad, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}

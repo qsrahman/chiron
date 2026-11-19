@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 // withPrompt gives a typed tool its own prompt, and keeps the validation the typed tool has.

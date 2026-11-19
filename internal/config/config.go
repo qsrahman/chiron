@@ -1,4 +1,4 @@
-// Package config loads desk-agent settings from the config file and the command line.
+// Package config loads chiron settings from the config file and the command line.
 //
 // The environment has exactly one variable, OPENAI_API_KEY. A variable for the base URL would let a project's
 // .envrc send the key and every prompt wherever it says, so none exists (and none for the model, which other
@@ -152,30 +152,30 @@ type Config struct {
 	MCPServers map[string]MCPServer
 }
 
-// DefaultPath returns $XDG_CONFIG_HOME/desk-agent/config.json, or ~/.config/desk-agent/config.json.
+// DefaultPath returns $XDG_CONFIG_HOME/chiron/config.json, or ~/.config/chiron/config.json.
 // os.UserConfigDir is not used because it points at ~/Library/Application Support on macOS.
 func DefaultPath() (string, error) {
 	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
-		return filepath.Join(dir, "desk-agent", "config.json"), nil
+		return filepath.Join(dir, "chiron", "config.json"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("finding home directory: %w", err)
 	}
-	return filepath.Join(home, ".config", "desk-agent", "config.json"), nil
+	return filepath.Join(home, ".config", "chiron", "config.json"), nil
 }
 
-// StateDir is where sessions, the prompt history and server logs are kept: $XDG_STATE_HOME/desk-agent, or
-// ~/.local/state/desk-agent.
+// StateDir is where sessions, the prompt history and server logs are kept: $XDG_STATE_HOME/chiron, or
+// ~/.local/state/chiron.
 func StateDir() (string, error) {
 	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
-		return filepath.Join(dir, "desk-agent"), nil
+		return filepath.Join(dir, "chiron"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("finding home directory: %w", err)
 	}
-	return filepath.Join(home, ".local", "state", "desk-agent"), nil
+	return filepath.Join(home, ".local", "state", "chiron"), nil
 }
 
 // Load reads the config file at path. A missing file returns an error that satisfies

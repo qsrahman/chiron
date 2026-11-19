@@ -126,9 +126,9 @@ func TestReconnectSuggestsTheServerNames(t *testing.T) {
 func TestGoldenServers(t *testing.T) {
 	m := sized(&fakeAgent{}, 100, 24)
 	m.info.Servers = &fakeServers{list: []ServerInfo{
-		{Name: "docs", Tools: 2, Hidden: 3, Tokens: 1240, LogPath: "/home/u/.local/state/desk-agent/mcp/docs.log", Restarts: 1},
+		{Name: "docs", Tools: 2, Hidden: 3, Tokens: 1240, LogPath: "/home/u/.local/state/chiron/mcp/docs.log", Restarts: 1},
 		{Name: "web", Tools: 1, Tokens: 90},
-		{Name: "broken", Err: "did not start within 10s", LogPath: "/home/u/.local/state/desk-agent/mcp/broken.log"},
+		{Name: "broken", Err: "did not start within 10s", LogPath: "/home/u/.local/state/chiron/mcp/broken.log"},
 	}}
 	m, _ = typeAndEnter(t, m, "/servers")
 	checkGolden(t, "servers_100x24", screen(m))

@@ -10,7 +10,7 @@ import (
 
 	"github.com/openai/openai-go/v3/responses"
 
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 const (

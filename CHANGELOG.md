@@ -6,6 +6,10 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Changed
 
+- **Renamed from desk-agent to chiron.** The binary, the module path (`github.com/qsrahman/chiron`) and the `cmd/`
+  folder, the config and state directories (`~/.config/chiron`, `~/.local/state/chiron`) and the `CHIRON_LIVE_*`
+  variables of the end-to-end script carry the new name. Nothing is migrated: move an existing config file and the
+  `sessions`, `history` and `mcp` entries of the old directories by hand. Entries below this one keep the old name.
 - Simplification, no behaviour change except the next point: the state directory function moved from `internal/mcp` to
   `config.StateDir`; the unused `approvalView` and `mcp.Status.Source` are gone; the code that counted turns for session
   files written before turns were stored is gone; `ToolTitle` replaces its private twin; the token estimate of the

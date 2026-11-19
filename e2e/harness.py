@@ -1,4 +1,4 @@
-"""A live end-to-end harness: runs the real desk-agent binary in a pseudo-terminal, reads the screen through a terminal
+"""A live end-to-end harness: runs the real chiron binary in a pseudo-terminal, reads the screen through a terminal
 emulator (pyte) and checks it. Nothing is mocked: the model is the one in the config, the MCP server is a real stdio
 process. Run it with e2e/run.sh."""
 

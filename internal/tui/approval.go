@@ -13,7 +13,7 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
+	"github.com/qsrahman/chiron/internal/agent"
 )
 
 // The answers the modal offers, left to right. Deny is the one selected when it opens, so an answer by reflex

@@ -25,7 +25,7 @@ func prepareEditor(text string) (*exec.Cmd, string, error) {
 	if editor == "" {
 		return nil, "", errors.New("set $EDITOR (or $VISUAL) to edit a prompt in your editor")
 	}
-	f, err := os.CreateTemp("", "desk-agent-prompt-*.md") // mode 0600
+	f, err := os.CreateTemp("", "chiron-prompt-*.md") // mode 0600
 	if err != nil {
 		return nil, "", err
 	}

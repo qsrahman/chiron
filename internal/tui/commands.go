@@ -12,8 +12,8 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
-	"github.com/qsrahman/desk-agent/internal/config"
+	"github.com/qsrahman/chiron/internal/agent"
+	"github.com/qsrahman/chiron/internal/config"
 )
 
 // command is one slash command. A later phase adds its own by adding an entry to commandList.

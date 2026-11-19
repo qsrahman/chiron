@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 func TestShortenKeepsTheStartAndTheEndAndSaysHowMuchIsHidden(t *testing.T) {

@@ -17,11 +17,11 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
-	"github.com/qsrahman/desk-agent/internal/config"
-	"github.com/qsrahman/desk-agent/internal/session"
-	"github.com/qsrahman/desk-agent/internal/tools"
-	"github.com/qsrahman/desk-agent/internal/tui"
+	"github.com/qsrahman/chiron/internal/agent"
+	"github.com/qsrahman/chiron/internal/config"
+	"github.com/qsrahman/chiron/internal/session"
+	"github.com/qsrahman/chiron/internal/tools"
+	"github.com/qsrahman/chiron/internal/tui"
 )
 
 // version is overridden at build time: -ldflags "-X main.version=v0.1.0".
@@ -41,11 +41,11 @@ func main() {
 
 // run is separate from main so tests can call it without exiting the process.
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	flags := flag.NewFlagSet("desk-agent", flag.ContinueOnError)
+	flags := flag.NewFlagSet("chiron", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	showVersion := flags.Bool("version", false, "print version and exit")
 	prompt := flags.String("p", "", "send `prompt` non-interactively, print the answer and exit")
-	configPath := flags.String("config", "", "config file (default ~/.config/desk-agent/config.json)")
+	configPath := flags.String("config", "", "config file (default ~/.config/chiron/config.json)")
 
 	var given config.Flags
 	flags.StringVar(&given.Model, "model", "", "model name (default from the config file, or built in)")
@@ -65,12 +65,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *showVersion {
-		fmt.Fprintln(stdout, "desk-agent", version)
+		fmt.Fprintln(stdout, "chiron", version)
 		return 0
 	}
 
 	if *cont && *resume != "" {
-		fmt.Fprintln(stderr, "desk-agent: use --continue or --resume, not both")
+		fmt.Fprintln(stderr, "chiron: use --continue or --resume, not both")
 		return 2
 	}
 
@@ -79,7 +79,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		err = start(ctx, cfg, runOptions{prompt: *prompt, autoApprove: *yes, noMCP: *noMCP, noSave: *noSave, cont: *cont, resume: *resume}, stdout, stderr)
 	}
 	if err != nil {
-		fmt.Fprintln(stderr, "desk-agent:", err)
+		fmt.Fprintln(stderr, "chiron:", err)
 		return 1
 	}
 	return 0
@@ -241,7 +241,7 @@ func openSessions(a *agent.Agent, cfg config.Config, opts runOptions, workDir st
 		var damaged []string
 		f, damaged, err = store.Latest(workDir)
 		for _, d := range damaged { // one of them may have been the session meant
-			fmt.Fprintln(stderr, "desk-agent: warning:", d)
+			fmt.Fprintln(stderr, "chiron: warning:", d)
 		}
 	} else {
 		f, err = store.Load(opts.resume)

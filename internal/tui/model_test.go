@@ -12,7 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
+	"github.com/qsrahman/chiron/internal/agent"
 )
 
 // fakeAgent replays scripted events, or with block set waits for cancellation like a slow model.
@@ -505,7 +505,7 @@ func TestTheHeaderKeepsTheNameAndTheModelAtEveryWidth(t *testing.T) {
 
 		header := strings.TrimRight(ansi.Strip(strings.Split(m.headerView(), "\n")[0]), " ")
 
-		if !strings.HasPrefix(strings.TrimSpace(header), "desk-agent") || !strings.Contains(header, "test-model") {
+		if !strings.HasPrefix(strings.TrimSpace(header), "chiron") || !strings.Contains(header, "test-model") {
 			t.Fatalf("width %d: the header lost the name or the model: %q", width, header)
 		}
 		if ansi.StringWidth(header) > m.contentWidth() {

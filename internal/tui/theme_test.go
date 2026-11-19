@@ -9,7 +9,7 @@ import (
 	gstyles "charm.land/glamour/v2/styles"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
+	"github.com/qsrahman/chiron/internal/agent"
 )
 
 func brightness(c color.Color) uint32 {
@@ -140,12 +140,12 @@ func TestHeadingsAndInlineCodeHaveNoBackground(t *testing.T) {
 		m := sized(&fakeAgent{}, 80, 24)
 		m.applyTheme(newTheme(dark, nil))
 
-		out := m.markdownText("# desk-agent\n\n## Packages\n\nUse `go build` now.\n", 76)
+		out := m.markdownText("# chiron\n\n## Packages\n\nUse `go build` now.\n", 76)
 
 		if strings.Contains(out, "\x1b[48;") || strings.Contains(out, ";48;") {
 			t.Errorf("dark=%v: a heading or inline code has a background: %q", dark, out)
 		}
-		if strings.Contains(out, " ") || strings.Contains(ansi.Strip(out), " desk-agent ") {
+		if strings.Contains(out, " ") || strings.Contains(ansi.Strip(out), " chiron ") {
 			t.Errorf("dark=%v: a heading or inline code is padded: %q", dark, ansi.Strip(out))
 		}
 		if !strings.Contains(out, "\x1b[38;") {

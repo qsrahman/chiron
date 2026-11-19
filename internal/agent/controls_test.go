@@ -9,7 +9,7 @@ import (
 
 	"github.com/openai/openai-go/v3/responses"
 
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 func mustOutputItem(t *testing.T, raw string) responses.ResponseOutputItemUnion {

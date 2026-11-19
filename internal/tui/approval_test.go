@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
+	"github.com/qsrahman/chiron/internal/agent"
 )
 
 // asking returns a model whose turn has asked about a call, once the guard against stray keys has passed, and the
@@ -221,7 +221,7 @@ func TestModalFitsSmallWindows(t *testing.T) {
 			t.Errorf("height %d: the modal is cut off:\n%s", height, out)
 		}
 		// From 16 rows it leaves the title row free, so the window does not look filled by the dialog alone.
-		if height >= 16 && !strings.Contains(strings.SplitN(out, "\n", 2)[0], "desk-agent") {
+		if height >= 16 && !strings.Contains(strings.SplitN(out, "\n", 2)[0], "chiron") {
 			t.Errorf("height %d: the dialog covers the header:\n%s", height, out)
 		}
 	}

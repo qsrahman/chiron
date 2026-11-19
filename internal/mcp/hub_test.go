@@ -13,8 +13,8 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/qsrahman/desk-agent/internal/config"
-	"github.com/qsrahman/desk-agent/internal/tools"
+	"github.com/qsrahman/chiron/internal/config"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 // stdio configures a server that is this test binary in the given mode.
@@ -55,7 +55,7 @@ func callTool(t *testing.T, h *Hub, name string, arguments string) (string, erro
 }
 
 func TestAStdioServerStartsInheritsTheEnvironmentAndLogsPrivately(t *testing.T) {
-	t.Setenv("DESK_AGENT_PROBE", "from-the-parent")
+	t.Setenv("CHIRON_PROBE", "from-the-parent")
 	h := startHub(t, map[string]config.MCPServer{"local": stdio("serve", map[string]string{"FROM_CONFIG": "from-the-config"})}, Options{})
 
 	st := statusOf(h, "local")
@@ -65,7 +65,7 @@ func TestAStdioServerStartsInheritsTheEnvironmentAndLogsPrivately(t *testing.T) 
 	if out, err := callTool(t, h, "local__echo", `{"text":"hi"}`); err != nil || out != "echo: hi" {
 		t.Errorf("echo = %q, %v", out, err)
 	}
-	for variable, want := range map[string]string{"DESK_AGENT_PROBE": "from-the-parent", "FROM_CONFIG": "from-the-config"} {
+	for variable, want := range map[string]string{"CHIRON_PROBE": "from-the-parent", "FROM_CONFIG": "from-the-config"} {
 		if out, err := callTool(t, h, "local__env", `{"name":"`+variable+`"}`); err != nil || out != want {
 			t.Errorf("the server sees %s = %q (%v), want %q", variable, out, err, want)
 		}
@@ -90,7 +90,7 @@ func TestEveryFailureIsReportedAndNoneStopsTheOthers(t *testing.T) {
 		"good":    stdio("serve", nil),
 		"exits":   stdio("exit", map[string]string{"TOKEN": secret}),
 		"missing": {Command: "/nonexistent/program-for-test"},
-		"unset":   {Command: os.Args[0], Args: []string{"${DESK_AGENT_NOT_SET}"}},
+		"unset":   {Command: os.Args[0], Args: []string{"${CHIRON_NOT_SET}"}},
 		"slow":    stdio("hang", nil),
 		"off":     {Command: os.Args[0], Enabled: new(false)},
 	}, Options{Timeout: 1500 * time.Millisecond, LogDir: filepath.Join(t.TempDir(), "logs")})
@@ -109,7 +109,7 @@ func TestEveryFailureIsReportedAndNoneStopsTheOthers(t *testing.T) {
 			t.Errorf("%s should have failed", name)
 		}
 	}
-	if err := statusOf(h, "unset").Err; err == nil || !strings.Contains(err.Error(), "${DESK_AGENT_NOT_SET}") || !strings.Contains(err.Error(), "args[0]") {
+	if err := statusOf(h, "unset").Err; err == nil || !strings.Contains(err.Error(), "${CHIRON_NOT_SET}") || !strings.Contains(err.Error(), "args[0]") {
 		t.Errorf("unset: %v, want the variable and where it is used", err)
 	}
 	if err := statusOf(h, "slow").Err; err == nil || !strings.Contains(err.Error(), "did not start within 1.5s") {

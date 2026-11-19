@@ -12,7 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/qsrahman/desk-agent/internal/agent"
+	"github.com/qsrahman/chiron/internal/agent"
 )
 
 // Golden files hold the screen as plain text (colours removed), so a layout change shows up as a readable
@@ -67,7 +67,7 @@ func conversation(t *testing.T, width, height int) Model {
 		agent.ToolStarted{CallID: "c1", Name: "read_file", Arguments: `{"path":"main.go","limit":200}`},
 		agent.ToolFinished{CallID: "c1", Name: "read_file", Output: "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hi\")\n}\n\n// end"},
 		agent.ToolStarted{CallID: "c2", Name: "shell", Arguments: `{"command":"go test ./...","timeout":30}`},
-		agent.ToolFinished{CallID: "c2", Name: "shell", Output: "error: exit status 1\nFAIL desk-agent/internal/agent 0.4s", Outcome: agent.CallFailed},
+		agent.ToolFinished{CallID: "c2", Name: "shell", Output: "error: exit status 1\nFAIL chiron/internal/agent 0.4s", Outcome: agent.CallFailed},
 		agent.Usage{InputTokens: 2300, OutputTokens: 150},
 		agent.TextDelta{Text: "The tests fail; I'll look into it."},
 		agent.Done{},
