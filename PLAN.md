@@ -1,7 +1,7 @@
 # chiron — Product Requirements Document
 
 Status: living document. Update it whenever a change affects scope, architecture or phases.
-Last reviewed: 2026-11-18 (Phase 3.7).
+Last reviewed: 2026-11-19 (after the rename to chiron, v0.7.0).
 
 ## 1. Goal
 
@@ -36,7 +36,7 @@ config, glob/grep tools (the model uses `rg`/`find` through `shell`).
 | Search | No glob/grep tools in v1 | Fewer tools; `rg`/`find` via shell. |
 | Tool schemas | Generated from Go structs with `google/jsonschema-go` (`jsonschema.For[T]`) | Already a dependency of the MCP SDK; nothing hand-written. |
 | MCP | Official `github.com/modelcontextprotocol/go-sdk`; stdio servers (`CommandTransport`) and remote HTTP servers (Streamable HTTP client transport) | Official SDK; tools adapt to our `Tool` interface. Both transports are needed by the config. |
-| Config | One file: `$XDG_CONFIG_HOME/chiron/config.json`, else `~/.config/chiron/config.json`. No per-project config. | Requested. `os.UserConfigDir` would give `~/Library/Application Support` on macOS, so the path is built explicitly. Precedence: flags > env vars > file. |
+| Config | One file: `$XDG_CONFIG_HOME/chiron/config.json`, else `~/.config/chiron/config.json`. No per-project config. | Requested. `os.UserConfigDir` would give `~/Library/Application Support` on macOS, so the path is built explicitly. Precedence: flags > file > defaults; the only environment variable is `OPENAI_API_KEY` (section 6). |
 | Model | `gpt-5.4-mini` is the intended default; configurable via `--model` or the config file (the `CHIRON_MODEL` variable is removed in Phase 3.7). | Requested. Model IDs change often, so it is never hard-coded in logic. Confirm the ID against the account when Phase 1 first hits the real API. |
 | API key / endpoint | `api_key` and `base_url` in the config, or the `OPENAI_API_KEY` env var (the `OPENAI_BASE_URL` variable is removed in Phase 3.7); `--base-url` flag. There is deliberately no `--api-key` flag (shell history, process lists). The resolved values are passed to the client with `option.WithAPIKey` / `option.WithBaseURL`; an API key is only required when `base_url` is unset. | Lets the agent target OpenAI-compatible servers (for example a local one at `http://localhost:11434/v1`). `base_url` is unset by default, which means the OpenAI API. |
 | Secrets in config | Every string value goes through `os.ExpandEnv`, so `"${NAME}"` pulls from the environment. The loader warns when the file is readable by group or others. | Keep keys out of the file where possible; no custom expansion code. |
@@ -92,10 +92,10 @@ implement the same interface.
 6. Mutating calls emit `ApprovalRequested` and block on a reply channel (honouring `ctx`) unless the user chose
    "always allow" for that tool. (Phase 4.)
 7. Append a `function_call_output` per `call_id` (in call order, whatever order they finished), then loop.
-   A turn is limited to 25 model calls (`maxSteps`); hitting the limit is an error and leaves history unchanged.
+   A turn is limited to `max_turns` model calls (default 25); hitting the limit ends the turn with an error and keeps it with a closing note (section 4.7).
    If the context is cancelled while tools run, the model is not asked again. Loop detection (Phase 3.5): a
    step is identified by its calls, arguments and outputs; if one step appears more than 5 times among the last
-   10, the turn stops with an error and history is unchanged.
+   10, the turn stops with an error and is kept with a closing note.
 8. Each response yields a `Usage` event (input and output tokens). A stream that sends nothing for 2 minutes
    (`defaultIdleTimeout`) is abandoned with a "stopped sending data" error, which is not a user cancellation.
 
@@ -227,7 +227,7 @@ Informed by a read of muagent's `mcp_client.py` and `mcp_hub.py` (Python; see se
 
 From a read of muagent's `agent.py`, `context.py`, `compaction.py` and `TURN.md`.
 
-**What must stay true** (to be pinned by tests and listed in AGENTS.md when 3.7 lands):
+**What must stay true** (pinned by tests and listed in AGENTS.md):
 
 - The history changes in a few places only: save a turn, undo (used by retry), reset, compact. A turn in progress
   works on a copy.
@@ -362,11 +362,11 @@ From muagent's `commands.py`, the completer in `repl.py` and `tests/test_command
 - Precedence (until Phase 3.7): flags (`--model`, `--base-url`) override env vars (`CHIRON_MODEL`,
   `OPENAI_BASE_URL`, `OPENAI_API_KEY`), which override the file, which overrides the built-in default model. From
   Phase 3.7: flags, then `OPENAI_API_KEY` for the key only, then the file, then the defaults. `base_url` and `api_key`
-  may be omitted. `mcpServers` is parsed from Phase 4b.1 on; until then it is ignored.
+  may be omitted.
 - Settings of Phase 9: `max_context_tokens` (the budget, default 65,536), `auto_compact` (default false, see section
   4.7), `sessions` (default true: every conversation is saved after each turn in private files; `false`, or the flag
   `--no-save`, saves nothing).
-- New settings in Phase 3.7, each with a flag: `reasoning_effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`;
+- New settings in Phase 3.7, each with a flag: `reasoning_effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
   unset sends none, because non-reasoning models reject it; the flag also takes `default`), `max_turns` (model calls
   per prompt, default 25, replaces the fixed constant) and `streaming` (default true; false makes one non-streaming
   request, for servers with broken SSE).
@@ -418,8 +418,7 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 - Bubble Tea stack verified in Phase 2: `charm.land/bubbletea/v2` v2.1.1, `bubbles/v2` v2.2.1, `lipgloss/v2`
   v2.1.1, `glamour/v2` v2.0.1. In v2, `View()` returns `tea.View`, keys arrive as `tea.KeyPressMsg`, and the
   terminal background is requested with `tea.RequestBackgroundColor`.
-- Known limits of the Phase 2 TUI: the assistant text is shown as plain wrapped text while streaming and
-  re-rendered as markdown when the turn completes; there is no mouse support; slash commands arrive in Phase 9.
+- Known limit of the TUI: the transcript is rebuilt as one string on every streamed token (see section 9).
 - Check which features survive a custom `base_url`. Servers that only partly implement the Responses API may
   lack `reasoning.encrypted_content` or `responses.compact`. Phase 1
   should test against the real API first; then decide whether to disable those features when `base_url` is set.
@@ -430,7 +429,6 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 - Phase 4a.1: the modal overlay was prototyped with lipgloss `Layer`/`Compositor` and works (done); no fallback needed.
 - Phase 4b.1: confirm OpenAI's tool-count and function-name limits for the Responses API with a real request.
 - Pick the HTML-to-markdown library (Phase 8).
-- Decide the session storage format and location (Phase 9).
 
 ## 9. Lessons from other agents (studied 2026-11-17)
 
@@ -444,9 +442,9 @@ questions, embedded tool descriptions, expandable tool cards with spinner and ti
 
 Decided against for now: a read-only shell allowlist (would add `mvdan.cc/sh` and a list to keep strict),
 background jobs, whitespace-tolerant edit fallback, `multiedit`, hooks, sub-agents, LSP, SQLite, multiple
-providers, telemetry, live markdown while streaming (we render plain text, then markdown when the turn ends), and
-a virtualised chat list (revisit when long sessions feel slow: the transcript is currently rebuilt as one string
-on every streamed token).
+providers, telemetry, and a virtualised chat list (revisit when long sessions feel slow: the transcript is currently
+rebuilt as one string on every streamed token). Live markdown while streaming was first decided against and built
+later: the reply in progress is drawn as markdown, redrawn on each spinner tick and not on every token.
 
 TUI rules we already follow and keep: no I/O in `Update`, no state changes inside commands, use `x/ansi` for any
 string work that may contain escape codes.
