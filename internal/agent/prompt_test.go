@@ -165,6 +165,18 @@ func TestPromptWithToolsPinsWhatTheProgramDoes(t *testing.T) {
 	}
 }
 
+// The terminal draws what it is given, so LaTeX would show as typed. Both prompts, with and without tools, say so.
+func TestBothPromptsTellTheModelToWriteMathInUnicode(t *testing.T) {
+	for _, hasTools := range []bool{false, true} {
+		out := renderWith(t, plainDir(t), hasTools)
+		for _, phrase := range []string{"cannot render LaTeX", "plain Unicode", "superscripts and subscripts", "Never use `$…$`"} {
+			if !strings.Contains(out, phrase) {
+				t.Errorf("tools %v: the prompt is missing %q", hasTools, phrase)
+			}
+		}
+	}
+}
+
 // The text that changes least comes first so that the start of every request can be cached.
 func TestPromptOrderPutsTheEnvironmentLast(t *testing.T) {
 	dir := plainDir(t)

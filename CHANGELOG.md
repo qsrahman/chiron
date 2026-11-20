@@ -4,6 +4,13 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Changed
+
+- **The system prompt tells the model the terminal cannot render LaTeX** and asks for math in plain Unicode (π √ ∑ ∫ ≤ ≠,
+  x², aₙ, a/b), never `$…$`, `\(…\)`, `\[…\]` or backslash commands. It is in the shared part of the prompt, so it
+  applies with and without tools, and tests pin it. Measured on the configured model with four maths prompts: without
+  tools, 10 of 12 answers had LaTeX before and 0 of 12 after; with MCP tools, 6 of 8 before and 1 of 10 after.
+
 ## [0.9.0] - 2026-11-20
 
 ### Changed
