@@ -43,7 +43,7 @@ Type `/` in the chat to list them; Up/Down choose, Tab completes, Esc closes. Th
 | `/copy [code]` | Copy the last answer, or its last code block, to the clipboard (through the terminal, which must support OSC 52; control characters are removed first) |
 | `/context` | Estimated size of the instructions, tools, summary and history, and how much of the budget is used |
 | `/compact [focus]` | Summarize the oldest turns with the model to free context; `focus` says what the summary must keep |
-| `/sessions` | Choose one of the saved conversations of this directory and resume it in place of this one |
+| `/sessions` | Choose one of the saved conversations of this directory and resume it in place of this one, or delete one (`d`, then `y`) |
 | `/summary` | Show the summary that stands for the oldest turns |
 
 A lone `/word` that is no command is reported and not sent; a longer line such as `/usr/bin is missing` is a prompt.
@@ -309,7 +309,8 @@ atomically: a failed write leaves the previous one. A conversation that never go
 - **Resume** with `--resume` (the latest of the current directory) or `--resume ID`. The messages and the tool calls
   of the newest turn are shown again, the model sees the whole saved history, and the conversation goes on in the
   same file. Inside the chat, `/sessions` opens a list of the sessions of this directory (the newest 20): choose one
-  with the arrow keys and Enter, and it replaces the conversation on screen, which is already saved. A directory is
+  with the arrow keys and Enter, and it replaces the conversation on screen, which is already saved. `d` deletes the
+  selected session after a `y` to confirm; the session you are in cannot be deleted (`/reset` first). A directory is
   known by its real path, so a symlink to it finds the same sessions. A bare `--resume` takes the session written last
   and warns about damaged files it had to pass over, since one of them may have been the one you meant.
 - **Two programs, one session:** if another chiron has written the file since this one did, this one does not

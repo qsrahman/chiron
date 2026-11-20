@@ -101,6 +101,18 @@ func (s *Store) Save(f File) (time.Time, error) {
 	return s.Stamp(f.ID)
 }
 
+// Delete removes the session with exactly this id. One that is already gone is not an error: another program may
+// have removed it since the list was made.
+func (s *Store) Delete(id string) error {
+	if !validID.MatchString(id) {
+		return fmt.Errorf("%q is not a session id", id)
+	}
+	if err := os.Remove(filepath.Join(s.dir, id+".json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("deleting session %s: %w", id, err)
+	}
+	return nil
+}
+
 // Stamp is the modification time of the session's file, zero if there is none. A writer that remembers the stamp of
 // its last Save can tell that another process has written the file since.
 func (s *Store) Stamp(id string) (time.Time, error) {

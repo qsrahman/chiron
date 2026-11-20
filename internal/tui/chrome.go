@@ -150,7 +150,7 @@ func (m *Model) helpView() string {
 	case m.search.open:
 		bindings = m.keys.searchHelp()
 	case m.picker.open:
-		bindings = m.keys.pickerHelp()
+		bindings = m.keys.pickerHelp(m.picker.confirm)
 	case m.approval.open:
 		bindings = m.keys.approvalHelp()
 	case m.cards.selected >= 0:

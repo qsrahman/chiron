@@ -866,6 +866,26 @@ def sessions():
         t.contains("Resumed session")
         t.contains("PINEAPPLE-42", "the saved conversation is shown after choosing it")
         invariants(t, "after choosing a session")
+    finally:
+        t.close()
+
+    # Deleting needs a confirmation, and the last session deleted closes the list. The session in use cannot be deleted,
+    # so this conversation is a fresh one that was never saved.
+    t = start(servers={}, config="sessions", cwd=work)
+    try:
+        t.wait_for("/help", 10)
+        t.type("/sessions")
+        t.contains("Resume a session of this directory")
+        t.send("d", 0.4)
+        t.contains("Delete session")
+        t.send("n", 0.4)
+        t.contains("Resume a session of this directory", "n keeps the session")
+        t.send("d", 0.4)
+        t.send("y", 0.6)
+        t.contains("Deleted session", "y deletes it")
+        t.type("/sessions")
+        t.contains("No saved sessions yet")
+        invariants(t, "after deleting a session")
         return t
     finally:
         t.close()

@@ -482,6 +482,81 @@ func TestAFailedResumeShowsTheErrorAndKeepsTheConversation(t *testing.T) {
 	}
 }
 
+// pickKeys sends keys to the model, one after the other.
+func pickKeys(m Model, keys ...tea.KeyPressMsg) Model {
+	for _, k := range keys {
+		m, _ = update(m, k)
+	}
+	return m
+}
+
+func TestThePickerDeletesTheSelectedSessionAfterAConfirmation(t *testing.T) {
+	a := &fakeAgent{sessions: sessionList()}
+	m, _ := typeAndEnter(t, newTestModel(a), "/sessions")
+	m = pickKeys(m, tea.KeyPressMsg{Code: tea.KeyDown}, letter('d'))
+
+	if got := screen(m); !strings.Contains(got, "Delete session 20261117-090000-wxyz?") || len(a.deleted) != 0 {
+		t.Fatalf("d must ask first; deleted %v:\n%s", a.deleted, got)
+	}
+	m = pickKeys(m, letter('y'))
+
+	if len(a.deleted) != 1 || a.deleted[0] != "20261117-090000-wxyz" {
+		t.Fatalf("deleted = %v", a.deleted)
+	}
+	got := screen(m)
+	if strings.Contains(got, "wxyz  ") || !strings.Contains(got, "Deleted session 20261117-090000-wxyz") || !strings.Contains(got, "20261118-100000-abcd") {
+		t.Errorf("the list after deleting:\n%s", got)
+	}
+}
+
+func TestAnythingButYKeepsTheSession(t *testing.T) {
+	for name, k := range map[string]tea.KeyPressMsg{"n": letter('n'), "esc": {Code: tea.KeyEscape}, "enter": {Code: tea.KeyEnter}, "ctrl+c": {Code: 'c', Mod: tea.ModCtrl}} {
+		t.Run(name, func(t *testing.T) {
+			a := &fakeAgent{sessions: sessionList()}
+			m, _ := typeAndEnter(t, newTestModel(a), "/sessions")
+			m = pickKeys(m, tea.KeyPressMsg{Code: tea.KeyDown}, letter('d'), k)
+
+			if len(a.deleted) != 0 || !m.picker.open || m.picker.confirm || a.resumed != "" {
+				t.Errorf("deleted %v, open %v, confirm %v, resumed %q", a.deleted, m.picker.open, m.picker.confirm, a.resumed)
+			}
+		})
+	}
+}
+
+func TestTheCurrentSessionCannotBeDeletedFromThePicker(t *testing.T) {
+	a := &fakeAgent{sessions: sessionList()} // the first row is the current one
+	m, _ := typeAndEnter(t, newTestModel(a), "/sessions")
+	m = pickKeys(m, letter('d'))
+
+	if m.picker.confirm || !strings.Contains(screen(m), "/reset first") {
+		t.Errorf("confirm %v:\n%s", m.picker.confirm, screen(m))
+	}
+	m = pickKeys(m, letter('y')) // y does nothing when no question was asked
+	if len(a.deleted) != 0 {
+		t.Errorf("deleted %v", a.deleted)
+	}
+}
+
+func TestAFailedDeleteIsShownInThePicker(t *testing.T) {
+	a := &fakeAgent{sessions: sessionList(), deleteErr: errors.New("permission denied")}
+	m, _ := typeAndEnter(t, newTestModel(a), "/sessions")
+	m = pickKeys(m, tea.KeyPressMsg{Code: tea.KeyDown}, letter('d'), letter('y'))
+
+	if got := screen(m); !strings.Contains(got, "Could not delete: permission denied") || !strings.Contains(got, "wxyz") {
+		t.Errorf("screen:\n%s", got)
+	}
+}
+
+func TestTheLastSessionDeletedClosesThePicker(t *testing.T) {
+	a := &fakeAgent{sessions: []agent.SessionInfo{{ID: "only-1", Turns: 1, Prompt: "hi"}}}
+	m, _ := typeAndEnter(t, newTestModel(a), "/sessions")
+	m = pickKeys(m, letter('d'), letter('y'))
+
+	if m.picker.open || !strings.Contains(said(m), "Deleted session only-1, the last saved one") {
+		t.Errorf("open %v, said:\n%s", m.picker.open, said(m))
+	}
+}
+
 func TestSessionsWhenOffOrEmpty(t *testing.T) {
 	m, _ := typeAndEnter(t, newTestModel(&fakeAgent{sessionsErr: agent.ErrSessionsOff}), "/sessions")
 	if !strings.Contains(said(m), "sessions are off") {

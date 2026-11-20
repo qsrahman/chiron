@@ -38,6 +38,7 @@ type Agent interface {
 	Messages() []agent.Message
 	ListSessions() ([]agent.SessionInfo, error)
 	ResumeSession(id string) error
+	DeleteSession(id string) error
 	SessionID() string
 	ToolTitle(name string) string
 	ToolList() agent.ToolList

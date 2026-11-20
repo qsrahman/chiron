@@ -16,6 +16,9 @@ type keyMap struct {
 	// Used while the suggestion list is open.
 	up, down, complete, dismiss key.Binding
 
+	// Used while the session picker is open.
+	remove key.Binding
+
 	// Used while the approval modal is open.
 	yes, always, no, prev, next key.Binding
 
@@ -42,6 +45,7 @@ func newKeyMap() keyMap {
 		toggle:    key.NewBinding(key.WithKeys("enter", "space"), key.WithHelp("enter", "expand or collapse")),
 		unqueue:   key.NewBinding(key.WithKeys("up")),
 		history:   key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "recall earlier prompts")),
+		remove:    key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
 		yes:       key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "allow")),
 		always:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "allow for session")),
 		no:        key.NewBinding(key.WithKeys("n", "esc"), key.WithHelp("n", "deny")),

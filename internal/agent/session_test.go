@@ -496,3 +496,28 @@ func TestTheSummariserInputIsCutFromTheStart(t *testing.T) {
 func rawParam(raw string) responses.ResponseInputItemUnionParam {
 	return param.Override[responses.ResponseInputItemUnionParam](json.RawMessage(raw))
 }
+
+func TestDeleteSessionDeletesAnotherSessionButNeverTheCurrentOne(t *testing.T) {
+	store := session.NewStore(t.TempDir())
+	srv := newScriptedServer(t, chatReply("one"), chatReply("two"))
+	old := saved(t, srv, store)
+	drain(t, old.Send(context.Background(), "the old question"))
+	a := saved(t, srv, store)
+	drain(t, a.Send(context.Background(), "the current question"))
+
+	if err := a.DeleteSession(a.SessionID()); err != ErrCurrentSession {
+		t.Errorf("deleting the session in use: %v", err)
+	}
+	if _, err := store.Load(a.SessionID()); err != nil {
+		t.Errorf("the current session is gone: %v", err)
+	}
+	if err := a.DeleteSession(old.SessionID()); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := a.ListSessions(); len(list) != 1 || !list[0].Current {
+		t.Errorf("after deleting the other one: %+v", list)
+	}
+	if err := newTestAgent(srv).DeleteSession("x"); err != ErrSessionsOff {
+		t.Errorf("with sessions off: %v", err)
+	}
+}

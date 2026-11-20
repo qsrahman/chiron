@@ -43,6 +43,8 @@ type fakeAgent struct {
 	sessionsErr error
 	resumed     string // the ID ResumeSession was last asked for
 	resumeErr   error
+	deleted     []string // the IDs DeleteSession was asked for
+	deleteErr   error
 	resumedMsgs []agent.Message // what Messages returns once a session was resumed
 	titles      map[string]string
 }
@@ -68,6 +70,13 @@ func (f *fakeAgent) Messages() []agent.Message                  { return f.messa
 func (f *fakeAgent) SessionID() string                          { return f.sessionID }
 func (f *fakeAgent) ToolTitle(name string) string               { return f.titles[name] }
 func (f *fakeAgent) ListSessions() ([]agent.SessionInfo, error) { return f.sessions, f.sessionsErr }
+func (f *fakeAgent) DeleteSession(id string) error {
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
+	f.deleted = append(f.deleted, id)
+	return nil
+}
 func (f *fakeAgent) ResumeSession(id string) error {
 	if f.resumeErr != nil {
 		return f.resumeErr

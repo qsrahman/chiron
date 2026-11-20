@@ -4,6 +4,12 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Added
+
+- **Delete a session from the `/sessions` picker.** `d` on a row asks "Delete session ID?", `y` deletes the file and any
+  other key keeps it; the list closes when the last session is gone. The session in use cannot be deleted (its file
+  would be written again by the next save): `/reset` first. New: `Agent.DeleteSession`, `session.Store.Delete`.
+
 ## [0.8.0] - 2026-11-20
 
 ### Removed

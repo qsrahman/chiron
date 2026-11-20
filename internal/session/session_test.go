@@ -214,3 +214,28 @@ func TestNewIDSortsByTime(t *testing.T) {
 		t.Errorf("%s %s", a, b)
 	}
 }
+
+func TestDeleteRemovesOnlyTheNamedSession(t *testing.T) {
+	s := NewStore(t.TempDir())
+	for _, id := range []string{"a-1", "a-10"} {
+		if _, err := s.Save(file(id, "/w", time.Now())); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := s.Delete("a-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Load("a-10"); err != nil {
+		t.Errorf("a longer id that starts the same way was deleted too: %v", err)
+	}
+	if list, _ := s.List(func(Info) bool { return true }, 0); len(list) != 1 || list[0].ID != "a-10" {
+		t.Errorf("list = %+v", list)
+	}
+	if err := s.Delete("a-1"); err != nil {
+		t.Errorf("deleting a session that is already gone is not an error, got %v", err)
+	}
+	if err := s.Delete("../x"); err == nil || !strings.Contains(err.Error(), "not a session id") {
+		t.Errorf("an id that is not an id: %v", err)
+	}
+}

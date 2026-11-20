@@ -230,6 +230,21 @@ type SessionInfo struct {
 // ErrSessionsOff is returned by ListSessions when saving is not enabled.
 var ErrSessionsOff = errors.New("sessions are off (sessions: false in the config file, or --no-save)")
 
+// ErrCurrentSession is returned by DeleteSession for the session the conversation is saved in: the next save would
+// write its file again.
+var ErrCurrentSession = errors.New("that is the session in use: /reset first, then delete it")
+
+// DeleteSession deletes a saved session. The session in use cannot be deleted.
+func (a *Agent) DeleteSession(id string) error {
+	if a.saving == nil {
+		return ErrSessionsOff
+	}
+	if id == a.saving.id {
+		return ErrCurrentSession
+	}
+	return a.saving.store.Delete(id)
+}
+
 // ListSessions lists the saved sessions of this directory, the newest first and at most SessionListLimit of them.
 func (a *Agent) ListSessions() ([]SessionInfo, error) {
 	if a.saving == nil {
