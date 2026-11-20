@@ -4,6 +4,8 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-20
+
 ### Removed
 
 - **The `context_window` config key.** It only fed the header's percentage and the `window` row of `/context`. The header
