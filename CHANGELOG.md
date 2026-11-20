@@ -4,6 +4,8 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-20
+
 ### Changed
 
 - The share of the context budget moved from the header to the right edge of the bottom row, under the input box
