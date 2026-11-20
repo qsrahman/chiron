@@ -14,7 +14,7 @@
 
    ▸ /clear             Clear the screen; the conversation is kept
      /compact [FOCUS]   Summarize the oldest turns; FOCUS says what to keep
-     /context           Show how much of the context window is used
+     /context           Show how much of the context budget is used
      /copy [code]       Copy the last answer, or its last code block, to the c…
      /effort [LEVEL]    Show the reasoning effort, or set it
      /exit              Quit

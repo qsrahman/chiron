@@ -98,6 +98,9 @@ func (a *Agent) request(items []item) responses.ResponseNewParams {
 	if specs := a.tools.Specs(); len(specs) > 0 {
 		p.Tools = specs
 	}
+	if a.settings.MaxOutputTokens > 0 {
+		p.MaxOutputTokens = openai.Int(int64(a.settings.MaxOutputTokens))
+	}
 	// Non-reasoning models reject a reasoning setting, so it is left out unless the user set one.
 	if effort := a.settings.ReasoningEffort; effort != "" {
 		p.Reasoning = shared.ReasoningParam{Effort: shared.ReasoningEffort(effort)}

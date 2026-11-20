@@ -353,8 +353,9 @@ func TestTheUsageFigureTurnsAmberAndRedAsTheContextFills(t *testing.T) {
 		tokens int64
 		want   string
 	}{{50000, ""}, {74999, ""}, {75000, amber}, {89999, amber}, {90000, red}, {120000, red}} {
-		m := sized(&fakeAgent{}, 120, 24)
-		m.info.ContextWindow = 100000
+		a := &fakeAgent{}
+		a.settings.MaxContextTokens = 100000
+		m := sized(a, 120, 24)
 		m.contextTokens = tt.tokens
 
 		usage := m.headerView()

@@ -44,7 +44,7 @@ func commandList() []command {
 		{name: "/compact", usage: "[FOCUS]", description: "Summarize the oldest turns; FOCUS says what to keep", run: (*Model).compactCommand},
 		{name: "/sessions", description: "Choose a saved session of this directory to resume", run: (*Model).sessionsCommand},
 		{name: "/summary", description: "Show the summary that stands for the oldest turns", run: (*Model).summaryCommand},
-		{name: "/context", description: "Show how much of the context window is used", run: (*Model).contextCommand},
+		{name: "/context", description: "Show how much of the context budget is used", run: (*Model).contextCommand},
 	}
 	slices.SortFunc(list, func(a, b command) int { return strings.Compare(a.name, b.name) })
 	return list
@@ -331,9 +331,6 @@ func (m *Model) contextCommand(string) (tea.Cmd, error) {
 		rows = append(rows, [2]string{"last request", count(int(est.LastInput)) + " tokens, counted by the server"})
 	} else {
 		rows = append(rows, [2]string{"last request", "not known yet"})
-	}
-	if m.info.ContextWindow > 0 {
-		rows = append(rows, [2]string{"window", count(m.info.ContextWindow) + " tokens"})
 	}
 	m.sayTable(rows)
 	return nil, nil

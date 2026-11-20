@@ -336,7 +336,6 @@ From muagent's `commands.py`, the completer in `repl.py` and `tests/test_command
   "model": "gpt-5.4-mini",
   "base_url": "http://localhost:11434/v1",
   "api_key": "${OPENAI_API_KEY}",
-  "context_window": 400000,
   "mcpServers": {
     "context7": {
       "url": "https://mcp.context7.com/mcp",
@@ -363,6 +362,8 @@ From muagent's `commands.py`, the completer in `repl.py` and `tests/test_command
   `OPENAI_BASE_URL`, `OPENAI_API_KEY`), which override the file, which overrides the built-in default model. From
   Phase 3.7: flags, then `OPENAI_API_KEY` for the key only, then the file, then the defaults. `base_url` and `api_key`
   may be omitted.
+- `max_output_tokens` (after v0.7.0): the most tokens the model may generate for one reply; unset sends no cap; the
+  summary request keeps its own cap of 8,000.
 - Settings of Phase 9: `max_context_tokens` (the budget, default 65,536), `auto_compact` (default false, see section
   4.7), `sessions` (default true: every conversation is saved after each turn in private files; `false`, or the flag
   `--no-save`, saves nothing).
@@ -376,8 +377,9 @@ From muagent's `commands.py`, the completer in `repl.py` and `tests/test_command
 - Each `mcpServers` entry is either a **stdio server** (`command`, `args`, `env`) or a **remote HTTP server**
   (`url`, `headers`). An entry with both, or with neither, is a config error. `enabled` defaults to true when
   omitted; disabled servers are not started.
-- `context_window` (tokens, optional, file only) lets the status line show how full the context is. It is never
-  guessed because local models differ; without it only the token count is shown. Compaction (Phase 9) will use it.
+- The status line shows the share of the budget `max_context_tokens` that the conversation uses. A `context_window`
+  key existed until after v0.7.0; it only fed this display and was removed, so the model's real window is never
+  guessed (local models differ) and the budget is the one number that matters.
 - Approval mode is not configurable in v1: mutating tools always ask (see section 3).
 
 ## 7. Phases

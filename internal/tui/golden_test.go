@@ -191,8 +191,6 @@ func TestGoldenSuggestions(t *testing.T) {
 
 func TestGoldenContext(t *testing.T) {
 	a := &fakeAgent{estimate: agent.ContextEstimate{Instructions: 1200, Tools: 3400, ToolCount: 4, History: 56789, LastInput: 61000, Budget: 65536}}
-	m := sized(a, 80, 24)
-	m.info.ContextWindow = 128000
-	m, _ = typeAndEnter(t, m, "/context")
+	m, _ := typeAndEnter(t, sized(a, 80, 24), "/context")
 	checkGolden(t, "context_80x24", screen(m))
 }

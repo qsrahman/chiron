@@ -21,8 +21,9 @@ type Settings struct {
 	MaxTurns        int    // model calls for one prompt; 0 means defaultMaxTurns
 	Streaming       bool   // false sends one request and shows the whole reply at once
 	AutoApprove     bool   // allows every call without asking (--yes)
+	MaxOutputTokens int    // most tokens the model may generate for one reply; 0 sends no cap
 
-	MaxContextTokens int  // budget for a whole request; 0 means defaultMaxContextTokens
+	MaxContextTokens int  // budget for a whole request; 0 means defaultMaxContextTokens, and Settings() returns that
 	AutoCompact      bool // summarise the oldest turns before a turn that would pass compactAt of the budget
 }
 
@@ -48,6 +49,9 @@ type Agent struct {
 func New(client openai.Client, settings Settings, instructions string, registry *tools.Registry) *Agent {
 	if settings.MaxTurns <= 0 {
 		settings.MaxTurns = defaultMaxTurns
+	}
+	if settings.MaxContextTokens <= 0 {
+		settings.MaxContextTokens = defaultMaxContextTokens
 	}
 	return &Agent{client: client, settings: settings, instructions: instructions, tools: registry, idleTimeout: defaultIdleTimeout, grants: map[grant]bool{}}
 }

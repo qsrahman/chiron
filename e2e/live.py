@@ -48,7 +48,7 @@ def user_settings():
 
 def write_config(name, servers, **extra):
     base, model = user_settings()
-    cfg = {"base_url": base, "model": model, "context_window": 65536, "mcpServers": servers, **extra}
+    cfg = {"base_url": base, "model": model, "mcpServers": servers, **extra}
     path = os.path.join(WORK, name + ".json")
     with open(path, "w") as f:
         json.dump(cfg, f)

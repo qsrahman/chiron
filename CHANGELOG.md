@@ -4,6 +4,18 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Removed
+
+- **The `context_window` config key.** It only fed the header's percentage and the `window` row of `/context`. The header
+  now shows the share of `max_context_tokens`, which is what the shortening and the summaries act on (it always shows,
+  since the budget has a default), and `/context` has no `window` row. A config file that still has `context_window` is
+  refused as an unknown key: delete the line. `Agent.Settings().MaxContextTokens` now always holds the budget in use.
+
+### Added
+
+- `max_output_tokens` config key: the most tokens the model may generate for one reply, reasoning included. Unset sends no
+  cap, as before. The request that writes a summary keeps its own cap of 8,000.
+
 ### Changed
 
 - **`--continue` is gone; `--resume` takes an optional ID.** `--resume` alone resumes the latest session of this

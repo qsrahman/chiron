@@ -32,10 +32,6 @@ type File struct {
 	BaseURL string `json:"base_url"`
 	APIKey  string `json:"api_key"`
 
-	// ContextWindow is the model's context size in tokens. Optional: it only lets the UI show how full the
-	// context is. Models differ and unknown ones (local servers) cannot be asked, so it is never guessed.
-	ContextWindow int `json:"context_window"`
-
 	// ReasoningEffort is sent to reasoning models. Unset sends nothing, because models that do not reason
 	// reject the setting.
 	ReasoningEffort string `json:"reasoning_effort"`
@@ -44,6 +40,9 @@ type File struct {
 	// Streaming defaults to true; false sends one request and shows the whole reply at once, for servers
 	// whose streaming is broken.
 	Streaming *bool `json:"streaming"`
+	// MaxOutputTokens caps what the model may generate for one reply, its reasoning included; a reply that hits the cap
+	// is cut off and shown as incomplete. Unset sends no cap, so the model or server decides.
+	MaxOutputTokens int `json:"max_output_tokens"`
 	// MaxContextTokens is the budget for a whole request: instructions, tool definitions and history. Unset uses
 	// 65,536. Keep it well below the model's real window, because the count is an estimate.
 	MaxContextTokens int `json:"max_context_tokens"`
@@ -112,9 +111,10 @@ var serverName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 func validateServers(servers map[string]MCPServer, path string) error {
 	for name, s := range servers {
-		switch {
-		case !serverName.MatchString(name):
+		if !serverName.MatchString(name) {
 			return fmt.Errorf("mcpServers in %s: %q is not a usable name: use letters, digits, _ and -", path, name)
+		}
+		switch {
 		case s.Command != "" && s.URL != "":
 			return fmt.Errorf("mcpServers.%s in %s: give either command or url, not both", name, path)
 		case s.Command == "" && s.URL == "":
@@ -140,11 +140,11 @@ type Config struct {
 	Model           string
 	BaseURL         string
 	APIKey          string
-	ContextWindow   int
 	ReasoningEffort string // "" sends none
 	MaxTurns        int    // 0 means the agent's default
 	Streaming       bool
 
+	MaxOutputTokens  int // 0 sends no cap
 	MaxContextTokens int // 0 means the agent's default
 	AutoCompact      bool
 	Sessions         bool
@@ -155,27 +155,28 @@ type Config struct {
 // DefaultPath returns $XDG_CONFIG_HOME/chiron/config.json, or ~/.config/chiron/config.json.
 // os.UserConfigDir is not used because it points at ~/Library/Application Support on macOS.
 func DefaultPath() (string, error) {
-	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
-		return filepath.Join(dir, "chiron", "config.json"), nil
-	}
-	home, err := os.UserHomeDir()
+	dir, err := xdgPath("XDG_CONFIG_HOME", ".config")
 	if err != nil {
-		return "", fmt.Errorf("finding home directory: %w", err)
+		return "", err
 	}
-	return filepath.Join(home, ".config", "chiron", "config.json"), nil
+	return filepath.Join(dir, "config.json"), nil
 }
 
 // StateDir is where sessions, the prompt history and server logs are kept: $XDG_STATE_HOME/chiron, or
 // ~/.local/state/chiron.
 func StateDir() (string, error) {
-	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
-		return filepath.Join(dir, "chiron"), nil
+	return xdgPath("XDG_STATE_HOME", ".local/state")
+}
+
+func xdgPath(env, dir string) (string, error) {
+	if path := os.Getenv(env); path != "" {
+		return filepath.Join(path, "chiron"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("finding home directory: %w", err)
 	}
-	return filepath.Join(home, ".local", "state", "chiron"), nil
+	return filepath.Join(home, dir, "chiron"), nil
 }
 
 // Load reads the config file at path. A missing file returns an error that satisfies
@@ -187,6 +188,7 @@ func Load(path string, warn io.Writer) (File, error) {
 	if err != nil {
 		return File{}, fmt.Errorf("reading config: %w", err)
 	}
+
 	var f File
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -229,17 +231,18 @@ func Resolve(file File, path string, apiKeyEnv string, flags Flags) (Config, err
 	if flags.MaxTurns < 0 {
 		return Config{}, fmt.Errorf("--max-turns must be positive, not %d", flags.MaxTurns)
 	}
+	if file.MaxOutputTokens < 0 {
+		return Config{}, fmt.Errorf("max_output_tokens in %s must be positive, not %d", path, file.MaxOutputTokens)
+	}
 	if file.MaxContextTokens < 0 {
 		return Config{}, fmt.Errorf("max_context_tokens in %s must be positive, not %d", path, file.MaxContextTokens)
-	}
-	if file.ContextWindow < 0 {
-		return Config{}, fmt.Errorf("context_window in %s must not be negative, not %d", path, file.ContextWindow)
 	}
 
 	effort := cmp.Or(flags.ReasoningEffort, file.ReasoningEffort)
 	if effort == "default" {
 		effort = ""
 	}
+
 	streaming := true
 	if file.Streaming != nil {
 		streaming = *file.Streaming
@@ -247,16 +250,16 @@ func Resolve(file File, path string, apiKeyEnv string, flags Flags) (Config, err
 	if flags.Streaming != nil {
 		streaming = *flags.Streaming
 	}
-	return Config{
-		Model:           cmp.Or(flags.Model, file.Model, DefaultModel),
-		BaseURL:         cmp.Or(flags.BaseURL, file.BaseURL),
-		APIKey:          cmp.Or(apiKeyEnv, file.APIKey),
-		ContextWindow:   file.ContextWindow,
-		ReasoningEffort: effort,
-		MaxTurns:        cmp.Or(flags.MaxTurns, file.MaxTurns),
-		Streaming:       streaming,
-		MCPServers:      file.MCPServers,
 
+	return Config{
+		Model:            cmp.Or(flags.Model, file.Model, DefaultModel),
+		BaseURL:          cmp.Or(flags.BaseURL, file.BaseURL),
+		APIKey:           cmp.Or(apiKeyEnv, file.APIKey),
+		ReasoningEffort:  effort,
+		MaxTurns:         cmp.Or(flags.MaxTurns, file.MaxTurns),
+		Streaming:        streaming,
+		MCPServers:       file.MCPServers,
+		MaxOutputTokens:  file.MaxOutputTokens,
 		MaxContextTokens: file.MaxContextTokens,
 		AutoCompact:      file.AutoCompact,
 		Sessions:         file.Sessions == nil || *file.Sessions,

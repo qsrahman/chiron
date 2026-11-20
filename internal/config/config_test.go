@@ -29,11 +29,11 @@ func TestLoad(t *testing.T) {
 		"model": "m1",
 		"base_url": "http://localhost:11434/v1",
 		"api_key": "${TEST_KEY}",
-		"context_window": 128000,
 		"reasoning_effort": "low",
 		"max_turns": 10,
 		"streaming": false,
 		"max_context_tokens": 32000,
+		"max_output_tokens": 4000,
 		"auto_compact": true,
 		"mcpServers": {"x": {"command": "npx"}}
 	}`, 0o600)
@@ -44,8 +44,8 @@ func TestLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Model != "m1" || got.BaseURL != "http://localhost:11434/v1" || got.APIKey != "sk-from-env" ||
-		got.ContextWindow != 128000 || got.ReasoningEffort != "low" || got.MaxTurns != 10 ||
-		got.MaxContextTokens != 32000 || !got.AutoCompact {
+		got.ReasoningEffort != "low" || got.MaxTurns != 10 ||
+		got.MaxContextTokens != 32000 || got.MaxOutputTokens != 4000 || !got.AutoCompact {
 		t.Errorf("Load() = %+v", got)
 	}
 	if got.Streaming == nil || *got.Streaming {
@@ -71,6 +71,15 @@ func TestLoadRejectsAKeyThatIsNotASetting(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q should name %q", err, want)
 		}
+	}
+}
+
+// context_window was removed: the header counts against max_context_tokens. A config that still has it must say so.
+func TestLoadRejectsTheRemovedContextWindowKey(t *testing.T) {
+	path := writeConfig(t, `{"context_window": 128000}`, 0o600)
+
+	if _, err := Load(path, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "context_window") {
+		t.Errorf("error = %v, want one that names context_window", err)
 	}
 }
 
@@ -172,7 +181,7 @@ func TestResolveRejectsBadValues(t *testing.T) {
 		{"file max_turns", File{MaxTurns: -1}, Flags{}, "max_turns in cfg.json must be positive"},
 		{"flag max-turns", File{}, Flags{MaxTurns: -2}, "--max-turns must be positive"},
 		{"max_context_tokens", File{MaxContextTokens: -1}, Flags{}, "max_context_tokens in cfg.json must be positive"},
-		{"context window", File{ContextWindow: -5}, Flags{}, "context_window in cfg.json must not be negative"},
+		{"max_output_tokens", File{MaxOutputTokens: -1}, Flags{}, "max_output_tokens in cfg.json must be positive"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -294,5 +303,17 @@ func TestAutoApproveRejectsAnythingElse(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "autoApprove must be true, false or a list of tool names") {
 			t.Errorf("autoApprove %s: err = %v", value, err)
 		}
+	}
+}
+
+func TestDefaultPathAndStateDirFailTogetherWithoutAHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_STATE_HOME", "")
+	if p, err := DefaultPath(); err == nil || p != "" {
+		t.Errorf("DefaultPath() = %q, %v: want no path and an error", p, err)
+	}
+	if p, err := StateDir(); err == nil || p != "" {
+		t.Errorf("StateDir() = %q, %v: want no path and an error", p, err)
 	}
 }

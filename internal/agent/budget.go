@@ -70,12 +70,7 @@ func dropOutputs(items []item, upto, needed int, placeholders bool) int {
 }
 
 // maxContext is the budget for a request.
-func (a *Agent) maxContext() int {
-	if a.settings.MaxContextTokens > 0 {
-		return a.settings.MaxContextTokens
-	}
-	return defaultMaxContextTokens
-}
+func (a *Agent) maxContext() int { return a.settings.MaxContextTokens }
 
 // fixedTokens is what every request carries whatever the history: the instructions and the tool definitions.
 func (a *Agent) fixedTokens() int { return a.instructionTokens() + a.toolTokens() }

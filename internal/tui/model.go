@@ -45,9 +45,8 @@ type Agent interface {
 
 // Info is what the UI shows about the session. Only the fields it displays are here.
 type Info struct {
-	WorkDir       string
-	Branch        string // empty outside a git repository
-	ContextWindow int    // tokens; 0 when unknown
+	WorkDir string
+	Branch  string // empty outside a git repository
 
 	// Startup is work that finishes after the window has opened, such as connecting to MCP servers. It runs once, in
 	// the background. Prompts typed meanwhile wait, so that the model sees the tools it sets up.

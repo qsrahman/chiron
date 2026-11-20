@@ -197,8 +197,8 @@ The terminal gets what it can use of the program's state: the window or tab titl
 while the program works and `▲` while it waits for an approval; a terminal with a progress indicator (Windows Terminal,
 iTerm2, Ghostty and others) shows it running, or yellow while it waits for you; and if the terminal reports focus, a bell
 and a `✓` or `✗` in the title tell you when a run that finished or an approval that waits happened in a window you were
-not looking at. The text cursor is the terminal's own (a bar, in your cursor colour). The share of the context window in
-the top row turns amber at 75% and red at 90%.
+not looking at. The text cursor is the terminal's own (a bar, in your cursor colour). The share of the context budget
+(`max_context_tokens`) in the top row turns amber at 75% and red at 90%.
 
 The top row shows the working directory and git branch on the left and the model, and after the first answer the
 size of the conversation in tokens, on the right. Below the transcript are the input box and a one-line key
@@ -243,10 +243,10 @@ One file, `~/.config/chiron/config.json` (or `$XDG_CONFIG_HOME/chiron/config.jso
   "model": "gpt-5.4-mini",
   "base_url": "http://localhost:11434/v1",
   "api_key": "${OPENAI_API_KEY}",
-  "context_window": 400000,
   "reasoning_effort": "low",
   "max_turns": 25,
   "streaming": true,
+  "max_output_tokens": 8192,
   "max_context_tokens": 65536,
   "auto_compact": false,
   "sessions": true,
@@ -278,9 +278,12 @@ One file, `~/.config/chiron/config.json` (or `$XDG_CONFIG_HOME/chiron/config.jso
 - **A key that is not a setting is an error** that names the key and the file, so a typo such as `max_turn` is not
   silently ignored. `base_url` and `api_key` are optional.
 - `reasoning_effort` (unset sends nothing), `max_turns` and `streaming` correspond to the flags above.
+- `max_output_tokens` caps what the model may generate for one reply, reasoning included (unset sends no cap, so the
+  model or server decides). A reply that hits it is cut off and shown with the reason `max_output_tokens`. The request
+  that writes a summary has a cap of its own (8,000), which this setting does not change.
 - `max_context_tokens` and `auto_compact` are described under "Context budget" above, `sessions` under [Sessions](#sessions).
-- `context_window` is optional. With it, the status line shows how much of the context window the conversation
-  uses (for example `25.5k tokens (6%)`); without it only the token count appears.
+- The status line shows how much of the context budget the conversation uses (for example `25.5k tokens (39%)` of the
+  default 65,536). There is no key for the model's real context window; `context_window` is an unknown key.
 - `mcpServers` is described in [MCP servers](#mcp-servers). A typo in an entry is an error, like any other key.
 - `"${NAME}"` in any string value is replaced from the environment, so secrets need not live in the file.
   If you do put a key in the file, keep it private: `chmod 600 ~/.config/chiron/config.json`.

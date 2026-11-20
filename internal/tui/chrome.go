@@ -36,7 +36,7 @@ func (m *Model) headerView() string {
 	}
 
 	// In a narrow terminal the right side gives up what matters least, in this order: the servers, the share of the
-	// context window, the token count. The name of the program and the model stay.
+	// budget, the token count. The name of the program and the model stay.
 	model := m.sty.meta.Render(sanitize(m.agent.Settings().Model))
 	status := ""
 	switch {
@@ -66,13 +66,17 @@ func (m *Model) headerView() string {
 	return left + gap + right + "\n" + m.sty.rule.Render(strings.Repeat("─", width))
 }
 
-// usageStyle is the muted style of the usage figure, turning amber when the context is three quarters full and red when
-// it is nine tenths full: the point where a long conversation needs /compact, or the model starts to lose the start.
+// contextBudget is the size a request may have (max_context_tokens), which the header's share is counted against.
+func (m *Model) contextBudget() int64 { return int64(m.agent.Settings().MaxContextTokens) }
+
+// usageStyle is the muted style of the usage figure, turning amber when the context is three quarters of the budget and
+// red when it is nine tenths: the point where a long conversation needs /compact, or the model starts to lose the start.
 func (m *Model) usageStyle() lipgloss.Style {
-	if m.info.ContextWindow <= 0 {
+	budget := m.contextBudget()
+	if budget <= 0 {
 		return m.sty.toolMeta
 	}
-	switch percent := m.contextTokens * 100 / int64(m.info.ContextWindow); {
+	switch percent := m.contextTokens * 100 / budget; {
 	case percent >= 90:
 		return m.sty.iconErr
 	case percent >= 75:
@@ -81,14 +85,14 @@ func (m *Model) usageStyle() lipgloss.Style {
 	return m.sty.toolMeta
 }
 
-// usageText shows how much context the conversation uses, with a percentage when the window is known and asked for.
+// usageText shows how much context the conversation uses, with its share of the budget when asked for.
 func (m *Model) usageText(percent bool) string {
 	if m.contextTokens == 0 {
 		return ""
 	}
 	text := " · " + formatTokens(m.contextTokens) + " tokens"
-	if percent && m.info.ContextWindow > 0 {
-		text += fmt.Sprintf(" (%d%%)", m.contextTokens*100/int64(m.info.ContextWindow))
+	if budget := m.contextBudget(); percent && budget > 0 {
+		text += fmt.Sprintf(" (%d%%)", m.contextTokens*100/budget)
 	}
 	return text
 }

@@ -52,22 +52,22 @@ func (c *mcpControl) connect() tui.Startup {
 
 // Reconnect starts servers afresh and gives the agent the tools of those that came up.
 func (c *mcpControl) Reconnect(name string) tui.Startup {
-	if name == "" && !c.anythingToReconnect() {
-		return tui.Startup{Notes: []string{"Nothing to reconnect: every server is running"}, Status: c.status()}
+	if name == "" {
+		needReconnect := false
+		for _, st := range c.hub.Status() {
+			if st.Err != nil || st.Dead {
+				needReconnect = true
+				break
+			}
+		}
+		if !needReconnect {
+			return tui.Startup{Notes: []string{"Nothing to reconnect: every server is running"}, Status: c.status()}
+		}
 	}
 	if err := c.hub.Reconnect(c.ctx, name); err != nil {
 		return tui.Startup{Notes: []string{err.Error()}, Status: c.status()}
 	}
 	return c.apply()
-}
-
-func (c *mcpControl) anythingToReconnect() bool {
-	for _, st := range c.hub.Status() {
-		if st.Err != nil || st.Dead {
-			return true
-		}
-	}
-	return false
 }
 
 // apply builds the registry and the instructions from the servers as they are now, hands them to the agent, and
@@ -85,36 +85,48 @@ func (c *mcpControl) apply() tui.Startup {
 		startup.Notes = append(startup.Notes, "MCP tools are not available: "+err.Error())
 		return startup
 	}
+
 	var serverNotes []agent.ServerNote
 	for _, n := range c.hub.Notes() {
 		serverNotes = append(serverNotes, agent.ServerNote(n))
 	}
+
 	instructions, err := agent.BuildInstructions(c.ctx, c.workDir, time.Now(), registry.Len() > 0, serverNotes...)
 	if err != nil {
 		startup.Notes = append(startup.Notes, "MCP tools are not available: "+err.Error())
 		return startup
 	}
+
 	c.agent.SetTools(registry, instructions)
 	return startup
 }
 
 // status is the few words for the header: how many servers are running.
 func (c *mcpControl) status() string {
-	statuses := c.hub.Status()
 	running := 0
-	for _, st := range statuses {
+	total := 0
+	for _, st := range c.hub.Status() {
+		total++
 		if st.Err == nil && !st.Dead {
 			running++
 		}
 	}
-	return fmt.Sprintf("mcp %d/%d", running, len(statuses))
+	return fmt.Sprintf("mcp %d/%d", running, total)
 }
 
 // List says how each server is doing, for /servers.
 func (c *mcpControl) List() []tui.ServerInfo {
 	var out []tui.ServerInfo
 	for _, st := range c.hub.Status() {
-		info := tui.ServerInfo{Name: st.Name, Lost: st.Dead, Tools: st.Tools, Hidden: st.Hidden, Tokens: st.Tokens, Restarts: st.Restarts, LogPath: st.LogPath}
+		info := tui.ServerInfo{
+			Name:     st.Name,
+			Lost:     st.Dead,
+			Tools:    st.Tools,
+			Hidden:   st.Hidden,
+			Tokens:   st.Tokens,
+			Restarts: st.Restarts,
+			LogPath:  st.LogPath,
+		}
 		if st.Err != nil {
 			info.Err = st.Err.Error()
 		}

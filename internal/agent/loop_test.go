@@ -411,6 +411,40 @@ func TestMaxTurnsIsASetting(t *testing.T) {
 	}
 }
 
+func TestTheContextBudgetDefaultsAndIsReportedBySettings(t *testing.T) {
+	a := New(newFakeServer(t).client(), Settings{Model: "m"}, "", &tools.Registry{})
+	if got := a.Settings().MaxContextTokens; got != defaultMaxContextTokens {
+		t.Errorf("default budget = %d, want %d", got, defaultMaxContextTokens)
+	}
+	a = New(newFakeServer(t).client(), Settings{Model: "m", MaxContextTokens: 1234}, "", &tools.Registry{})
+	if got := a.Settings().MaxContextTokens; got != 1234 {
+		t.Errorf("budget = %d, want 1234", got)
+	}
+}
+
+func TestMaxOutputTokensIsSentOnlyWhenSet(t *testing.T) {
+	tests := []struct {
+		name string
+		cap  int
+		want any // the value of max_output_tokens in the request; nil means the key is absent
+	}{
+		{"unset sends none", 0, nil},
+		{"set is sent", 1234, float64(1234)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newFakeServer(t, sse(textDelta("ok"), completed("ok")))
+			settings := testSettings("m")
+			settings.MaxOutputTokens = tt.cap
+			drain(t, New(srv.client(), settings, "", &tools.Registry{}).Send(context.Background(), "hi"))
+
+			if got := srv.request(t, 0)["max_output_tokens"]; got != tt.want {
+				t.Errorf("max_output_tokens = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRepeatedToolCallsAreStoppedAndKept(t *testing.T) {
 	srv := newFakeServer(t, sse(completedWith(functionCall("c1", "read", nameArgs{"a"}))))
 	a := newAgentWithTools(t, srv, fakeTool("read", true, 0, &recorder{}))

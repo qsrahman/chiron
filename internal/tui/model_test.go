@@ -370,18 +370,20 @@ func TestAClosedCardShowsOnlyItsHeaderAndHowMuchItReturned(t *testing.T) {
 func TestHeaderShowsContextUsage(t *testing.T) {
 	tests := []struct {
 		name   string
-		window int
+		budget int
 		usage  agent.Usage
 		want   string // substring of the status line
 		not    string
 	}{
 		{"nothing before the first response", 128000, agent.Usage{}, "", "tokens"},
-		{"tokens only when the window is unknown", 0, agent.Usage{InputTokens: 900, OutputTokens: 50}, "950 tokens", "%"},
-		{"thousands and a percentage", 200000, agent.Usage{InputTokens: 24000, OutputTokens: 1500}, "25.5k tokens (12%)", ""},
+		{"tokens only when the agent has no budget", 0, agent.Usage{InputTokens: 900, OutputTokens: 50}, "950 tokens", "%"},
+		{"thousands and a share of the budget", 200000, agent.Usage{InputTokens: 24000, OutputTokens: 1500}, "25.5k tokens (12%)", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := New(&fakeAgent{}, Info{ContextWindow: tt.window})
+			a := &fakeAgent{}
+			a.settings.MaxContextTokens = tt.budget
+			m := New(a, Info{})
 			m, _ = update(m, eventMsg{tt.usage})
 
 			status := ansi.Strip(m.headerView())
@@ -504,8 +506,9 @@ func TestThePlaceholderIsNeverCutOff(t *testing.T) {
 // of the window, then the token count, whole, before it cuts anything in the middle.
 func TestTheHeaderKeepsTheNameAndTheModelAtEveryWidth(t *testing.T) {
 	for width := 40; width <= 130; width++ {
-		m := sized(&fakeAgent{}, width, 24)
-		m.info.ContextWindow = 100000
+		a := &fakeAgent{}
+		a.settings.MaxContextTokens = 100000
+		m := sized(a, width, 24)
 		m.status = "mcp 2/3"
 		m.contextTokens = 6400
 

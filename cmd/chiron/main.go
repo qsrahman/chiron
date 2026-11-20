@@ -149,6 +149,7 @@ func start(ctx context.Context, cfg config.Config, opts runOptions, stdout, stde
 		Streaming:       cfg.Streaming,
 		AutoApprove:     opts.autoApprove,
 
+		MaxOutputTokens:  cfg.MaxOutputTokens,
 		MaxContextTokens: cfg.MaxContextTokens,
 		AutoCompact:      cfg.AutoCompact,
 	}, instructions, registry)
@@ -172,9 +173,8 @@ func start(ctx context.Context, cfg config.Config, opts runOptions, stdout, stde
 		return runPrompt(ctx, a, opts.prompt, stdout, stderr)
 	}
 	info := tui.Info{
-		WorkDir:       workDir,
-		Branch:        agent.GitBranch(ctx, workDir),
-		ContextWindow: cfg.ContextWindow,
+		WorkDir: workDir,
+		Branch:  agent.GitBranch(ctx, workDir),
 	}
 	// The prompts you type are kept with the sessions, and by the same switch.
 	if stateDir, err := config.StateDir(); err == nil && cfg.Sessions && !opts.noSave {
@@ -233,10 +233,7 @@ func runPrompt(ctx context.Context, a *agent.Agent, prompt string, w, notices io
 //
 // extra options are applied last; tests use them to replace the HTTP transport.
 func newClient(cfg config.Config, extra ...option.RequestOption) openai.Client {
-	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = openAIBaseURL
-	}
+	baseURL := cmp.Or(cfg.BaseURL, openAIBaseURL)
 	opts := []option.RequestOption{option.WithBaseURL(baseURL)}
 	if cfg.APIKey != "" {
 		opts = append(opts, option.WithAPIKey(cfg.APIKey))
@@ -247,27 +244,31 @@ func newClient(cfg config.Config, extra ...option.RequestOption) openai.Client {
 // openSessions turns on saving, and resumes a saved conversation when asked to. Resuming works even when saving is
 // off. Without a home directory there is nowhere to keep sessions: that is an error only for a resume.
 func openSessions(a *agent.Agent, cfg config.Config, opts runOptions, workDir string, stderr io.Writer) error {
-	resuming := opts.resume.set
 	stateDir, err := config.StateDir()
 	if err != nil {
-		if resuming {
+		if opts.resume.set {
 			return err
 		}
 		return nil
 	}
+
 	store := session.NewStore(stateDir)
 	endpoint := endpointOf(cfg.BaseURL)
+
 	// A directory is known by where it really is, so reaching it through a symlink finds the same sessions.
 	if real, err := filepath.EvalSymlinks(workDir); err == nil {
 		workDir = real
 	}
+
 	// A one-shot -p run is a script's call, not a conversation: it can resume a session but is never saved.
 	if cfg.Sessions && !opts.noSave && opts.prompt == "" {
 		a.EnableSessions(store, workDir, endpoint)
 	}
-	if !resuming {
+
+	if !opts.resume.set {
 		return nil
 	}
+
 	var f session.File
 	if opts.resume.id == "" {
 		var damaged []string

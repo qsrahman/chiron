@@ -203,12 +203,10 @@ func TestExitAndQuitLeaveAtOnce(t *testing.T) {
 
 func TestContextRows(t *testing.T) {
 	a := &fakeAgent{estimate: agent.ContextEstimate{Instructions: 1200, Tools: 3400, ToolCount: 4, History: 56789, LastInput: 61000, Budget: 65536}}
-	m := newTestModel(a)
-	m.info.ContextWindow = 128000
-	m, _ = typeAndEnter(t, m, "/context")
+	m, _ := typeAndEnter(t, newTestModel(a), "/context")
 
 	got := said(m)
-	for _, want := range []string{"instructions", "~1,200 tokens", "tools (4)", "~3,400", "history", "~56,789", "total", "~61,389", "61,000 tokens, counted by the server", "128,000", "budget", "65,536 tokens (93% used)"} {
+	for _, want := range []string{"instructions", "~1,200 tokens", "tools (4)", "~3,400", "history", "~56,789", "total", "~61,389", "61,000 tokens, counted by the server", "budget", "65,536 tokens (93% used)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("/context is missing %q:\n%s", want, got)
 		}
