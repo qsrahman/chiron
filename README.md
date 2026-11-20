@@ -198,8 +198,9 @@ while the program works and `▲` while it waits for an approval; a terminal wit
 iTerm2, Ghostty and others) shows it running, or yellow while it waits for you; and if the terminal reports focus, a bell
 and a `✓` or `✗` in the title tell you when a run that finished or an approval that waits happened in a window you were
 not looking at. The text cursor is the terminal's own (a bar, in your cursor colour). The share of the context budget
-(`max_context_tokens`) is at the right edge of the bottom row, under the input box (`context 9%`), and turns amber at
-75% and red at 90%; the header has the token count.
+(`max_context_tokens`) is at the right edge of the bottom row, under the input box (`~9.7k tokens · ~15%`), and
+turns amber at 75% and red at 90%; in a narrow terminal it shrinks to the percentage alone (`15%`). The header has no
+usage figure.
 
 The top row shows the working directory and git branch on the left and the model, and after the first answer the
 size of the conversation in tokens, on the right. Below the transcript are the input box and a one-line key
@@ -283,9 +284,8 @@ One file, `~/.config/chiron/config.json` (or `$XDG_CONFIG_HOME/chiron/config.jso
   model or server decides). A reply that hits it is cut off and shown with the reason `max_output_tokens`. The request
   that writes a summary has a cap of its own (8,000), which this setting does not change.
 - `max_context_tokens` and `auto_compact` are described under "Context budget" above, `sessions` under [Sessions](#sessions).
-- The status line shows how much of the context budget the conversation uses (for example `25.5k tokens` in the header
-  and `context 39%` under the input box, of the default 65,536). Before the first response both are estimates, marked
-  `~`, so a new or resumed conversation shows its size at once. There is no key for the model's real context window; `context_window` is an unknown key.
+- The status line shows how much of the context budget the conversation uses (for example `25.5k tokens · 39%` at the
+  right edge under the input box, of the default 65,536). Before the first response it is an estimate, marked `~`, so a new or resumed conversation shows its size at once. There is no key for the model's real context window; `context_window` is an unknown key.
 - `mcpServers` is described in [MCP servers](#mcp-servers). A typo in an entry is an error, like any other key.
 - `"${NAME}"` in any string value is replaced from the environment, so secrets need not live in the file.
   If you do put a key in the file, keep it private: `chmod 600 ~/.config/chiron/config.json`.

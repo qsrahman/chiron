@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"image/color"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -377,17 +376,16 @@ func TestAClosedCardShowsOnlyItsHeaderAndHowMuchItReturned(t *testing.T) {
 	}
 }
 
-func TestHeaderShowsTheTokensAndTheBottomRowTheShareOfTheBudget(t *testing.T) {
+func TestTheBottomRowShowsTheUsageAndTheHeaderDoesNot(t *testing.T) {
 	tests := []struct {
 		name   string
 		budget int
 		usage  agent.Usage
-		tokens string // substring of the header
-		share  string // substring of the bottom row; "" means none
+		bottom string // what the bottom row ends with; "" means it shows nothing
 	}{
-		{"nothing before the first response", 128000, agent.Usage{}, "", ""},
-		{"tokens only when the agent has no budget", 0, agent.Usage{InputTokens: 900, OutputTokens: 50}, "950 tokens", ""},
-		{"thousands and a share of the budget", 200000, agent.Usage{InputTokens: 24000, OutputTokens: 1500}, "25.5k tokens", "context 12%"},
+		{"nothing before the first response", 128000, agent.Usage{}, ""},
+		{"tokens only when the agent has no budget", 0, agent.Usage{InputTokens: 900, OutputTokens: 50}, "950 tokens"},
+		{"thousands and a share of the budget", 200000, agent.Usage{InputTokens: 24000, OutputTokens: 1500}, "25.5k tokens · 12%"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -397,29 +395,35 @@ func TestHeaderShowsTheTokensAndTheBottomRowTheShareOfTheBudget(t *testing.T) {
 			m, _ = update(m, eventMsg{tt.usage})
 
 			header, bottom := ansi.Strip(m.headerView()), ansi.Strip(m.helpView())
-			if tt.tokens == "" && strings.Contains(header, "tokens") || !strings.Contains(header, tt.tokens) {
-				t.Errorf("header %q, want %q", header, tt.tokens)
+			if strings.Contains(header, "tokens") || strings.Contains(header, "%") {
+				t.Errorf("the usage belongs to the bottom row, not the header: %q", header)
 			}
-			if strings.Contains(header, "%") {
-				t.Errorf("the share belongs to the bottom row, not the header: %q", header)
-			}
-			if (tt.share == "") != !strings.Contains(bottom, "context") || !strings.Contains(bottom, tt.share) {
-				t.Errorf("bottom row %q, want %q", bottom, tt.share)
+			if strings.Contains(bottom, "context") || tt.bottom == "" && strings.Contains(bottom, "tokens") || !strings.HasSuffix(bottom, tt.bottom) {
+				t.Errorf("bottom row %q, want it to end with %q and not say context", bottom, tt.bottom)
 			}
 		})
 	}
 }
 
-func TestTheShareSitsAtTheRightEdgeBelowTheInputBox(t *testing.T) {
-	for _, width := range []int{30, 60, 100, 160} {
+func TestTheUsageSitsAtTheRightEdgeBelowTheInputBoxAndGetsShorterInANarrowTerminal(t *testing.T) {
+	for _, tt := range []struct {
+		width int
+		want  string // what the bottom row ends with
+	}{
+		{160, "25.5k tokens · 12%"},
+		{60, "25.5k tokens · 12%"},
+		{40, "25.5k tokens · 12%"},
+		{30, "12%"}, // the key hints keep some room
+		{20, "12%"},
+	} {
 		a := &fakeAgent{}
 		a.settings.MaxContextTokens = 200000
-		m := sized(a, width, 24)
+		m := sized(a, tt.width, 24)
 		m, _ = update(m, eventMsg{agent.Usage{InputTokens: 24000, OutputTokens: 1500}})
 
 		line := ansi.Strip(m.helpView())
-		if !strings.HasSuffix(line, "context 12%") || lipgloss.Width(line) != m.contentWidth() {
-			t.Errorf("width %d: %q is %d cells, want it to end with the share at the box's right edge (%d)", width, line, lipgloss.Width(line), m.contentWidth())
+		if !strings.HasSuffix(line, tt.want) || lipgloss.Width(line) != m.contentWidth() {
+			t.Errorf("width %d: %q is %d cells, want it to end with %q at the box's right edge (%d)", tt.width, line, lipgloss.Width(line), tt.want, m.contentWidth())
 		}
 	}
 }
@@ -433,17 +437,13 @@ func estimatedAgent() *fakeAgent {
 
 func TestTheHeaderShowsAnEstimateBeforeTheFirstResponse(t *testing.T) {
 	m := New(estimatedAgent(), Info{})
-	if got := ansi.Strip(m.headerView()); !strings.Contains(got, "~6.0k tokens") {
-		t.Errorf("a new or resumed conversation shows no size: %q", got)
-	}
-	if got := ansi.Strip(m.helpView()); !strings.HasSuffix(got, "context ~9%") {
-		t.Errorf("a new or resumed conversation shows no share: %q", got)
+	if got := ansi.Strip(m.helpView()); !strings.HasSuffix(got, "~6.0k tokens · ~9%") {
+		t.Errorf("a new or resumed conversation shows no size on the bottom row: %q", got)
 	}
 
 	m, _ = update(m, eventMsg{agent.Usage{InputTokens: 7000, OutputTokens: 500}})
-	if got, bottom := ansi.Strip(m.headerView()), ansi.Strip(m.helpView()); !strings.Contains(got, " 7.5k tokens") || strings.Contains(got, "~") ||
-		!strings.HasSuffix(bottom, "context 11%") {
-		t.Errorf("the server's count must replace the estimate: %q, %q", got, bottom)
+	if bottom := ansi.Strip(m.helpView()); !strings.HasSuffix(bottom, " 7.5k tokens · 11%") || strings.Contains(bottom, "~") {
+		t.Errorf("the server's count must replace the estimate: %q", bottom)
 	}
 }
 
@@ -454,7 +454,7 @@ func TestTheEstimateIsMadeAgainWhenTheConversationChanges(t *testing.T) {
 
 	a.estimate.History = 0 // what /reset does to the agent
 	m, _ = typeAndEnter(t, m, "/reset")
-	if got := ansi.Strip(m.headerView()); !strings.Contains(got, "~3.0k tokens") {
+	if got := ansi.Strip(m.helpView()); !strings.Contains(got, "~3.0k tokens") {
 		t.Errorf("after /reset: %q", got)
 	}
 
@@ -462,7 +462,7 @@ func TestTheEstimateIsMadeAgainWhenTheConversationChanges(t *testing.T) {
 	a.sessions = []agent.SessionInfo{{ID: "s-1", Turns: 1, Prompt: "hi"}}
 	m, _ = typeAndEnter(t, m, "/sessions")
 	m, _ = update(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if got := ansi.Strip(m.headerView()); !strings.Contains(got, "~3.5k tokens") {
+	if got := ansi.Strip(m.helpView()); !strings.Contains(got, "~3.5k tokens") {
 		t.Errorf("after resuming a session: %q", got)
 	}
 }
@@ -471,12 +471,12 @@ func TestTheEstimateCountsTheToolsOfServersThatConnectedLater(t *testing.T) {
 	a := estimatedAgent()
 	a.estimate.Tools = 0
 	m := New(a, Info{})
-	if got := ansi.Strip(m.headerView()); !strings.Contains(got, "~4.0k tokens") {
+	if got := ansi.Strip(m.helpView()); !strings.Contains(got, "~4.0k tokens") {
 		t.Fatalf("before the servers: %q", got)
 	}
 	a.estimate.Tools = 2000
 	m, _ = update(m, startupMsg{Startup{}})
-	if got := ansi.Strip(m.headerView()); !strings.Contains(got, "~6.0k tokens") {
+	if got := ansi.Strip(m.helpView()); !strings.Contains(got, "~6.0k tokens") {
 		t.Errorf("after the servers: %q", got)
 	}
 }
@@ -489,7 +489,7 @@ func TestUsageIsShownWhileBusyAndLatestWins(t *testing.T) {
 	m, _ = update(m, eventMsg{agent.Usage{InputTokens: 1000, OutputTokens: 0}})
 	m, _ = update(m, eventMsg{agent.Usage{InputTokens: 2000, OutputTokens: 500}})
 
-	if header := ansi.Strip(m.headerView()); !strings.Contains(header, "2.5k tokens") {
+	if header := ansi.Strip(m.helpView()); !strings.Contains(header, "2.5k tokens") {
 		t.Errorf("header = %q, want the latest context size", header)
 	}
 	if activity := ansi.Strip(m.activityLine()); !strings.Contains(activity, "Working") {
@@ -586,8 +586,8 @@ func TestThePlaceholderIsNeverCutOff(t *testing.T) {
 	}
 }
 
-// In a narrow terminal the header keeps the name of the program and the model, and gives up the servers, then the share
-// of the window, then the token count, whole, before it cuts anything in the middle.
+// In a narrow terminal the header keeps the name of the program and the model, and gives up the servers, whole, before
+// it cuts anything in the middle. It carries no usage figure.
 func TestTheHeaderKeepsTheNameAndTheModelAtEveryWidth(t *testing.T) {
 	for width := 40; width <= 130; width++ {
 		a := &fakeAgent{}
@@ -604,8 +604,8 @@ func TestTheHeaderKeepsTheNameAndTheModelAtEveryWidth(t *testing.T) {
 		if ansi.StringWidth(header) > m.contentWidth() {
 			t.Fatalf("width %d: the header is %d cells wide, want at most %d: %q", width, ansi.StringWidth(header), m.contentWidth(), header)
 		}
-		if strings.Contains(header, "tokens") && !regexp.MustCompile(`\d+(\.\d+)?k tokens( \(\d+%\))?$`).MatchString(header) {
-			t.Fatalf("width %d: the token count is cut off: %q", width, header)
+		if strings.Contains(header, "tokens") {
+			t.Fatalf("width %d: the header shows the usage: %q", width, header)
 		}
 		if strings.Contains(header, "mcp") && !strings.Contains(header, "mcp 2/3 · ") {
 			t.Fatalf("width %d: the servers are cut off: %q", width, header)

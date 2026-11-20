@@ -6,6 +6,11 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Changed
 
+- **The usage figure is only at the right edge of the bottom row, under the input box**: the token count and the share of
+  the budget (`~9.7k tokens · ~15%`, with a `~` while it is an estimate; it keeps the amber and red colours at 75% and
+  90%). In a narrow terminal it shortens to the percentage alone, so the key hints keep some room. The header no longer
+  shows the token count, and the word "context" is gone from the bottom row.
+
 - **The system prompt tells the model the terminal cannot render LaTeX** and asks for math in plain Unicode (π √ ∑ ∫ ≤ ≠,
   x², aₙ, a/b), never `$…$`, `\(…\)`, `\[…\]` or backslash commands. It is in the shared part of the prompt, so it
   applies with and without tools, and tests pin it. Measured on the configured model with four maths prompts: without

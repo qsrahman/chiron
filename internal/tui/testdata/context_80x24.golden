@@ -1,4 +1,4 @@
- chiron  /work/demo on main                          test-model · ~61.4k tokens
+ chiron  /work/demo on main                                          test-model
  ──────────────────────────────────────────────────────────────────────────────
    instructions  ~1,200 tokens
    tools (4)     ~3,400 tokens
@@ -21,4 +21,4 @@
  ╭────────────────────────────────────────────────────────────────────────────╮
  │ ❯ Ask anything, or /help for commands...                                   │
  ╰────────────────────────────────────────────────────────────────────────────╯
-  enter send · ctrl+j new line · pgup/pgdn scroll · ctrl+c quit
+  enter send · ctrl+j new line · pgup/pgdn scroll · ctrl+c quit   ~61.4k tokens

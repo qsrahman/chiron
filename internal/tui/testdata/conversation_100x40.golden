@@ -1,4 +1,4 @@
- chiron  /work/demo on main                                                test-model · 2.5k tokens
+ chiron  /work/demo on main                                                              test-model
  ──────────────────────────────────────────────────────────────────────────────────────────────────
  ┃ What does this project do, and do the tests pass?
 
@@ -37,4 +37,4 @@
  ╭────────────────────────────────────────────────────────────────────────────────────────────────╮
  │ ❯ Ask anything, or /help for commands...                                                       │
  ╰────────────────────────────────────────────────────────────────────────────────────────────────╯
-  enter send · ctrl+j new line · pgup/pgdn scroll · ctrl+c quit · tab tool cards
+  enter send · ctrl+j new line · pgup/pgdn scroll · ctrl+c quit · tab tool cards        2.5k tokens

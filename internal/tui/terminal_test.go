@@ -358,8 +358,8 @@ func TestTheUsageFigureTurnsAmberAndRedAsTheContextFills(t *testing.T) {
 		m := sized(a, 120, 24)
 		m.contextTokens = tt.tokens
 
-		usage := m.headerView()
-		usage = usage[strings.Index(usage, "tokens")-30:]
+		usage := m.helpView()
+		usage = usage[strings.Index(usage, "tokens")-40:]
 
 		for _, colour := range []string{amber, red} {
 			if has := strings.Contains(usage, colour); has != (colour == tt.want) {
@@ -373,7 +373,7 @@ func TestTheUsageFigureStaysMutedWithoutAKnownWindow(t *testing.T) {
 	m := sized(&fakeAgent{}, 120, 24)
 	m.contextTokens = 1_000_000
 
-	if header := m.headerView(); strings.Contains(header, "38;2;251;191;36") || strings.Contains(header, "38;2;248;113;113") {
+	if bottom := m.helpView(); strings.Contains(bottom, "38;2;251;191;36") || strings.Contains(bottom, "38;2;248;113;113") {
 		t.Error("the figure is coloured although there is no window to compare it with")
 	}
 }

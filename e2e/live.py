@@ -153,7 +153,8 @@ def startup_and_chat():
         t.expect(not t.screen.title.startswith("●"), f"the title still shows work: {t.screen.title!r}")
         say(t, "Reply with exactly: PONG")
         t.expect("   PONG" in t.lines, "the answer is not drawn cleanly on its own row")
-        t.expect(re.search(r"[\d.]+k? tokens", t.lines[0]), "the header does not show the token count")
+        t.expect(re.search(r"[\d.]+k? tokens · \d+%$", t.lines[-1].rstrip()), f"the bottom row does not end with the usage: {t.lines[-1]!r}")
+        t.expect("tokens" not in t.lines[0] and "context" not in t.lines[-1], "the header shows the usage, or the bottom row says context")
         return t
     finally:
         t.close()
@@ -175,7 +176,7 @@ def markdown():
                     body = t.text.split("ls -la", 1)[-1] if "ls -la" in t.text else ""
                     if marker in body:
                         seen_raw = marker
-            if "Working" not in t.text and "tokens" in t.lines[0] and t.text.count("ls -la") >= 2:
+            if "Working" not in t.text and "tokens" in t.lines[-1] and t.text.count("ls -la") >= 2:
                 break
         t.idle()
         invariants(t, "markdown")

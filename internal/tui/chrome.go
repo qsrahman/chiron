@@ -35,8 +35,7 @@ func (m *Model) headerView() string {
 		where += " " + m.sty.toolMeta.Render("on "+m.info.Branch)
 	}
 
-	// In a narrow terminal the right side gives up what matters least, in this order: the servers, the token count.
-	// The name of the program and the model stay.
+	// In a narrow terminal the right side gives up the servers. The name of the program and the model stay.
 	model := m.sty.meta.Render(sanitize(m.agent.Settings().Model))
 	status := ""
 	switch {
@@ -45,12 +44,7 @@ func (m *Model) headerView() string {
 	case m.status != "":
 		status = m.sty.toolMeta.Render(m.status + " · ")
 	}
-	usage := m.usageStyle()
-	candidates := []string{
-		status + model + usage.Render(m.usageText()),
-		model + usage.Render(m.usageText()),
-		model,
-	}
+	candidates := []string{status + model, model}
 	room := width - lipgloss.Width(brand) - 2
 	right := candidates[len(candidates)-1]
 	for _, c := range candidates {
@@ -92,22 +86,24 @@ func (m *Model) estimateMark() string {
 	return ""
 }
 
-// usageText shows how much context the conversation uses, for the header.
-func (m *Model) usageText() string {
+// bottomUsage lists, longest first, what the right edge of the bottom row can say about the size of the conversation:
+// `~9.7k tokens · ~15%`, then the share alone. Nothing before anything is counted or estimated.
+func (m *Model) bottomUsage() []string {
 	if m.contextTokens == 0 {
-		return ""
+		return nil
 	}
-	return " · " + m.estimateMark() + formatTokens(m.contextTokens) + " tokens"
+	mark := m.estimateMark()
+	tokens := mark + formatTokens(m.contextTokens) + " tokens"
+	budget := m.contextBudget()
+	if budget <= 0 {
+		return []string{tokens}
+	}
+	share := fmt.Sprintf("%s%d%%", mark, m.contextTokens*100/budget)
+	return []string{tokens + " · " + share, share}
 }
 
-// shareText is the share of the budget the conversation uses, for the right edge of the bottom row; "" when it is not
-// known (no budget, or nothing counted yet).
-func (m *Model) shareText() string {
-	if budget := m.contextBudget(); budget > 0 && m.contextTokens > 0 {
-		return fmt.Sprintf("context %s%d%%", m.estimateMark(), m.contextTokens*100/budget)
-	}
-	return ""
-}
+// minHintsWidth is the room the key hints keep, when the right edge can be shortened to leave it.
+const minHintsWidth = 16
 
 func formatTokens(n int64) string {
 	if n < 1000 {
@@ -173,21 +169,47 @@ func (m *Model) helpView() string {
 	bar := m.help.ShortHelpView(bindings)
 	width := m.contentWidth() - 1
 	// What sits at the right edge matters more than the last key hints, which give way to it: output that is out of
-	// sight, and the share of the context budget.
+	// sight, and the size of the conversation.
 	var right []string
 	if below := m.linesBelow(); below > 0 {
 		right = append(right, m.sty.iconRunning.Render("↓ "+plural(below, "line")+" below"))
 	}
-	if share := m.shareText(); share != "" {
-		right = append(right, m.usageStyle().Render(share))
+	if usage := m.fitUsage(right, width); usage != "" {
+		right = append(right, m.usageStyle().Render(usage))
 	}
 	if len(right) > 0 {
 		tail := strings.Join(right, "  ")
 		bar = ansi.Truncate(bar, max(0, width-ansi.StringWidth(tail)-2), "…")
-		bar += strings.Repeat(" ", max(2, width-ansi.StringWidth(bar)-ansi.StringWidth(tail))) + tail
+		if bar == "" {
+			bar = strings.Repeat(" ", max(0, width-ansi.StringWidth(tail)))
+		} else {
+			bar += strings.Repeat(" ", max(2, width-ansi.StringWidth(bar)-ansi.StringWidth(tail)))
+		}
+		bar += tail
 	}
 	// The help component still adds an item when not even its ellipsis fits, so cut the line ourselves.
 	return indent(ansi.Truncate(bar, width, "…"), 1)
+}
+
+// fitUsage picks the longest wording of the usage that leaves the key hints minHintsWidth next to what is already at the
+// right edge, or else the longest that fits at all; "" when none does.
+func (m *Model) fitUsage(right []string, width int) string {
+	taken := 0
+	for _, r := range right {
+		taken += ansi.StringWidth(r) + 2
+	}
+	candidates := m.bottomUsage()
+	for _, c := range candidates {
+		if taken+ansi.StringWidth(c)+minHintsWidth <= width {
+			return c
+		}
+	}
+	for _, c := range candidates {
+		if taken+ansi.StringWidth(c) <= width {
+			return c
+		}
+	}
+	return ""
 }
 
 // linesBelow is how many lines of the transcript are below the window, when it has been scrolled up.
