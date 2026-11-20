@@ -87,8 +87,9 @@ func (m *Model) resume(chosen agent.SessionInfo) {
 		m.addEntry(entry{role: roleError, text: "Could not resume: " + err.Error()})
 		return
 	}
-	m.entries, m.cards.selected, m.contextTokens = nil, -1, 0
+	m.entries, m.cards.selected = nil, -1
 	m.restore()
+	m.estimateContext()
 	if len(m.entries) == 0 {
 		m.say("Resumed session " + chosen.ID)
 	}

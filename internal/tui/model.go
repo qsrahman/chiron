@@ -143,7 +143,10 @@ type Model struct {
 	queue    queueState     // prompts typed during a turn
 	cards    cardState      // the tool card chosen with Tab
 
-	contextTokens int64 // size of the conversation after the latest response, 0 until known
+	// contextTokens is the size of the conversation: counted by the server after a response, or estimated (contextEstimated)
+	// from what the next request would carry until one has come, so a new or resumed conversation shows its size too.
+	contextTokens    int64
+	contextEstimated bool
 
 	// starting is set while the Startup function runs; status is what it left for the header.
 	starting bool
@@ -209,6 +212,7 @@ func New(a Agent, info Info) Model {
 	}
 	m.applyTheme(newTheme(true, nil)) // replaced when the terminal reports its background
 	m.restore()
+	m.estimateContext()
 	m.layout()
 	m.refresh()
 	return m
@@ -235,6 +239,12 @@ func (m *Model) restore() {
 		note += "; the oldest turns are summarized (/summary)"
 	}
 	m.addEntry(entry{role: roleNotice, text: note})
+}
+
+// estimateContext shows the estimated size of what the next request would carry, in place of a count the server made
+// of a conversation that has since changed.
+func (m *Model) estimateContext() {
+	m.contextTokens, m.contextEstimated = int64(m.agent.ContextEstimate().Total()), true
 }
 
 // retitleCards gives the cards of a resumed conversation the names of tools that have connected since.
@@ -336,6 +346,9 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	case startupMsg:
 		m.starting, m.status = false, sanitize(msg.Status)
 		m.retitleCards() // a resumed conversation was shown before the MCP tools were known
+		if m.contextEstimated {
+			m.estimateContext() // and their definitions are part of every request
+		}
 		if len(msg.Servers) > 0 {
 			m.sayTable(msg.Servers)
 		}
@@ -356,6 +369,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 			m.addEntry(entry{role: roleError, text: "Could not summarize: " + msg.err.Error()})
 		} else {
 			m.say(msg.result.String())
+			m.estimateContext() // the summary replaced much of the history
 		}
 		next := m.nextQueued()
 		m.refresh()
@@ -557,7 +571,7 @@ func (m *Model) handleEvent(event agent.Event) {
 	case agent.ApprovalRequested:
 		m.openApproval(e)
 	case agent.Usage:
-		m.contextTokens = e.InputTokens + e.OutputTokens
+		m.contextTokens, m.contextEstimated = e.InputTokens+e.OutputTokens, false
 	case agent.Done:
 		m.commitStreaming()
 	case agent.Error:

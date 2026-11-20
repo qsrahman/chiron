@@ -35,8 +35,8 @@ func (m *Model) headerView() string {
 		where += " " + m.sty.toolMeta.Render("on "+m.info.Branch)
 	}
 
-	// In a narrow terminal the right side gives up what matters least, in this order: the servers, the share of the
-	// budget, the token count. The name of the program and the model stay.
+	// In a narrow terminal the right side gives up what matters least, in this order: the servers, the token count.
+	// The name of the program and the model stay.
 	model := m.sty.meta.Render(sanitize(m.agent.Settings().Model))
 	status := ""
 	switch {
@@ -47,9 +47,8 @@ func (m *Model) headerView() string {
 	}
 	usage := m.usageStyle()
 	candidates := []string{
-		status + model + usage.Render(m.usageText(true)),
-		model + usage.Render(m.usageText(true)),
-		model + usage.Render(m.usageText(false)),
+		status + model + usage.Render(m.usageText()),
+		model + usage.Render(m.usageText()),
 		model,
 	}
 	room := width - lipgloss.Width(brand) - 2
@@ -85,16 +84,29 @@ func (m *Model) usageStyle() lipgloss.Style {
 	return m.sty.toolMeta
 }
 
-// usageText shows how much context the conversation uses, with its share of the budget when asked for.
-func (m *Model) usageText(percent bool) string {
+// estimateMark goes in front of a figure that is an estimate and not the server's count.
+func (m *Model) estimateMark() string {
+	if m.contextEstimated {
+		return "~"
+	}
+	return ""
+}
+
+// usageText shows how much context the conversation uses, for the header.
+func (m *Model) usageText() string {
 	if m.contextTokens == 0 {
 		return ""
 	}
-	text := " · " + formatTokens(m.contextTokens) + " tokens"
-	if budget := m.contextBudget(); percent && budget > 0 {
-		text += fmt.Sprintf(" (%d%%)", m.contextTokens*100/budget)
+	return " · " + m.estimateMark() + formatTokens(m.contextTokens) + " tokens"
+}
+
+// shareText is the share of the budget the conversation uses, for the right edge of the bottom row; "" when it is not
+// known (no budget, or nothing counted yet).
+func (m *Model) shareText() string {
+	if budget := m.contextBudget(); budget > 0 && m.contextTokens > 0 {
+		return fmt.Sprintf("context %s%d%%", m.estimateMark(), m.contextTokens*100/budget)
 	}
-	return text
+	return ""
 }
 
 func formatTokens(n int64) string {
@@ -160,11 +172,19 @@ func (m *Model) helpView() string {
 	}
 	bar := m.help.ShortHelpView(bindings)
 	width := m.contentWidth() - 1
+	// What sits at the right edge matters more than the last key hints, which give way to it: output that is out of
+	// sight, and the share of the context budget.
+	var right []string
 	if below := m.linesBelow(); below > 0 {
-		// Output that is out of sight matters more than the last key hints, which give way to it.
-		hint := m.sty.iconRunning.Render("↓ " + plural(below, "line") + " below")
-		bar = ansi.Truncate(bar, max(0, width-ansi.StringWidth(hint)-2), "…")
-		bar += strings.Repeat(" ", max(2, width-ansi.StringWidth(bar)-ansi.StringWidth(hint))) + hint
+		right = append(right, m.sty.iconRunning.Render("↓ "+plural(below, "line")+" below"))
+	}
+	if share := m.shareText(); share != "" {
+		right = append(right, m.usageStyle().Render(share))
+	}
+	if len(right) > 0 {
+		tail := strings.Join(right, "  ")
+		bar = ansi.Truncate(bar, max(0, width-ansi.StringWidth(tail)-2), "…")
+		bar += strings.Repeat(" ", max(2, width-ansi.StringWidth(bar)-ansi.StringWidth(tail))) + tail
 	}
 	// The help component still adds an item when not even its ellipsis fits, so cut the line ourselves.
 	return indent(ansi.Truncate(bar, width, "…"), 1)

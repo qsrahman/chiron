@@ -123,7 +123,7 @@ func (m *Model) clearCommand(string) (tea.Cmd, error) {
 
 func (m *Model) resetCommand(string) (tea.Cmd, error) {
 	m.agent.Reset()
-	m.contextTokens = 0
+	m.estimateContext()
 	m.say("Conversation reset")
 	return nil, nil
 }
@@ -137,7 +137,7 @@ func (m *Model) modelCommand(arg string) (tea.Cmd, error) {
 		return nil, errors.New("a model name has no spaces")
 	}
 	m.agent.SetModel(arg)
-	m.contextTokens = 0
+	m.estimateContext()
 	m.say("Model set to " + arg)
 	return nil, nil
 }
@@ -172,7 +172,7 @@ func (m *Model) undoCommand(string) (tea.Cmd, error) {
 		m.say("Nothing to undo")
 		return nil, nil
 	}
-	m.contextTokens = 0
+	m.estimateContext()
 	m.say("Last exchange removed")
 	return nil, nil
 }
@@ -183,7 +183,7 @@ func (m *Model) retryCommand(string) (tea.Cmd, error) {
 		m.say("Nothing to retry")
 		return nil, nil
 	}
-	m.contextTokens = 0
+	m.estimateContext()
 	return m.startTurn(prompt), nil
 }
 

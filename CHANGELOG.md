@@ -4,6 +4,19 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Changed
+
+- The share of the context budget moved from the header to the right edge of the bottom row, under the input box
+  (`context 9%`, with a `~` while it is an estimate). It keeps the amber (75%) and red (90%) colours and gives the key
+  hints, not itself, the last room in a narrow terminal. The header keeps the token count.
+
+### Fixed
+
+- The header shows the size of the conversation, and its share of `max_context_tokens`, as soon as chiron starts or a
+  session is resumed, as an estimate marked `~` (for example `~6.0k tokens (9%)`). Before, it stayed empty until the first
+  response, and `/reset`, `/undo`, `/retry`, `/model` and the resume from `/sessions` blanked it again. The first
+  response replaces the estimate with the server's own count, and `/compact` and the connecting of MCP servers update it.
+
 ### Added
 
 - **Delete a session from the `/sessions` picker.** `d` on a row asks "Delete session ID?", `y` deletes the file and any

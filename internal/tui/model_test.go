@@ -10,6 +10,7 @@ import (
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/qsrahman/chiron/internal/agent"
@@ -376,17 +377,17 @@ func TestAClosedCardShowsOnlyItsHeaderAndHowMuchItReturned(t *testing.T) {
 	}
 }
 
-func TestHeaderShowsContextUsage(t *testing.T) {
+func TestHeaderShowsTheTokensAndTheBottomRowTheShareOfTheBudget(t *testing.T) {
 	tests := []struct {
 		name   string
 		budget int
 		usage  agent.Usage
-		want   string // substring of the status line
-		not    string
+		tokens string // substring of the header
+		share  string // substring of the bottom row; "" means none
 	}{
-		{"nothing before the first response", 128000, agent.Usage{}, "", "tokens"},
-		{"tokens only when the agent has no budget", 0, agent.Usage{InputTokens: 900, OutputTokens: 50}, "950 tokens", "%"},
-		{"thousands and a share of the budget", 200000, agent.Usage{InputTokens: 24000, OutputTokens: 1500}, "25.5k tokens (12%)", ""},
+		{"nothing before the first response", 128000, agent.Usage{}, "", ""},
+		{"tokens only when the agent has no budget", 0, agent.Usage{InputTokens: 900, OutputTokens: 50}, "950 tokens", ""},
+		{"thousands and a share of the budget", 200000, agent.Usage{InputTokens: 24000, OutputTokens: 1500}, "25.5k tokens", "context 12%"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -395,14 +396,88 @@ func TestHeaderShowsContextUsage(t *testing.T) {
 			m := New(a, Info{})
 			m, _ = update(m, eventMsg{tt.usage})
 
-			status := ansi.Strip(m.headerView())
-			if !strings.Contains(status, tt.want) {
-				t.Errorf("status %q does not contain %q", status, tt.want)
+			header, bottom := ansi.Strip(m.headerView()), ansi.Strip(m.helpView())
+			if tt.tokens == "" && strings.Contains(header, "tokens") || !strings.Contains(header, tt.tokens) {
+				t.Errorf("header %q, want %q", header, tt.tokens)
 			}
-			if tt.not != "" && strings.Contains(status, tt.not) {
-				t.Errorf("status %q should not contain %q", status, tt.not)
+			if strings.Contains(header, "%") {
+				t.Errorf("the share belongs to the bottom row, not the header: %q", header)
+			}
+			if (tt.share == "") != !strings.Contains(bottom, "context") || !strings.Contains(bottom, tt.share) {
+				t.Errorf("bottom row %q, want %q", bottom, tt.share)
 			}
 		})
+	}
+}
+
+func TestTheShareSitsAtTheRightEdgeBelowTheInputBox(t *testing.T) {
+	for _, width := range []int{30, 60, 100, 160} {
+		a := &fakeAgent{}
+		a.settings.MaxContextTokens = 200000
+		m := sized(a, width, 24)
+		m, _ = update(m, eventMsg{agent.Usage{InputTokens: 24000, OutputTokens: 1500}})
+
+		line := ansi.Strip(m.helpView())
+		if !strings.HasSuffix(line, "context 12%") || lipgloss.Width(line) != m.contentWidth() {
+			t.Errorf("width %d: %q is %d cells, want it to end with the share at the box's right edge (%d)", width, line, lipgloss.Width(line), m.contentWidth())
+		}
+	}
+}
+
+// estimatedAgent has a conversation worth about 6,000 tokens and a budget of 65,536.
+func estimatedAgent() *fakeAgent {
+	a := &fakeAgent{estimate: agent.ContextEstimate{Instructions: 1000, Tools: 2000, History: 3000, Budget: 65536}}
+	a.settings.MaxContextTokens = 65536
+	return a
+}
+
+func TestTheHeaderShowsAnEstimateBeforeTheFirstResponse(t *testing.T) {
+	m := New(estimatedAgent(), Info{})
+	if got := ansi.Strip(m.headerView()); !strings.Contains(got, "~6.0k tokens") {
+		t.Errorf("a new or resumed conversation shows no size: %q", got)
+	}
+	if got := ansi.Strip(m.helpView()); !strings.HasSuffix(got, "context ~9%") {
+		t.Errorf("a new or resumed conversation shows no share: %q", got)
+	}
+
+	m, _ = update(m, eventMsg{agent.Usage{InputTokens: 7000, OutputTokens: 500}})
+	if got, bottom := ansi.Strip(m.headerView()), ansi.Strip(m.helpView()); !strings.Contains(got, " 7.5k tokens") || strings.Contains(got, "~") ||
+		!strings.HasSuffix(bottom, "context 11%") {
+		t.Errorf("the server's count must replace the estimate: %q, %q", got, bottom)
+	}
+}
+
+func TestTheEstimateIsMadeAgainWhenTheConversationChanges(t *testing.T) {
+	a := estimatedAgent()
+	m := New(a, Info{})
+	m, _ = update(m, eventMsg{agent.Usage{InputTokens: 7000, OutputTokens: 500}})
+
+	a.estimate.History = 0 // what /reset does to the agent
+	m, _ = typeAndEnter(t, m, "/reset")
+	if got := ansi.Strip(m.headerView()); !strings.Contains(got, "~3.0k tokens") {
+		t.Errorf("after /reset: %q", got)
+	}
+
+	a.estimate.History = 500 // a session with a short history is resumed in place
+	a.sessions = []agent.SessionInfo{{ID: "s-1", Turns: 1, Prompt: "hi"}}
+	m, _ = typeAndEnter(t, m, "/sessions")
+	m, _ = update(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if got := ansi.Strip(m.headerView()); !strings.Contains(got, "~3.5k tokens") {
+		t.Errorf("after resuming a session: %q", got)
+	}
+}
+
+func TestTheEstimateCountsTheToolsOfServersThatConnectedLater(t *testing.T) {
+	a := estimatedAgent()
+	a.estimate.Tools = 0
+	m := New(a, Info{})
+	if got := ansi.Strip(m.headerView()); !strings.Contains(got, "~4.0k tokens") {
+		t.Fatalf("before the servers: %q", got)
+	}
+	a.estimate.Tools = 2000
+	m, _ = update(m, startupMsg{Startup{}})
+	if got := ansi.Strip(m.headerView()); !strings.Contains(got, "~6.0k tokens") {
+		t.Errorf("after the servers: %q", got)
 	}
 }
 
