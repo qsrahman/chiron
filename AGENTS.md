@@ -92,6 +92,9 @@ text from a redraw, no leftover stand-in character, no banner.
   stdio server (`TestMain` with an environment switch; its tools include `die` and `pid` for the restart tests) and use
   `httptest` with the SDK's streamable handler. A server restarts itself in `server.live` (called by every tool call);
   `Hub.Reconnect` is for the commands and must only run between turns.
+- **The conversation outside a turn.** The size in the bottom row and the todo panel are the agent's, shown from copies in
+  the `Model`. Every path that changes the conversation other than a turn (`/reset`, `/undo`, `/retry`, `/model`, a
+  resumed session, a summary) ends with `conversationChanged`, which takes both in again.
 - **Queue and cards.** Prompts typed during a turn wait in `Model.queue` (`queue.go`) and start in
   `nextQueued` when the turn closes; startTurn must never touch the input, so a draft survives. Cards are selected
   with `Model.card` (`cards.go`); anything that rewrites `entries` must keep `card` valid (`/clear` resets it).

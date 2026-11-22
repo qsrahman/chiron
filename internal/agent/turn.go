@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/openai/openai-go/v3/responses"
+
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 // turnState is the turn that is running: what it has sent and done so far.
@@ -166,7 +168,7 @@ func (a *Agent) shrink(ctx context.Context, t *turnState, prompt string, events 
 		results := 0
 		for _, it := range t.items {
 			if text, ok := outputText(it); ok {
-				results += len(text) / 4
+				results += tools.EstimateText(text)
 			}
 		}
 		// Half of them: shortened first, dropped only if that is not enough.

@@ -13,6 +13,12 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Changed
 
+- Small clean-ups, with no change in what the program does: every TUI path that changes the conversation outside a turn
+  ends with one `conversationChanged` (it was two calls in eight places); `RegistryFor` builds its list in a copy, where
+  it could have written the todo tool into spare room in the caller's slice; the three token estimates that were
+  written as bytes divided by four now share `tools.EstimateText` and one constant with `EstimateTokens`; the cost of
+  an MCP server's tool definitions is counted once when it starts and not by rebuilding every tool on each status call
+  (completing `/reconnect` asked for it on every key).
 - `Agent.run` is split into `run` (the whole turn: budget check, summary, recovery) and `round` (one model call and its
   tools), and the loop guard's bookkeeping lives in a `loopGuard` type with an `observe` method, with its own tests. No
   behaviour changes; the most complex function of the program went from a cognitive complexity of 39 to 19.

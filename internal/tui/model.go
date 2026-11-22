@@ -214,8 +214,7 @@ func New(a Agent, info Info) Model {
 	}
 	m.applyTheme(newTheme(true, nil)) // replaced when the terminal reports its background
 	m.restore()
-	m.syncTodos()
-	m.estimateContext()
+	m.conversationChanged()
 	m.layout()
 	m.refresh()
 	return m
@@ -242,6 +241,14 @@ func (m *Model) restore() {
 		note += "; the oldest turns are summarized (/summary)"
 	}
 	m.addEntry(entry{role: roleNotice, text: note})
+}
+
+// conversationChanged takes in what a change of the conversation other than a turn did: a reset, an undo, a model
+// switch, a resumed session, a summary. The size shown and the todo list are the agent's, and every path that changes
+// the conversation must end here, or the header and the panel show the one before.
+func (m *Model) conversationChanged() {
+	m.syncTodos()
+	m.estimateContext()
 }
 
 // estimateContext shows the estimated size of what the next request would carry, in place of a count the server made
@@ -372,7 +379,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 			m.addEntry(entry{role: roleError, text: "Could not summarize: " + msg.err.Error()})
 		} else {
 			m.say(msg.result.String())
-			m.estimateContext() // the summary replaced much of the history
+			m.conversationChanged() // the summary replaced much of the history
 		}
 		next := m.nextQueued()
 		m.refresh()

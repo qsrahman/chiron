@@ -13,6 +13,8 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
+
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 const (
@@ -143,7 +145,7 @@ func (a *Agent) compact(ctx context.Context, focus string) (Compaction, error) {
 		before += it.tokens()
 	}
 	if a.history.summary != "" {
-		before += len(a.history.summary) / 4
+		before += tools.EstimateText(a.history.summary)
 	}
 
 	summary, err := a.summarize(ctx, a.history.summary, replaced, focus)
@@ -158,7 +160,7 @@ func (a *Agent) compact(ctx context.Context, focus string) (Compaction, error) {
 	}
 	a.history.compact(cut, summary)
 	a.lastInput = 0
-	return Compaction{Turns: turns, Before: before, After: len(summary) / 4}, nil
+	return Compaction{Turns: turns, Before: before, After: tools.EstimateText(summary)}, nil
 }
 
 // summarize asks the model for a summary of items, given the previous one. It returns an error, and the caller

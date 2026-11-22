@@ -13,6 +13,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/qsrahman/chiron/internal/config"
+	"github.com/qsrahman/chiron/internal/tools"
 )
 
 // maxRestarts is how often a server that died is started again by a call, per session. /reconnect starts afresh.
@@ -36,10 +37,11 @@ type server struct {
 	dead     bool // the connection was lost: the next call starts the server again
 	restarts int
 
-	all   []*sdk.Tool // everything the server offers, sorted by name
-	tools []*sdk.Tool // what is offered to the model: all of them, or those the allow-list names
-	notes string      // the usage advice the server gave when it started
-	err   error       // why it did not start
+	all       []*sdk.Tool // everything the server offers, sorted by name
+	tools     []*sdk.Tool // what is offered to the model: all of them, or those the allow-list names
+	defTokens int         // the estimated size of the definitions of those tools, counted once when the server started
+	notes     string      // the usage advice the server gave when it started
+	err       error       // why it did not start
 }
 
 // start launches the server, connects and lists its tools. The outcome is left in the fields; a server that did not
@@ -106,6 +108,18 @@ func (s *server) attach(ctx context.Context, transport sdk.Transport, version st
 	}
 	slices.SortFunc(s.all, func(a, b *sdk.Tool) int { return strings.Compare(a.Name, b.Name) })
 	s.err = s.filter()
+	s.defTokens = s.definitionTokens()
+}
+
+// definitionTokens estimates what the definitions of the tools offered cost in every request.
+func (s *server) definitionTokens() int {
+	n := 0
+	for _, remote := range s.tools {
+		if t, err := newTool(s, remote, apiName(s.name, remote.Name), false); err == nil {
+			n += tools.EstimateTokens(t.Spec())
+		}
+	}
+	return n
 }
 
 // filter picks the tools the allow-list names. A name the server does not have is an error: a typo would otherwise
@@ -212,7 +226,7 @@ func (s *server) reset() {
 	s.mu.Lock()
 	s.session, s.dead, s.restarts = nil, false, 0
 	s.mu.Unlock()
-	s.all, s.tools, s.notes, s.err = nil, nil, "", nil
+	s.all, s.tools, s.notes, s.err, s.defTokens = nil, nil, "", nil, 0
 }
 
 // stop ends the session, which stops a program the server runs, and closes its log.

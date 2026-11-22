@@ -132,6 +132,30 @@ func TestResetAndResumingASessionTakeTheListFromTheAgent(t *testing.T) {
 	}
 }
 
+// The size in the header and the list in the panel are the agent's. A path that changes the conversation outside a turn
+// must take both in again.
+func TestEveryPathThatChangesTheConversationTakesInTheUsageAndTheList(t *testing.T) {
+	for _, command := range []string{"/reset", "/undo", "/model other-model"} {
+		t.Run(command, func(t *testing.T) {
+			a := estimatedAgent()
+			a.undoable = true
+			m := sized(a, 100, 24)
+			a.estimate.History = 0 // what the command does to the conversation
+			a.todos = []agent.Todo{step("the plan after it", "in_progress")}
+
+			m, _ = typeAndEnter(t, m, command)
+
+			bottom := ansi.Strip(m.helpView())
+			if !strings.HasSuffix(bottom, "~3.0k tokens · ~4%") {
+				t.Errorf("the usage is not the new one: %q", bottom)
+			}
+			if command != "/reset" && !strings.Contains(screen(m), "the plan after it") { // /reset clears the list in the real agent
+				t.Errorf("the list is not the new one:\n%s", screen(m))
+			}
+		})
+	}
+}
+
 func TestGoldenTodoPanel(t *testing.T) {
 	m := sized(&fakeAgent{}, 100, 24)
 	m, _ = typeAndEnter(t, m, "Fix the parser and update the docs")

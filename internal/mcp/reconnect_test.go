@@ -169,6 +169,19 @@ func TestStatusSaysWhatTheDefinitionsCost(t *testing.T) {
 	}
 }
 
+// The commands ask for the status often (completing /reconnect asks on every key), so the cost of the definitions is
+// counted once, when the server starts, and not by rebuilding every tool each time.
+func TestTheCostOfTheDefinitionsIsCountedOnceAtStart(t *testing.T) {
+	h := startHub(t, map[string]config.MCPServer{"local": stdio("serve", nil)}, Options{})
+	before := statusOf(h, "local").Tokens
+
+	h.servers[0].tools = nil // a status that counted again would now find nothing
+
+	if after := statusOf(h, "local").Tokens; after != before || before == 0 {
+		t.Errorf("tokens %d before, %d after: the figure must be the one counted at start", before, after)
+	}
+}
+
 func TestNotesCarryOnlyWhatWasAskedForAndAreCut(t *testing.T) {
 	asked, quiet := stdio("serve", nil), stdio("serve", nil)
 	asked.Instructions = true

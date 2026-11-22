@@ -89,8 +89,7 @@ func (m *Model) resume(chosen agent.SessionInfo) {
 	}
 	m.entries, m.cards.selected = nil, -1
 	m.restore()
-	m.syncTodos()
-	m.estimateContext()
+	m.conversationChanged()
 	if len(m.entries) == 0 {
 		m.say("Resumed session " + chosen.ID)
 	}

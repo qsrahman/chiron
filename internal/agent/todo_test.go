@@ -53,6 +53,21 @@ func TestTheTodoToolIsOfferedOnlyWithAnotherTool(t *testing.T) {
 	}
 }
 
+// The caller's slice may have room to spare, and appending to it would write the todo tool into the caller's array.
+func TestRegistryForLeavesTheCallersSliceAlone(t *testing.T) {
+	a := newTestAgent(newFakeServer(t))
+	backing := make([]tools.Tool, 1, 4)
+	backing[0] = fakeTool("other", true, 0, &recorder{})
+
+	if _, err := a.RegistryFor(backing...); err != nil {
+		t.Fatal(err)
+	}
+
+	if backing[:2][1] != nil {
+		t.Error("the todo tool was written into the caller's slice")
+	}
+}
+
 func TestTheTodoToolRunsWithoutAskingAndIsListedAsFree(t *testing.T) {
 	srv := newFakeServer(t, callsThenAnswer(todoCall("c1", step("fix", "in_progress")))...)
 	a := agentWithTodo(t, srv, Settings{Model: "m", Streaming: true}) // approvals are on

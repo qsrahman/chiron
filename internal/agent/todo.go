@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"slices"
 
 	"github.com/openai/openai-go/v3/responses"
 
@@ -22,7 +23,7 @@ func (a *Agent) Todos() []Todo { return a.todos.Items() }
 // chat without tools stays a plain chat, and the prompt that mentions the tool is used exactly when it is offered.
 func (a *Agent) RegistryFor(list ...tools.Tool) (*tools.Registry, error) {
 	if len(list) > 0 {
-		list = append(list, a.TodoTool())
+		list = slices.Concat(list, []tools.Tool{a.TodoTool()}) // a copy: the caller's slice may have room to spare
 	}
 	return tools.NewRegistry(list...)
 }
