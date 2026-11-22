@@ -4,6 +4,8 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-22
+
 ### Added
 
 - **A `todo` tool and a todo panel.** With any other tool, the model can keep a checklist of a task with three or more
