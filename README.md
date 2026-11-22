@@ -169,9 +169,10 @@ because tool language in such a prompt makes some models type tool calls as text
   closing note such as `[Stopped after 2 model calls: interrupted by the user]`, and every call that did not finish is
   answered as interrupted. The model therefore knows what was done, which matters once tools can change things. A
   failure before any tool ran leaves the conversation as it was.
-- **Limits:** at most `max_turns` model calls (25) for one prompt; a model that repeats the same tool call with the
-  same result 3 times in 10 steps is told so in its instructions (you see a notice) and can change course, and one that
-  goes on until 6 is stopped; a stream that goes silent for 2 minutes is abandoned; at most 8
+- **Limits:** there is no cap on the number of model calls for one prompt (Ctrl-C cancels a turn). A model that
+  repeats the same tool call with the same result 3 times in 10 steps is told so in its instructions (you see a notice)
+  and can change course, and one that goes on until 6 is stopped; a model that keeps trying different things is not, so
+  watch a long unattended `-p` run; a stream that goes silent for 2 minutes is abandoned; at most 8
   read-only tool calls run at once; a tool result is cut at 20 KiB with a note.
 - **Context budget:** `max_context_tokens` (default 65,536) is the size a whole request may have (instructions, tool
   definitions and history, not the reply). It is an estimate (about 4 bytes a token), corrected with the count the
@@ -244,7 +245,6 @@ Flags:
 | `--model name` | Model to use. |
 | `--base-url url` | API base URL for OpenAI-compatible servers. |
 | `--reasoning-effort level` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; `default` sends none even if the file sets one. Models that do not reason reject the setting, so it is only sent when you set it. |
-| `--max-turns n` | Most model calls for one prompt (default 25). |
 | `--streaming`, `--no-streaming` | Stream the reply as it arrives (the default), or send one request and show the whole reply at once, for servers whose streaming is broken. |
 | `--resume [id]` | Resume the latest saved conversation of this directory, or the one named `id` (or the only one whose name starts with it). `--resume id` and `--resume=id` both work. |
 | `--no-save` | Do not save this conversation. |
@@ -264,7 +264,6 @@ One file, `~/.config/chiron/config.json` (or `$XDG_CONFIG_HOME/chiron/config.jso
   "base_url": "http://localhost:11434/v1",
   "api_key": "${OPENAI_API_KEY}",
   "reasoning_effort": "low",
-  "max_turns": 25,
   "streaming": true,
   "max_output_tokens": 8192,
   "max_context_tokens": 65536,
@@ -297,7 +296,7 @@ One file, `~/.config/chiron/config.json` (or `$XDG_CONFIG_HOME/chiron/config.jso
   the key goes.) Only this user-level file is read, never one from the working directory.
 - **A key that is not a setting is an error** that names the key and the file, so a typo such as `max_turn` is not
   silently ignored. `base_url` and `api_key` are optional.
-- `reasoning_effort` (unset sends nothing), `max_turns` and `streaming` correspond to the flags above.
+- `reasoning_effort` (unset sends nothing) and `streaming` correspond to the flags above.
 - `max_output_tokens` caps what the model may generate for one reply, reasoning included (unset sends no cap, so the
   model or server decides). A reply that hits it is cut off and shown with the reason `max_output_tokens`. The request
   that writes a summary has a cap of its own (8,000), which this setting does not change.

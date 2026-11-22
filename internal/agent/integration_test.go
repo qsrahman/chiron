@@ -104,7 +104,7 @@ func realAgent(t *testing.T, registry *tools.Registry) *Agent {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(openai.NewClient(opts...), Settings{Model: cfg.Model, ReasoningEffort: cfg.ReasoningEffort, MaxTurns: cfg.MaxTurns, Streaming: cfg.Streaming}, instructions, registry)
+	return New(openai.NewClient(opts...), Settings{Model: cfg.Model, ReasoningEffort: cfg.ReasoningEffort, Streaming: cfg.Streaming}, instructions, registry)
 }
 
 // askAgent sends one prompt and returns the streamed answer.

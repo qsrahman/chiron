@@ -10,15 +10,10 @@ import (
 	"github.com/qsrahman/chiron/internal/tools"
 )
 
-// defaultMaxTurns bounds the model calls for one prompt, so a model that keeps calling tools cannot run (and
-// bill) forever.
-const defaultMaxTurns = 25
-
 // Settings are the options of a conversation that the user can set.
 type Settings struct {
 	Model           string
 	ReasoningEffort string // "" sends none: models that do not reason reject the setting
-	MaxTurns        int    // model calls for one prompt; 0 means defaultMaxTurns
 	Streaming       bool   // false sends one request and shows the whole reply at once
 	AutoApprove     bool   // allows every call without asking (--yes)
 	MaxOutputTokens int    // most tokens the model may generate for one reply; 0 sends no cap
@@ -51,9 +46,6 @@ type Agent struct {
 // New returns an agent with an empty history. registry holds the tools the model may call; use
 // &tools.Registry{} for none.
 func New(client openai.Client, settings Settings, instructions string, registry *tools.Registry) *Agent {
-	if settings.MaxTurns <= 0 {
-		settings.MaxTurns = defaultMaxTurns
-	}
 	if settings.MaxContextTokens <= 0 {
 		settings.MaxContextTokens = defaultMaxContextTokens
 	}

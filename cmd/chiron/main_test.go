@@ -251,7 +251,6 @@ func TestBadSettingValuesAreReported(t *testing.T) {
 	isolate(t)
 	for _, args := range [][]string{
 		{"-p", "hi", "--base-url", "http://x", "--reasoning-effort", "extreme"},
-		{"-p", "hi", "--base-url", "http://x", "--max-turns", "-1"},
 	} {
 		var out, errOut bytes.Buffer
 		if code := run(context.Background(), args, &out, &errOut); code != 1 || errOut.Len() == 0 {
@@ -464,6 +463,7 @@ func TestResumeProblemsAreReported(t *testing.T) {
 		{"a stray argument", []string{"stray"}, 2, "unexpected argument"},
 		{"a second argument", []string{"--resume", "a", "b"}, 2, "unexpected argument"},
 		{"the old flag", []string{"--continue"}, 2, "not defined"},
+		{"the removed cap", []string{"--max-turns", "5"}, 2, "not defined"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

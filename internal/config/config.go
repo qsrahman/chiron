@@ -35,8 +35,6 @@ type File struct {
 	// ReasoningEffort is sent to reasoning models. Unset sends nothing, because models that do not reason
 	// reject the setting.
 	ReasoningEffort string `json:"reasoning_effort"`
-	// MaxTurns is the most model calls for one prompt. Unset uses the agent's default.
-	MaxTurns int `json:"max_turns"`
 	// Streaming defaults to true; false sends one request and shows the whole reply at once, for servers
 	// whose streaming is broken.
 	Streaming *bool `json:"streaming"`
@@ -131,7 +129,6 @@ type Flags struct {
 	Model           string
 	BaseURL         string
 	ReasoningEffort string // "default" leaves the setting out even if the file sets one
-	MaxTurns        int
 	Streaming       *bool
 }
 
@@ -141,7 +138,6 @@ type Config struct {
 	BaseURL         string
 	APIKey          string
 	ReasoningEffort string // "" sends none
-	MaxTurns        int    // 0 means the agent's default
 	Streaming       bool
 
 	MaxOutputTokens  int // 0 sends no cap
@@ -225,12 +221,6 @@ func Resolve(file File, path string, apiKeyEnv string, flags Flags) (Config, err
 	if err := validateEffort(flags.ReasoningEffort, "--reasoning-effort", true); err != nil {
 		return Config{}, err
 	}
-	if file.MaxTurns < 0 {
-		return Config{}, fmt.Errorf("max_turns in %s must be positive, not %d", path, file.MaxTurns)
-	}
-	if flags.MaxTurns < 0 {
-		return Config{}, fmt.Errorf("--max-turns must be positive, not %d", flags.MaxTurns)
-	}
 	if file.MaxOutputTokens < 0 {
 		return Config{}, fmt.Errorf("max_output_tokens in %s must be positive, not %d", path, file.MaxOutputTokens)
 	}
@@ -256,7 +246,6 @@ func Resolve(file File, path string, apiKeyEnv string, flags Flags) (Config, err
 		BaseURL:          cmp.Or(flags.BaseURL, file.BaseURL),
 		APIKey:           cmp.Or(apiKeyEnv, file.APIKey),
 		ReasoningEffort:  effort,
-		MaxTurns:         cmp.Or(flags.MaxTurns, file.MaxTurns),
 		Streaming:        streaming,
 		MCPServers:       file.MCPServers,
 		MaxOutputTokens:  file.MaxOutputTokens,

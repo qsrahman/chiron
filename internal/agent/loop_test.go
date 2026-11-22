@@ -373,41 +373,24 @@ func TestOlderTurnsKeepOnlyTheirMessages(t *testing.T) {
 	}
 }
 
-func TestStepLimitKeepsTheTurnWithANote(t *testing.T) {
-	// Every call returns something new, so this is not a repeat and only the step limit can stop it.
+// A turn has no cap on its model calls: a model that keeps making new steps goes on until it answers.
+func TestATurnOfManyDifferentStepsIsNotCutOff(t *testing.T) {
+	const steps = 60 // well past the 25 the old cap allowed
 	var n atomic.Int32
 	counter := tools.MustNew("count", "returns a different number each time", true,
 		func(context.Context, nameArgs) (string, error) { return fmt.Sprint(n.Add(1)), nil })
-	srv := newFakeServer(t, sse(completedWith(functionCall("c1", "count", nameArgs{"a"}))))
+	var script []string
+	for i := 0; i < steps; i++ {
+		script = append(script, sse(completedWith(functionCall(fmt.Sprint("c", i), "count", nameArgs{"a"}))))
+	}
+	script = append(script, sse(textDelta("done"), completed("done")))
+	srv := newFakeServer(t, script...)
 	a := newAgentWithTools(t, srv, counter)
 
 	events := drain(t, a.Send(context.Background(), "go"))
 
-	if err := lastError(t, events); !strings.Contains(err.Error(), "Stopped after 25 model calls without a final answer") {
-		t.Fatalf("error = %v", err)
-	}
-	if srv.requestCount() != defaultMaxTurns {
-		t.Errorf("made %d requests, want exactly %d", srv.requestCount(), defaultMaxTurns)
-	}
-	// The tools ran, so the model must know: the turn is kept, closed with a note.
-	if note := lastNote(a); note != "[Stopped after 25 model calls without a final answer]" {
-		t.Errorf("closing note = %q", note)
-	}
-}
-
-func TestMaxTurnsIsASetting(t *testing.T) {
-	var n atomic.Int32
-	counter := tools.MustNew("count", "different each time", true,
-		func(context.Context, nameArgs) (string, error) { return fmt.Sprint(n.Add(1)), nil })
-	srv := newFakeServer(t, sse(completedWith(functionCall("c1", "count", nameArgs{"a"}))))
-	reg, _ := tools.NewRegistry(counter)
-	settings := testSettings("m")
-	settings.MaxTurns = 3
-
-	events := drain(t, New(srv.client(), settings, "", reg).Send(context.Background(), "go"))
-
-	if err := lastError(t, events); !strings.Contains(err.Error(), "Stopped after 3 model calls") || srv.requestCount() != 3 {
-		t.Errorf("error = %v, requests = %d", err, srv.requestCount())
+	if err := lastErrorOrNil(events); err != nil || srv.requestCount() != steps+1 {
+		t.Errorf("error = %v after %d requests, want an answer after %d", err, srv.requestCount(), steps+1)
 	}
 }
 

@@ -92,7 +92,8 @@ implement the same interface.
 6. Mutating calls emit `ApprovalRequested` and block on a reply channel (honouring `ctx`) unless the user chose
    "always allow" for that tool. (Phase 4.)
 7. Append a `function_call_output` per `call_id` (in call order, whatever order they finished), then loop.
-   A turn is limited to `max_turns` model calls (default 25); hitting the limit ends the turn with an error and keeps it with a closing note (section 4.7).
+   A turn has no cap on its model calls (the `max_turns` cap of 25 was removed after v0.10.0): the loop guard below, the
+   context budget and Ctrl-C are what bound it.
    If the context is cancelled while tools run, the model is not asked again. Loop detection (Phase 3.5): a
    step is identified by its calls, arguments and outputs; if one step appears more than 5 times among the last
    10, the turn stops with an error and is kept with a closing note. Before that, when the newest step has appeared
@@ -253,7 +254,7 @@ From a read of muagent's `agent.py`, `context.py`, `compaction.py` and `TURN.md`
 | empty reply | retried once, with a notice | notice, then the reply |
 | stream breaks (no final event, no `error` event, or connection lost) | retried up to twice if nothing ran | notice, streamed text cleared, reply |
 | stream ends with an `error` event | as a failure (the same request would get the same answer) | the server's reason |
-| step cap, loop stop, idle timeout | whole turn with a closing note | the message |
+| loop stop, idle timeout | whole turn with a closing note | the message |
 | context budget exceeded after shortening | whole turn with results dropped, closing note | the message |
 | cancelled (Ctrl-C) | after a completed round: whole turn, open calls answered as interrupted, closing note; before: nothing | `Cancelled` |
 | API or network failure | after a completed round: whole turn with a note; before: nothing | the described error |
@@ -397,7 +398,7 @@ From muagent's `commands.py`, the completer in `repl.py` and `tests/test_command
   `--no-save`, saves nothing).
 - New settings in Phase 3.7, each with a flag: `reasoning_effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
   unset sends none, because non-reasoning models reject it; the flag also takes `default`), `max_turns` (model calls
-  per prompt, default 25, replaces the fixed constant) and `streaming` (default true; false makes one non-streaming
+  per prompt, default 25, replaces the fixed constant; removed after v0.10.0, see 4.2) and `streaming` (default true; false makes one non-streaming
   request, for servers with broken SSE).
 - Each `mcpServers` entry may list `"autoApprove": ["tool", ...]`, or give `true` for every tool of the server (those it
   adds later too): tools of that server that never prompt (names as

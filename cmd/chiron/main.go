@@ -51,7 +51,6 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&given.Model, "model", "", "model name (default from the config file, or built in)")
 	flags.StringVar(&given.BaseURL, "base-url", "", "API base URL for OpenAI-compatible servers")
 	flags.StringVar(&given.ReasoningEffort, "reasoning-effort", "", "reasoning effort: none, minimal, low, medium, high, xhigh, max, or default to send none")
-	flags.IntVar(&given.MaxTurns, "max-turns", 0, "most model calls for one prompt (default 25)")
 	// Two flags make a three-state setting: not given, on, off.
 	noMCP := flags.Bool("no-mcp", false, "do not start the MCP servers of the config file")
 	noSave := flags.Bool("no-save", false, "do not save this conversation")
@@ -145,7 +144,6 @@ func start(ctx context.Context, cfg config.Config, opts runOptions, stdout, stde
 	a := agent.New(newClient(cfg), agent.Settings{
 		Model:           cfg.Model,
 		ReasoningEffort: cfg.ReasoningEffort,
-		MaxTurns:        cfg.MaxTurns,
 		Streaming:       cfg.Streaming,
 		AutoApprove:     opts.autoApprove,
 

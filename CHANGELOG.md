@@ -4,6 +4,14 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Removed
+
+- **The `max_turns` cap, the `--max-turns` flag and the "Stopped after N model calls" ending.** A turn has no limit on its
+  model calls any more. What bounds a turn now: the loop guard (the same tool step a third time among the last 10 earns a
+  notice to the model, the sixth stops the turn), the context budget, which keeps every request within `max_context_tokens`,
+  and Ctrl-C. A model that keeps trying different things is not stopped, so watch a long unattended `-p` run. A config file
+  that still has `max_turns`, or a command line with `--max-turns`, is refused: delete it. `Settings.MaxTurns` is gone.
+
 ### Changed
 
 - **A model that repeats itself is told, and stopped only if it goes on.** When the same tool step (same calls, same

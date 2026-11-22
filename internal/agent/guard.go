@@ -9,8 +9,8 @@ import (
 
 const (
 	// A turn is stopped when one tool step (the same calls with the same results) shows up more than
-	// loopMaxRepeats times among its last loopWindow steps. The step limit alone would let a stuck
-	// model burn 25 requests first.
+	// loopMaxRepeats times among its last loopWindow steps. A turn has no cap on its model calls, so this is what ends
+	// a model that is stuck on one step.
 	loopWindow     = 10
 	loopMaxRepeats = 5
 

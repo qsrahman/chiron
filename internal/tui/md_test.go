@@ -61,14 +61,14 @@ func TestKeepHyphenated(t *testing.T) {
 // A flag is never split at its hyphens, and what is on screen holds the original hyphens.
 func TestFlagsAreNotBrokenAtTheirHyphens(t *testing.T) {
 	m := sized(&fakeAgent{}, 46, 24)
-	md := "Optional: `--model`, `--base-url`, `--reasoning-effort`, `--max-turns`, `--streaming/--no-streaming`, a-hyphenated-word."
+	md := "Optional: `--model`, `--base-url`, `--reasoning-effort`, `--resume`, `--streaming/--no-streaming`, a-hyphenated-word."
 
 	out := ansi.Strip(m.markdownText(md, m.contentWidth()-gutter))
 
 	if strings.Contains(out, unbreakable) {
 		t.Error("the stand-in for the hyphen was left in the text")
 	}
-	for _, word := range []string{"--model", "--base-url", "--reasoning-effort", "--max-turns", "a-hyphenated-word"} {
+	for _, word := range []string{"--model", "--base-url", "--reasoning-effort", "--resume", "a-hyphenated-word"} {
 		if !strings.Contains(out, word) {
 			t.Errorf("%q was split across lines:\n%s", word, out)
 		}

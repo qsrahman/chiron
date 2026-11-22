@@ -67,7 +67,7 @@ text from a redraw, no leftover stand-in character, no banner.
   - The history changes only through `history.save`; a turn in progress works on a copy.
   - Every function call has its output before anything is sent or saved (`answerOpenCalls`).
   - A turn is saved whole (with its reply or a closing note) or not at all. After at least one completed round, a
-    cancel, failure, guard or step cap keeps the turn with a note, because tools may have had effects; a failure in
+    cancel, failure or guard keeps the turn with a note, because tools may have had effects; a failure in
     the first round saves nothing.
   - The newest turn keeps its reasoning, calls and outputs; earlier turns keep only their messages, and calls and
     outputs are dropped together.

@@ -30,7 +30,6 @@ func TestLoad(t *testing.T) {
 		"base_url": "http://localhost:11434/v1",
 		"api_key": "${TEST_KEY}",
 		"reasoning_effort": "low",
-		"max_turns": 10,
 		"streaming": false,
 		"max_context_tokens": 32000,
 		"max_output_tokens": 4000,
@@ -44,7 +43,7 @@ func TestLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Model != "m1" || got.BaseURL != "http://localhost:11434/v1" || got.APIKey != "sk-from-env" ||
-		got.ReasoningEffort != "low" || got.MaxTurns != 10 ||
+		got.ReasoningEffort != "low" ||
 		got.MaxContextTokens != 32000 || got.MaxOutputTokens != 4000 || !got.AutoCompact {
 		t.Errorf("Load() = %+v", got)
 	}
@@ -83,6 +82,15 @@ func TestLoadRejectsTheRemovedContextWindowKey(t *testing.T) {
 	}
 }
 
+// max_turns was removed: a turn has no cap on its model calls. A config that still has it must say so.
+func TestLoadRejectsTheRemovedMaxTurnsKey(t *testing.T) {
+	path := writeConfig(t, `{"max_turns": 25}`, 0o600)
+
+	if _, err := Load(path, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "max_turns") {
+		t.Errorf("error = %v, want one that names max_turns", err)
+	}
+}
+
 func TestLoadErrors(t *testing.T) {
 	t.Run("missing file", func(t *testing.T) {
 		_, err := Load(filepath.Join(t.TempDir(), "nope.json"), &bytes.Buffer{})
@@ -101,7 +109,7 @@ func TestLoadErrors(t *testing.T) {
 		}
 	})
 	t.Run("wrong type", func(t *testing.T) {
-		if _, err := Load(writeConfig(t, `{"max_turns": "ten"}`, 0o600), &bytes.Buffer{}); err == nil {
+		if _, err := Load(writeConfig(t, `{"max_context_tokens": "ten"}`, 0o600), &bytes.Buffer{}); err == nil {
 			t.Fatal("a string for a number must be an error")
 		}
 	})
@@ -133,7 +141,7 @@ func TestLoadWarnsAboutReadableLiteralKey(t *testing.T) {
 }
 
 func TestResolvePrecedence(t *testing.T) {
-	file := File{Model: "file-model", BaseURL: "file-url", APIKey: "file-key", ReasoningEffort: "low", MaxTurns: 7, Streaming: new(false)}
+	file := File{Model: "file-model", BaseURL: "file-url", APIKey: "file-key", ReasoningEffort: "low", Streaming: new(false)}
 	tests := []struct {
 		name   string
 		file   File
@@ -143,15 +151,15 @@ func TestResolvePrecedence(t *testing.T) {
 	}{
 		{"defaults only", File{}, "", Flags{}, Config{Sessions: true, Model: DefaultModel, Streaming: true}},
 		{"file wins over default", file, "", Flags{},
-			Config{Sessions: true, Model: "file-model", BaseURL: "file-url", APIKey: "file-key", ReasoningEffort: "low", MaxTurns: 7}},
+			Config{Sessions: true, Model: "file-model", BaseURL: "file-url", APIKey: "file-key", ReasoningEffort: "low"}},
 		{"the key from the environment wins over the file", file, "env-key", Flags{},
-			Config{Sessions: true, Model: "file-model", BaseURL: "file-url", APIKey: "env-key", ReasoningEffort: "low", MaxTurns: 7}},
-		{"flags win over the file", file, "", Flags{Model: "flag-model", BaseURL: "flag-url", ReasoningEffort: "high", MaxTurns: 3, Streaming: new(true)},
-			Config{Sessions: true, Model: "flag-model", BaseURL: "flag-url", APIKey: "file-key", ReasoningEffort: "high", MaxTurns: 3, Streaming: true}},
+			Config{Sessions: true, Model: "file-model", BaseURL: "file-url", APIKey: "env-key", ReasoningEffort: "low"}},
+		{"flags win over the file", file, "", Flags{Model: "flag-model", BaseURL: "flag-url", ReasoningEffort: "high", Streaming: new(true)},
+			Config{Sessions: true, Model: "flag-model", BaseURL: "flag-url", APIKey: "file-key", ReasoningEffort: "high", Streaming: true}},
 		{"sessions can be turned off in the file", File{Sessions: new(false)}, "", Flags{},
 			Config{Model: DefaultModel, Streaming: true}},
 		{"default leaves the effort out", file, "", Flags{ReasoningEffort: "default"},
-			Config{Sessions: true, Model: "file-model", BaseURL: "file-url", APIKey: "file-key", MaxTurns: 7}},
+			Config{Sessions: true, Model: "file-model", BaseURL: "file-url", APIKey: "file-key"}},
 		{"streaming defaults to true when only the effort is set", File{ReasoningEffort: "none"}, "", Flags{},
 			Config{Sessions: true, Model: DefaultModel, ReasoningEffort: "none", Streaming: true}},
 	}
@@ -178,8 +186,6 @@ func TestResolveRejectsBadValues(t *testing.T) {
 		{"file effort", File{ReasoningEffort: "extreme"}, Flags{}, `reasoning_effort in cfg.json: "extreme" is not one of none, minimal, low, medium, high, xhigh, max`},
 		{"flag effort", File{}, Flags{ReasoningEffort: "extreme"}, `--reasoning-effort: "extreme" is not one of`},
 		{"default is not valid in the file", File{ReasoningEffort: "default"}, Flags{}, `"default" is not one of`},
-		{"file max_turns", File{MaxTurns: -1}, Flags{}, "max_turns in cfg.json must be positive"},
-		{"flag max-turns", File{}, Flags{MaxTurns: -2}, "--max-turns must be positive"},
 		{"max_context_tokens", File{MaxContextTokens: -1}, Flags{}, "max_context_tokens in cfg.json must be positive"},
 		{"max_output_tokens", File{MaxOutputTokens: -1}, Flags{}, "max_output_tokens in cfg.json must be positive"},
 	}
