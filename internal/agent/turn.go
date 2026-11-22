@@ -10,10 +10,12 @@ import (
 
 // turnState is the turn that is running: what it has sent and done so far.
 type turnState struct {
+	prompt  string // what the user asked, to begin the turn again after a summary
 	items   []item
 	rounds  int  // rounds that got a response and ran its tools
 	emptied bool // a response had nothing in it, and we asked again
 	refused bool // the server refused a request as too long, and we shortened it once
+	guard   loopGuard
 }
 
 // run executes a turn: ask the model, run the tool calls it makes, and repeat until it answers without calling
@@ -25,87 +27,98 @@ type turnState struct {
 //     stop by a guard keeps the turn with a note, so the model knows what was done; a failure in
 //     the first round saves nothing, since there is no work to keep and a prompt with no reply would leave two
 //     user messages in a row.
-func (a *Agent) run(ctx context.Context, text string, events chan<- Event) error {
+//
+// run holds what belongs to the turn as a whole: the budget check, the summary before it, the protection against a
+// panic and the notice to a model that repeats itself, which only lives as long as the turn. A round is round.
+func (a *Agent) run(ctx context.Context, text string, events chan<- Event) (err error) {
+	// A panic outside the tools (they have their own protection) must not end the program either. History changes only
+	// through save, so the turn is kept as for any failure: with a note if tools ran, and not at all if none did.
+	var t *turnState
+	defer func() {
+		if r := recover(); r != nil {
+			if t != nil && t.rounds > 0 {
+				a.keepStopped(t, "an internal error")
+			}
+			err = fmt.Errorf("internal error: %v", r)
+		}
+	}()
 	if budget, fixed := a.maxContext(), a.fixedTokens(); budget <= fixed {
 		return fmt.Errorf("max_context_tokens (%d) is not more than the instructions and tool definitions alone (about %d tokens): raise it", budget, fixed)
 	}
 	a.compactIfDue(ctx, text, func(s string) { events <- Notice{Text: s} })
-	t := &turnState{items: a.history.begin(text)}
-	var steps []string // signatures of the tool steps so far, for loop detection
-	warned := false    // whether the user was told about the repeating that is going on
+	t = &turnState{prompt: text, items: a.history.begin(text), guard: loopGuard{warnAt: a.loopWarnAt}}
 	a.loopNote = ""
 	defer func() { a.loopNote = "" }()
 
 	// A turn has no cap on its model calls. A model stuck on one step is told, then stopped, by the loop guard; the
 	// context budget bounds the size of every request, and the user can cancel.
 	for {
-		response, err := a.respond(ctx, t.items, events)
-		if err != nil {
-			if isContextOverflow(err) && !t.refused {
-				t.refused = true
-				if a.shrink(ctx, t, text, events) {
-					continue
-				}
-			}
-			if t.rounds > 0 {
-				a.keepStopped(t, reasonOf(err))
-			}
-			return describeError(err)
-		}
-
-		problem := responseProblem(response)
-		if problem == noText && !t.emptied {
-			t.emptied = true // and happens once
-			events <- Retry{Reason: "The model sent an empty reply; trying again"}
-			continue
-		}
-		events <- Usage{InputTokens: response.Usage.InputTokens, OutputTokens: response.Usage.OutputTokens}
-		if response.Usage.InputTokens > 0 {
-			a.lastInput = response.Usage.InputTokens
-		}
-
-		calls := functionCalls(response.Output)
-		if problem != "" || len(calls) == 0 {
-			return a.finish(t, response, problem)
-		}
-
-		t.rounds++
-		sent := len(t.items) // what the response answered
-		t.items = append(t.items, outputItems(response.Output)...)
-		listed := a.todos.Revision()
-		outputs := a.runCalls(ctx, calls, events)
-		if a.todos.Revision() != listed {
-			events <- TodoUpdated{Items: a.todos.Items()}
-		}
-		for i, call := range calls {
-			t.items = append(t.items, callOutputItem(call.CallID, outputs[i]))
-		}
-		if err := ctx.Err(); err != nil {
-			a.keepStopped(t, reasonOf(err))
-			return err // cancelled while tools ran; the model is not asked again
-		}
-
-		if err := a.fit(t, sent, response.Usage.InputTokens, func(s string) { events <- Notice{Text: s} }); err != nil {
-			a.keepStopped(t, "its results passed the context budget")
+		if over, err := a.round(ctx, t, events); over {
 			return err
 		}
-
-		steps = append(steps, stepSignature(calls, outputs))
-		if isLooping(steps) {
-			message := fmt.Sprintf("stopped: the model keeps repeating the same tool calls (more than %d of its last %d steps)", loopMaxRepeats, loopWindow)
-			a.keepStopped(t, message)
-			return errors.New(message)
-		}
-		if n := lastRepeats(steps); n > a.loopWarnAt {
-			a.loopNote = loopNote(n)
-			if !warned {
-				warned = true
-				events <- Notice{Text: fmt.Sprintf("The model made the same tool call with the same result %d times; it was told to try something else", n)}
-			}
-		} else {
-			a.loopNote, warned = "", false
-		}
 	}
+}
+
+// round asks the model once and runs the tool calls it makes. It reports whether the turn is over, and how: a nil
+// error is a finished turn. When it is not over, another round follows.
+func (a *Agent) round(ctx context.Context, t *turnState, events chan<- Event) (over bool, err error) {
+	response, err := a.respond(ctx, t.items, events)
+	if err != nil {
+		if isContextOverflow(err) && !t.refused {
+			t.refused = true
+			if a.shrink(ctx, t, t.prompt, events) {
+				return false, nil
+			}
+		}
+		if t.rounds > 0 {
+			a.keepStopped(t, reasonOf(err))
+		}
+		return true, describeError(err)
+	}
+
+	problem := responseProblem(response)
+	if problem == noText && !t.emptied {
+		t.emptied = true // and happens once
+		events <- Retry{Reason: "The model sent an empty reply; trying again"}
+		return false, nil
+	}
+	events <- Usage{InputTokens: response.Usage.InputTokens, OutputTokens: response.Usage.OutputTokens}
+	if response.Usage.InputTokens > 0 {
+		a.lastInput = response.Usage.InputTokens
+	}
+
+	calls := functionCalls(response.Output)
+	if problem != "" || len(calls) == 0 {
+		return true, a.finish(t, response, problem)
+	}
+
+	t.rounds++
+	sent := len(t.items) // what the response answered
+	t.items = append(t.items, outputItems(response.Output)...)
+	outputs := a.runCallsReportingTodos(ctx, calls, events)
+	for i, call := range calls {
+		t.items = append(t.items, callOutputItem(call.CallID, outputs[i]))
+	}
+	if err := ctx.Err(); err != nil {
+		a.keepStopped(t, reasonOf(err))
+		return true, err // cancelled while tools ran; the model is not asked again
+	}
+
+	if err := a.fit(t, sent, response.Usage.InputTokens, func(s string) { events <- Notice{Text: s} }); err != nil {
+		a.keepStopped(t, "its results passed the context budget")
+		return true, err
+	}
+
+	verdict := t.guard.observe(calls, outputs)
+	if verdict.stop != "" {
+		a.keepStopped(t, verdict.stop)
+		return true, errors.New(verdict.stop)
+	}
+	a.loopNote = verdict.note
+	if verdict.notice != "" {
+		events <- Notice{Text: verdict.notice}
+	}
+	return false, nil
 }
 
 // finish ends a turn on a response that calls no tool, or has a problem. A reply is kept if it is complete, or

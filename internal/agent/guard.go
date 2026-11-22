@@ -63,3 +63,36 @@ func loopNote(repeats int) string {
 	return fmt.Sprintf("\n\n# Notice\n\nIn your last steps you made the same tool call with the same result %d times. "+
 		"Repeating it will not change the result. Try a different approach, or stop and tell the user what is blocking you.", repeats)
 }
+
+// loopGuard watches the tool steps of one turn for a model that repeats itself, and says what to do about it.
+type loopGuard struct {
+	warnAt int      // the newest step may appear this often in the window before the model is told
+	steps  []string // the signature of every step of the turn so far
+	warned bool     // whether the user was told about the repeating that is going on
+}
+
+// loopVerdict is what a round of tool calls did to the guard.
+type loopVerdict struct {
+	stop   string // the reason the turn must stop, "" to go on
+	note   string // for the instructions of the next request; "" when the model is not repeating itself
+	notice string // for the user, once when the repeating begins; "" otherwise
+}
+
+// observe records a round of tool calls and their results.
+func (g *loopGuard) observe(calls []responses.ResponseFunctionToolCall, outputs []string) loopVerdict {
+	g.steps = append(g.steps, stepSignature(calls, outputs))
+	if isLooping(g.steps) {
+		return loopVerdict{stop: fmt.Sprintf("stopped: the model keeps repeating the same tool calls (more than %d of its last %d steps)", loopMaxRepeats, loopWindow)}
+	}
+	n := lastRepeats(g.steps)
+	if n <= g.warnAt {
+		g.warned = false
+		return loopVerdict{}
+	}
+	v := loopVerdict{note: loopNote(n)}
+	if !g.warned {
+		g.warned = true
+		v.notice = fmt.Sprintf("The model made the same tool call with the same result %d times; it was told to try something else", n)
+	}
+	return v
+}

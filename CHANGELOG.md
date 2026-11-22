@@ -4,15 +4,18 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
-### Removed
+### Fixed
 
-- **The `max_turns` cap, the `--max-turns` flag and the "Stopped after N model calls" ending.** A turn has no limit on its
-  model calls any more. What bounds a turn now: the loop guard (the same tool step a third time among the last 10 earns a
-  notice to the model, the sixth stops the turn), the context budget, which keeps every request within `max_context_tokens`,
-  and Ctrl-C. A model that keeps trying different things is not stopped, so watch a long unattended `-p` run. A config file
-  that still has `max_turns`, or a command line with `--max-turns`, is refused: delete it. `Settings.MaxTurns` is gone.
+- **A panic in a tool no longer ends the program.** A tool that panics (a bug in an MCP server's SDK, later a built-in
+  tool) fails its call with `error: the tool NAME panicked: …`, which the model reads like any tool error, and the turn
+  goes on. A panic in the turn itself ends the turn with `internal error: …`: the turn is kept with a note if tools had
+  run, and not at all if none had. Before, either one killed chiron and left the terminal in the state of the interface.
 
 ### Changed
+
+- `Agent.run` is split into `run` (the whole turn: budget check, summary, recovery) and `round` (one model call and its
+  tools), and the loop guard's bookkeeping lives in a `loopGuard` type with an `observe` method, with its own tests. No
+  behaviour changes; the most complex function of the program went from a cognitive complexity of 39 to 19.
 
 - **A model that repeats itself is told, and stopped only if it goes on.** When the same tool step (same calls, same
   results) shows up a third time among the last 10, the next requests carry a notice in their instructions ("you made
@@ -20,6 +23,14 @@ All notable changes to the codebase are documented in this file. Format follows 
   you see a notice; it goes as soon as the model takes a different step and does not outlive the turn. The stop at the
   sixth repeat is unchanged. Measured on the configured model with a tool that never changes its answer: 6 of 6 turns
   ended by themselves with the notice, 1 of 6 without it (5 were stopped); `TestRealAPILoopNotice` repeats it.
+
+### Removed
+
+- **The `max_turns` cap, the `--max-turns` flag and the "Stopped after N model calls" ending.** A turn has no limit on its
+  model calls any more. What bounds a turn now: the loop guard (the same tool step a third time among the last 10 earns a
+  notice to the model, the sixth stops the turn), the context budget, which keeps every request within `max_context_tokens`,
+  and Ctrl-C. A model that keeps trying different things is not stopped, so watch a long unattended `-p` run. A config file
+  that still has `max_turns`, or a command line with `--max-turns`, is refused: delete it. `Settings.MaxTurns` is gone.
 
 ## [0.10.0] - 2026-11-22
 

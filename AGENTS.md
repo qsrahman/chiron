@@ -77,7 +77,9 @@ text from a redraw, no leftover stand-in character, no banner.
   the streamed text and the session info). New code that shows such text must go through the same path.
 - **Config:** unknown keys are an error; the only environment variable is `OPENAI_API_KEY`; the client is always
   built with an explicit base URL (`newClient`), because the OpenAI library reads `OPENAI_BASE_URL` itself.
-- **Tool errors go to the model** as the tool output text, not as Go errors that abort the loop.
+- **Tool errors go to the model** as the tool output text, not as Go errors that abort the loop. A panic in a tool is
+  one of them (`executeSafely`), and a panic in the turn itself ends it as a failure (`run` recovers); neither may end
+  the program.
 - **Adding a tool:** define an `Args` struct (`json` tags for names, `jsonschema` tags for descriptions), write
   `func(ctx, Args) (string, error)`, wrap it with `tools.MustNew`, and add it to the registry in `main`. The
   agent loop and the TUI need no change; the TUI shows every call as a card.
@@ -167,8 +169,9 @@ text from a redraw, no leftover stand-in character, no banner.
   writes everything again). The file is named when there is first something to save. `-p` runs never call `EnableSessions`, so they save nothing. **Tests must never touch the real
   state directory:** set `XDG_STATE_HOME` (the `isolate` helper does) or use a temporary `session.Store`.
 - **Guards.** `guard.go` holds loop detection (window 10, more than 5 repeats stop the turn) and the warning before it:
-  when the newest step has appeared more than twice, `Agent.loopNote` is appended to the instructions (after the todo
-  list) until the model takes a different step or the turn ends; the stream idle timeout is a field
+  when the newest step has appeared more than twice, the turn's `loopGuard` says so and `Agent.loopNote` is appended to the
+  instructions (after the todo list) until the model takes a different step or the turn ends. `run` holds what belongs to
+  the whole turn (budget check, summary, recovery), `round` one model call and its tools; the stream idle timeout is a field
   on `Agent` so tests can shorten it. Cancelling must stay distinguishable from timeouts: only a user cancel
   satisfies `errors.Is(err, context.Canceled)`.
 - **Tests use no network.** Point the SDK at an `httptest` server with `option.WithBaseURL` and scripted SSE. The

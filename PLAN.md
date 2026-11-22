@@ -1,7 +1,7 @@
 # chiron — Product Requirements Document
 
 Status: living document. Update it whenever a change affects scope, architecture or phases.
-Last reviewed: 2026-11-19 (after the rename to chiron, v0.7.0).
+Last reviewed: 2026-11-22 (v0.10.0 and after).
 
 ## 1. Goal
 

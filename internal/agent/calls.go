@@ -81,7 +81,7 @@ func interrupted() callResult { return callResult{interruptedOutput, CallCancell
 // call that was running, or had not run yet, when the turn was cancelled is answered as interrupted.
 func (a *Agent) runCall(ctx context.Context, call responses.ResponseFunctionToolCall, events chan<- Event) string {
 	events <- ToolStarted{CallID: call.CallID, Name: call.Name, Title: a.ToolTitle(call.Name), Arguments: call.Arguments}
-	res := a.execute(ctx, call, events)
+	res := a.executeSafely(ctx, call, events)
 	events <- ToolFinished{CallID: call.CallID, Name: call.Name, Output: res.output, Outcome: res.outcome}
 	return res.output
 }
@@ -94,6 +94,19 @@ func (a *Agent) ToolTitle(name string) string {
 		}
 	}
 	return ""
+}
+
+// executeSafely is execute, with a panic in the tool (or in what decodes its arguments, or describes its approval)
+// turned into a failed call. A tool is other people's code more often than not (an MCP server's SDK, a converter), and
+// a panic in one of the goroutines that run the calls would end the whole program, with the terminal still in the
+// state of the interface. The model is told, as for any failure, and can go on.
+func (a *Agent) executeSafely(ctx context.Context, call responses.ResponseFunctionToolCall, events chan<- Event) (res callResult) {
+	defer func() {
+		if r := recover(); r != nil {
+			res = failure(fmt.Sprintf("error: the tool %s panicked: %v", call.Name, r))
+		}
+	}()
+	return a.execute(ctx, call, events)
 }
 
 func (a *Agent) execute(ctx context.Context, call responses.ResponseFunctionToolCall, events chan<- Event) callResult {

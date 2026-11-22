@@ -1,6 +1,12 @@
 package agent
 
-import "github.com/qsrahman/chiron/internal/tools"
+import (
+	"context"
+
+	"github.com/openai/openai-go/v3/responses"
+
+	"github.com/qsrahman/chiron/internal/tools"
+)
 
 // Todo is one step of the model's todo list.
 type Todo = tools.TodoItem
@@ -25,3 +31,13 @@ func (a *Agent) RegistryFor(list ...tools.Tool) (*tools.Registry, error) {
 // open, and the notice to a model that repeats itself (see guard.go). The list goes last, so that the text before it can still be cached. The history keeps the tool calls of
 // the newest turn only, so the instructions are the one place the list is sure to survive.
 func (a *Agent) currentInstructions() string { return a.instructions + a.todos.Notes() + a.loopNote }
+
+// runCallsReportingTodos runs the calls of a round, and tells the front-end if the model changed its todo list.
+func (a *Agent) runCallsReportingTodos(ctx context.Context, calls []responses.ResponseFunctionToolCall, events chan<- Event) []string {
+	listed := a.todos.Revision()
+	outputs := a.runCalls(ctx, calls, events)
+	if a.todos.Revision() != listed {
+		events <- TodoUpdated{Items: a.todos.Items()}
+	}
+	return outputs
+}

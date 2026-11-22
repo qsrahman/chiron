@@ -1,12 +1,13 @@
 # chiron
 
-A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI, and works on your
-machine through tools (files, shell, web, todo, questions) and optional MCP servers.
+A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI. It works on your machine
+through MCP servers you configure, and keeps its own todo list; built-in file, shell and web tools are planned.
 
-> **Status: Phase 4b.2 (v0.5.1).** You can chat with the model in a terminal UI or send a single prompt from the
-> command line, and give it tools by configuring MCP servers. No built-in tools ship yet, so without MCP servers the
-> model still cannot touch your files. Built-in tools arrive in the next phases; see [PLAN.md](PLAN.md). This README
-> is updated as each phase lands.
+> **Status: v0.10.0.** You can chat with the model in a terminal UI or send a single prompt from the command line,
+> give it tools by configuring MCP servers (every call asks for your approval unless you allow it), resume and manage
+> saved sessions, and watch the model's todo list. The built-in file, shell and web tools and `ask_user` are the next
+> phases (see [PLAN.md](PLAN.md)): until then, without MCP servers, the model cannot touch your files. This README is
+> updated as each phase lands.
 
 ## Requirements
 
@@ -154,7 +155,7 @@ and prints failures to stderr. `--no-mcp` starts none.
 Every session starts with a built-in system prompt (guidance on how to work and communicate), the project's
 `AGENTS.md` (or, failing that, a `CLAUDE.md`) from the working directory if it has one, cut at 32 KB, and last an
 environment block: working directory, platform, today's date and the git branch and state. The prompt talks about
-tools only when the model has some: with none (the case until tools arrive) it says plainly that it has none,
+tools only when the model has some: with none (the case without MCP servers) it says plainly that it has none,
 because tool language in such a prompt makes some models type tool calls as text or answer nothing.
 
 ## When things go wrong
@@ -346,9 +347,13 @@ atomically: a failed write leaves the previous one. A conversation that never go
 
 ## Safety
 
-Planned behaviour: every file write, file edit and shell command asks for approval, with an option to always
-allow a tool for the current session. File tools only reach paths inside the working directory. Shell commands
-are not sandboxed, so review them before approving.
+Today every MCP tool call asks for approval (see [Approvals](#approvals)) unless the server's tool is in its
+`autoApprove` list, and a server you start can do whatever its program can do, with the environment of chiron: review
+what you configure. The todo tool never asks, since it changes nothing outside chiron.
+
+Planned with the built-in tools: every file write, file edit and shell command asks for approval, with an option to
+always allow a tool for the current session. File tools will only reach paths inside the working directory. Shell
+commands will not be sandboxed, so review them before approving.
 
 ## Development
 

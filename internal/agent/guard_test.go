@@ -2,7 +2,10 @@ package agent
 
 import (
 	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/openai/openai-go/v3/responses"
 )
 
 func TestIsLooping(t *testing.T) {
@@ -61,5 +64,44 @@ func TestLastRepeatsCountsTheNewestStepInTheWindow(t *testing.T) {
 				t.Errorf("lastRepeats() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTheGuardWarnsOnceStopsAtTheLimitAndForgivesAChangeOfCourse(t *testing.T) {
+	g := loopGuard{warnAt: loopWarnRepeats}
+	same := []responses.ResponseFunctionToolCall{{CallID: "c", Name: "read", Arguments: `{"a":1}`}}
+	other := []responses.ResponseFunctionToolCall{{CallID: "d", Name: "read", Arguments: `{"a":2}`}}
+	out := []string{"result"}
+
+	for i := 1; i <= loopWarnRepeats; i++ {
+		if v := g.observe(same, out); v != (loopVerdict{}) {
+			t.Fatalf("step %d: verdict %+v, want none while the model has repeated itself %d times or less", i, v, loopWarnRepeats)
+		}
+	}
+	first := g.observe(same, out) // the step after which the model is told
+	if first.note == "" || first.notice == "" || first.stop != "" {
+		t.Fatalf("verdict %+v: the first repeat over the limit must give a note and a notice", first)
+	}
+	if again := g.observe(same, out); again.note == "" || again.notice != "" {
+		t.Errorf("verdict %+v: the note goes on, the user is told once", again)
+	}
+	if v := g.observe(other, out); v != (loopVerdict{}) {
+		t.Errorf("verdict %+v: a different step must clear the note", v)
+	}
+	for i := 0; i < loopWindow; i++ { // enough new steps for the old repeats to leave the window
+		g.observe([]responses.ResponseFunctionToolCall{{CallID: "n", Name: "read", Arguments: fmt.Sprint(`{"n":`, i, `}`)}}, out)
+	}
+	for i := 0; i < loopWarnRepeats; i++ {
+		g.observe(same, out)
+	}
+	if v := g.observe(same, out); v.notice == "" {
+		t.Errorf("verdict %+v: repeating again after a change of course is news to the user again", v)
+	}
+	var stop loopVerdict
+	for stop.stop == "" {
+		stop = g.observe(same, out)
+	}
+	if !strings.Contains(stop.stop, "keeps repeating the same tool calls") {
+		t.Errorf("stop = %q", stop.stop)
 	}
 }
