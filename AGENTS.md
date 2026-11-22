@@ -166,7 +166,9 @@ text from a redraw, no leftover stand-in character, no banner.
   end of `Send`, before the last event, and after `Undo`, `Rewind` and `Compact` (their errors are ignored: the next save
   writes everything again). The file is named when there is first something to save. `-p` runs never call `EnableSessions`, so they save nothing. **Tests must never touch the real
   state directory:** set `XDG_STATE_HOME` (the `isolate` helper does) or use a temporary `session.Store`.
-- **Guards.** `guard.go` holds loop detection (window 10, more than 5 repeats); the stream idle timeout is a field
+- **Guards.** `guard.go` holds loop detection (window 10, more than 5 repeats stop the turn) and the warning before it:
+  when the newest step has appeared more than twice, `Agent.loopNote` is appended to the instructions (after the todo
+  list) until the model takes a different step or the turn ends; the stream idle timeout is a field
   on `Agent` so tests can shorten it. Cancelling must stay distinguishable from timeouts: only a user cancel
   satisfies `errors.Is(err, context.Canceled)`.
 - **Tests use no network.** Point the SDK at an `httptest` server with `option.WithBaseURL` and scripted SSE. The

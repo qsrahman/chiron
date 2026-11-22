@@ -32,6 +32,9 @@ func (a *Agent) run(ctx context.Context, text string, events chan<- Event) error
 	a.compactIfDue(ctx, text, func(s string) { events <- Notice{Text: s} })
 	t := &turnState{items: a.history.begin(text)}
 	var steps []string // signatures of the tool steps so far, for loop detection
+	warned := false    // whether the user was told about the repeating that is going on
+	a.loopNote = ""
+	defer func() { a.loopNote = "" }()
 
 	for asked := 0; asked < a.settings.MaxTurns; {
 		response, err := a.respond(ctx, t.items, events)
@@ -91,6 +94,15 @@ func (a *Agent) run(ctx context.Context, text string, events chan<- Event) error
 			message := fmt.Sprintf("stopped: the model keeps repeating the same tool calls (more than %d of its last %d steps)", loopMaxRepeats, loopWindow)
 			a.keepStopped(t, message)
 			return errors.New(message)
+		}
+		if n := lastRepeats(steps); n > a.loopWarnAt {
+			a.loopNote = loopNote(n)
+			if !warned {
+				warned = true
+				events <- Notice{Text: fmt.Sprintf("The model made the same tool call with the same result %d times; it was told to try something else", n)}
+			}
+		} else {
+			a.loopNote, warned = "", false
 		}
 	}
 

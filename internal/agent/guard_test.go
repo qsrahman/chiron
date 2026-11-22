@@ -42,3 +42,24 @@ func TestIsLooping(t *testing.T) {
 		})
 	}
 }
+
+func TestLastRepeatsCountsTheNewestStepInTheWindow(t *testing.T) {
+	tests := []struct {
+		name  string
+		steps []string
+		want  int
+	}{
+		{"no steps", nil, 0},
+		{"a new step", []string{"a", "a", "a", "b"}, 1},
+		{"three in a row", []string{"a", "a", "a"}, 3},
+		{"spread out", []string{"a", "b", "a", "c", "a"}, 3},
+		{"old ones left the window", append(append([]string{"a", "a", "a", "a", "a"}, make([]string, loopWindow-1)...), "a"), 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := lastRepeats(tt.steps); got != tt.want {
+				t.Errorf("lastRepeats() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

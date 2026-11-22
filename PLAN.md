@@ -95,7 +95,12 @@ implement the same interface.
    A turn is limited to `max_turns` model calls (default 25); hitting the limit ends the turn with an error and keeps it with a closing note (section 4.7).
    If the context is cancelled while tools run, the model is not asked again. Loop detection (Phase 3.5): a
    step is identified by its calls, arguments and outputs; if one step appears more than 5 times among the last
-   10, the turn stops with an error and is kept with a closing note.
+   10, the turn stops with an error and is kept with a closing note. Before that, when the newest step has appeared
+   more than twice in the window, the next requests carry a notice in their instructions (the trusted channel; a note
+   in the tool result would be data by the prompt's own rule) and the user sees a `Notice`. The notice goes as soon as
+   the model takes a different step, and does not outlive the turn. Measured on the configured model with a tool that
+   never changes its answer: 6 of 6 turns ended by themselves with the notice and 1 of 6 without it (5 were stopped);
+   with a locked file, 6 of 6 both ways, with 14 tool calls against 18. `TestRealAPILoopNotice` repeats it.
 8. Each response yields a `Usage` event (input and output tokens). A stream that sends nothing for 2 minutes
    (`defaultIdleTimeout`) is abandoned with a "stopped sending data" error, which is not a user cancellation.
 

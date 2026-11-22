@@ -4,6 +4,15 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Changed
+
+- **A model that repeats itself is told, and stopped only if it goes on.** When the same tool step (same calls, same
+  results) shows up a third time among the last 10, the next requests carry a notice in their instructions ("you made
+  the same tool call with the same result N times: try a different approach, or tell the user what is blocking you") and
+  you see a notice; it goes as soon as the model takes a different step and does not outlive the turn. The stop at the
+  sixth repeat is unchanged. Measured on the configured model with a tool that never changes its answer: 6 of 6 turns
+  ended by themselves with the notice, 1 of 6 without it (5 were stopped); `TestRealAPILoopNotice` repeats it.
+
 ## [0.10.0] - 2026-11-22
 
 ### Added

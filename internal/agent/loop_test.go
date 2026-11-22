@@ -593,3 +593,90 @@ func TestUsageIsReported(t *testing.T) {
 		t.Errorf("usage events = %+v, want one with 120 in and 30 out", got)
 	}
 }
+
+// repeatingCalls scripts n identical tool calls (the same arguments, so the same result), then the given replies.
+func repeatingCalls(n int, then ...string) []string {
+	var script []string
+	for i := 0; i < n; i++ {
+		script = append(script, sse(completedWith(functionCall(fmt.Sprint("c", i), "read", nameArgs{"a"}))))
+	}
+	return append(script, then...)
+}
+
+func noticeIn(t *testing.T, srv *fakeServer, i int) bool {
+	t.Helper()
+	instructions, _ := srv.request(t, i)["instructions"].(string)
+	return strings.Contains(instructions, "# Notice") && strings.Contains(instructions, "same tool call with the same result")
+}
+
+func TestARepeatingModelIsToldBeforeItIsStopped(t *testing.T) {
+	srv := newFakeServer(t, sse(completedWith(functionCall("c1", "read", nameArgs{"a"}))))
+	a := newAgentWithTools(t, srv, fakeTool("read", true, 0, &recorder{}))
+	a.instructions = "base"
+
+	events := drain(t, a.Send(context.Background(), "go"))
+
+	for i := 0; i < srv.requestCount(); i++ {
+		// the request after the third identical step is the first to carry the notice
+		if got, want := noticeIn(t, srv, i), i > loopWarnRepeats; got != want {
+			t.Errorf("request %d: notice = %v, want %v", i, got, want)
+		}
+	}
+	var told []string
+	for _, n := range notices(events) {
+		if strings.Contains(n, "told to try something else") {
+			told = append(told, n)
+		}
+	}
+	if len(told) != 1 || !strings.Contains(told[0], "3 times") {
+		t.Errorf("the user was told %q: once, when it began", told)
+	}
+	if err := lastError(t, events); !strings.Contains(err.Error(), "repeating the same tool calls") || srv.requestCount() != loopMaxRepeats+1 {
+		t.Errorf("a model that ignores the notice is still stopped at the same step: %v, %d requests", err, srv.requestCount())
+	}
+}
+
+func TestAModelThatChangesCourseIsNotTold(t *testing.T) {
+	script := repeatingCalls(3, sse(completedWith(functionCall("c9", "read", nameArgs{"b"}))), sse(textDelta("done"), completed("done")))
+	srv := newFakeServer(t, script...)
+	a := newAgentWithTools(t, srv, fakeTool("read", true, 0, &recorder{}))
+
+	events := drain(t, a.Send(context.Background(), "go"))
+
+	if err := lastErrorOrNil(events); err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	// requests 0 to 2 follow steps 0 to 2; request 3 follows the third repeat, and request 4 a different step
+	if !noticeIn(t, srv, 3) || noticeIn(t, srv, 4) {
+		t.Errorf("notice on request 3 = %v, on request 4 = %v: it must go when the model changes course", noticeIn(t, srv, 3), noticeIn(t, srv, 4))
+	}
+}
+
+func TestAModelThatAnswersAfterTheNoticeFinishesTheTurnNormally(t *testing.T) {
+	srv := newFakeServer(t, repeatingCalls(4, sse(textDelta("I will stop."), completed("I will stop.")))...)
+	a := newAgentWithTools(t, srv, fakeTool("read", true, 0, &recorder{}))
+
+	events := drain(t, a.Send(context.Background(), "go"))
+
+	if err := lastErrorOrNil(events); err != nil || !noticeIn(t, srv, 4) {
+		t.Errorf("error = %v, notice on the last request = %v", err, noticeIn(t, srv, 4))
+	}
+	if !strings.Contains(lastNote(a), "I will stop.") {
+		t.Errorf("the reply was not kept: %q", lastNote(a))
+	}
+}
+
+func TestTheNoticeDoesNotOutliveTheTurn(t *testing.T) {
+	srv := newFakeServer(t, sse(completedWith(functionCall("c1", "read", nameArgs{"a"}))))
+	a := newAgentWithTools(t, srv, fakeTool("read", true, 0, &recorder{}))
+	drain(t, a.Send(context.Background(), "go")) // stopped, with the notice on its later requests
+
+	drain(t, a.Send(context.Background(), "again"))
+
+	if noticeIn(t, srv, loopMaxRepeats+1) {
+		t.Error("the first request of the next turn carries the notice of the last one")
+	}
+	if a.loopNote != "" {
+		t.Errorf("loopNote = %q after the turn", a.loopNote)
+	}
+}

@@ -21,7 +21,7 @@ func (a *Agent) RegistryFor(list ...tools.Tool) (*tools.Registry, error) {
 	return tools.NewRegistry(list...)
 }
 
-// currentInstructions is what a request carries as instructions: the system prompt, and the todo list while a step of
-// it is open. The list goes last, so that the text before it can still be cached. The history keeps the tool calls of
+// currentInstructions is what a request carries as instructions: the system prompt, the todo list while a step of it is
+// open, and the notice to a model that repeats itself (see guard.go). The list goes last, so that the text before it can still be cached. The history keeps the tool calls of
 // the newest turn only, so the instructions are the one place the list is sure to survive.
-func (a *Agent) currentInstructions() string { return a.instructions + a.todos.Notes() }
+func (a *Agent) currentInstructions() string { return a.instructions + a.todos.Notes() + a.loopNote }

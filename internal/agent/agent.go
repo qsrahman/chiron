@@ -43,6 +43,9 @@ type Agent struct {
 	saving *saving         // nil when sessions are off
 
 	summaryFailures int // automatic summaries in a row that were refused or failed
+
+	loopWarnAt int    // the latest step may appear this often in the window before the model is told; tests raise it to leave the warning out
+	loopNote   string // what the instructions say while the model repeats itself; only during a turn
 }
 
 // New returns an agent with an empty history. registry holds the tools the model may call; use
@@ -54,7 +57,7 @@ func New(client openai.Client, settings Settings, instructions string, registry 
 	if settings.MaxContextTokens <= 0 {
 		settings.MaxContextTokens = defaultMaxContextTokens
 	}
-	return &Agent{client: client, settings: settings, instructions: instructions, tools: registry, idleTimeout: defaultIdleTimeout, grants: map[grant]bool{}, todos: &tools.TodoList{}}
+	return &Agent{client: client, settings: settings, instructions: instructions, tools: registry, idleTimeout: defaultIdleTimeout, grants: map[grant]bool{}, todos: &tools.TodoList{}, loopWarnAt: loopWarnRepeats}
 }
 
 // Send starts a turn for the user's text and streams events on the returned channel.

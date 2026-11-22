@@ -245,3 +245,65 @@ func removeLine(text, part string) string {
 	}
 	return strings.Join(kept, "\n")
 }
+
+// TestRealAPILoopNotice measures what the notice to a model that repeats itself does: a tool that always gives the same
+// answer, and a prompt that asks to retry. With the notice the model should end the turn by itself more often than
+// without it, where only the stop ends it. The counts are printed; it fails only if the notice makes things worse.
+func TestRealAPILoopNotice(t *testing.T) {
+	const runs = 6
+	scenarios := []struct{ name, tool, answer, prompt string }{
+		{"a status that never changes", "check_status", "status: pending",
+			"Call check_status until it reports done, then tell me. Do not stop before it says done."},
+		{"a file that stays locked", "read_config", "error: the file is locked by another process",
+			"Read the configuration with read_config and tell me what it says. If it fails, try again."},
+	}
+	measure := func(t *testing.T, sc struct{ name, tool, answer, prompt string }, warnAt int) (finished, stopped, calls int) {
+		for i := 0; i < runs; i++ {
+			tool := tools.MustNew(sc.tool, "Takes no arguments.", true, func(context.Context, struct{}) (string, error) {
+				calls++
+				return sc.answer, nil
+			})
+			probe := realAgent(t, &tools.Registry{})
+			reg, err := probe.RegistryFor(tool)
+			if err != nil {
+				t.Fatal(err)
+			}
+			instructions, err := BuildInstructions(context.Background(), t.TempDir(), time.Now(), true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			probe.SetTools(reg, instructions)
+			probe.loopWarnAt = warnAt
+
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			done, loop := false, false
+			for event := range probe.Send(ctx, sc.prompt) {
+				if e, ok := event.(Error); ok {
+					loop = loop || strings.Contains(e.Err.Error(), "repeating")
+				}
+				if _, ok := event.(Done); ok {
+					done = true
+				}
+			}
+			cancel()
+			switch {
+			case done:
+				finished++
+			case loop:
+				stopped++
+			}
+		}
+		return finished, stopped, calls
+	}
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			withFinished, withStopped, withCalls := measure(t, sc, loopWarnRepeats)
+			withoutFinished, withoutStopped, withoutCalls := measure(t, sc, 1000)
+			t.Logf("with the notice:    %d of %d turns ended by themselves, %d were stopped, %d tool calls", withFinished, runs, withStopped, withCalls)
+			t.Logf("without the notice: %d of %d turns ended by themselves, %d were stopped, %d tool calls", withoutFinished, runs, withoutStopped, withoutCalls)
+			if withFinished < withoutFinished {
+				t.Errorf("the notice made it worse: %d finished with it, %d without", withFinished, withoutFinished)
+			}
+		})
+	}
+}

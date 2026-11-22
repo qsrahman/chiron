@@ -169,8 +169,9 @@ because tool language in such a prompt makes some models type tool calls as text
   closing note such as `[Stopped after 2 model calls: interrupted by the user]`, and every call that did not finish is
   answered as interrupted. The model therefore knows what was done, which matters once tools can change things. A
   failure before any tool ran leaves the conversation as it was.
-- **Limits:** at most `max_turns` model calls (25) for one prompt; a turn that repeats the same tool call with the
-  same result more than 5 times in 10 steps is stopped; a stream that goes silent for 2 minutes is abandoned; at most 8
+- **Limits:** at most `max_turns` model calls (25) for one prompt; a model that repeats the same tool call with the
+  same result 3 times in 10 steps is told so in its instructions (you see a notice) and can change course, and one that
+  goes on until 6 is stopped; a stream that goes silent for 2 minutes is abandoned; at most 8
   read-only tool calls run at once; a tool result is cut at 20 KiB with a note.
 - **Context budget:** `max_context_tokens` (default 65,536) is the size a whole request may have (instructions, tool
   definitions and history, not the reply). It is an estimate (about 4 bytes a token), corrected with the count the
