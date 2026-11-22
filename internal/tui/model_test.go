@@ -37,19 +37,21 @@ type fakeAgent struct {
 	compactErr   error
 	compactFocus string
 
-	messages    []agent.Message
-	sessionID   string
-	sessions    []agent.SessionInfo
-	sessionsErr error
-	resumed     string // the ID ResumeSession was last asked for
-	resumeErr   error
-	deleted     []string // the IDs DeleteSession was asked for
-	deleteErr   error
-	resumedMsgs []agent.Message // what Messages returns once a session was resumed
-	titles      map[string]string
+	messages     []agent.Message
+	sessionID    string
+	sessions     []agent.SessionInfo
+	sessionsErr  error
+	resumed      string // the ID ResumeSession was last asked for
+	resumeErr    error
+	deleted      []string // the IDs DeleteSession was asked for
+	deleteErr    error
+	todos        []agent.Todo
+	resumedTodos []agent.Todo    // what the list is once a session was resumed
+	resumedMsgs  []agent.Message // what Messages returns once a session was resumed
+	titles       map[string]string
 }
 
-func (f *fakeAgent) Reset()                   { f.resets++ }
+func (f *fakeAgent) Reset()                   { f.resets++; f.todos = nil }
 func (f *fakeAgent) Undo() bool               { return f.undoable }
 func (f *fakeAgent) HasConversation() bool    { return f.conversation }
 func (f *fakeAgent) ToolList() agent.ToolList { return f.tools }
@@ -70,6 +72,7 @@ func (f *fakeAgent) Messages() []agent.Message                  { return f.messa
 func (f *fakeAgent) SessionID() string                          { return f.sessionID }
 func (f *fakeAgent) ToolTitle(name string) string               { return f.titles[name] }
 func (f *fakeAgent) ListSessions() ([]agent.SessionInfo, error) { return f.sessions, f.sessionsErr }
+func (f *fakeAgent) Todos() []agent.Todo                        { return f.todos }
 func (f *fakeAgent) DeleteSession(id string) error {
 	if f.deleteErr != nil {
 		return f.deleteErr
@@ -81,7 +84,7 @@ func (f *fakeAgent) ResumeSession(id string) error {
 	if f.resumeErr != nil {
 		return f.resumeErr
 	}
-	f.resumed, f.sessionID, f.messages = id, id, f.resumedMsgs
+	f.resumed, f.sessionID, f.messages, f.todos = id, id, f.resumedMsgs, f.resumedTodos
 	return nil
 }
 func (f *fakeAgent) Summary() string                        { return f.summary }

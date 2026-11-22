@@ -58,6 +58,9 @@ type ApprovalRequested struct {
 // conversation the next request will start from.
 type Usage struct{ InputTokens, OutputTokens int64 }
 
+// TodoUpdated reports that the model changed its todo list, which is Items as it is now; an empty list was cleared.
+type TodoUpdated struct{ Items []Todo }
+
 // Retry reports that a request is being sent again: a stream broke, or the model sent an empty reply. A
 // front-end should drop the text it streamed for the attempt that failed, since the reply starts over.
 type Retry struct{ Reason string }
@@ -77,6 +80,7 @@ func (ToolStarted) isEvent()       {}
 func (ToolFinished) isEvent()      {}
 func (ApprovalRequested) isEvent() {}
 func (Usage) isEvent()             {}
+func (TodoUpdated) isEvent()       {}
 func (Retry) isEvent()             {}
 func (Notice) isEvent()            {}
 func (Done) isEvent()              {}

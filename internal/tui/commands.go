@@ -37,6 +37,7 @@ func commandList() []command {
 		{name: "/servers", description: "List the MCP servers and how they are doing", run: (*Model).serversCommand},
 		{name: "/model", usage: "[NAME]", description: "Show the model, or switch to NAME", run: (*Model).modelCommand},
 		{name: "/effort", usage: "[LEVEL]", description: "Show the reasoning effort, or set it", args: effortLevels, run: (*Model).effortCommand},
+		{name: "/todo", description: "Show the model's todo list", run: (*Model).todoCommand},
 		{name: "/tools", description: "List the tools and which of them ask before they run", run: (*Model).toolsCommand},
 		{name: "/undo", description: "Remove the last exchange from the conversation", run: (*Model).undoCommand},
 		{name: "/retry", description: "Send the last prompt again", run: (*Model).retryCommand},
@@ -123,6 +124,7 @@ func (m *Model) clearCommand(string) (tea.Cmd, error) {
 
 func (m *Model) resetCommand(string) (tea.Cmd, error) {
 	m.agent.Reset()
+	m.syncTodos()
 	m.estimateContext()
 	m.say("Conversation reset")
 	return nil, nil

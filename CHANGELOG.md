@@ -4,6 +4,16 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Added
+
+- **A `todo` tool and a todo panel.** With any other tool, the model can keep a checklist of a task with three or more
+  steps (`pending`, `in_progress`, `completed`, `cancelled`; one `in_progress`; the whole list on every call). The tool never
+  asks and ignores fields it does not know, a refused list says how to fix it and leaves the old one, and the list is
+  added to the instructions of every request while a step is open, so it survives the pruning of old tool results and
+  `/compact`. While a step is open a panel above the input shows `todo · 1/5 done` and the open steps; `/todo` prints the
+  whole list. The list is saved with the session and comes back on `--resume`; `/reset` clears it. New: `TodoUpdated`
+  event, `Agent.RegistryFor`, `Agent.Todos`, `tools.TodoList`. Designed from ergane's todo tool; see PLAN.md section 4.9.
+
 ### Changed
 
 - **The usage figure is only at the right edge of the bottom row, under the input box**: the token count and the share of

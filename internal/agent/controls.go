@@ -12,6 +12,7 @@ import (
 // Reset forgets the whole conversation.
 func (a *Agent) Reset() {
 	a.history.reset()
+	a.todos.Clear()
 	a.lastInput = 0
 	a.summaryFailures = 0
 	if a.saving != nil {

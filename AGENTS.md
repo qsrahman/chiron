@@ -8,7 +8,7 @@ Read [PLAN.md](PLAN.md) first for goals, decisions and the phase table.
 cmd/chiron/     main: flags, wiring, -p mode
 internal/config/    config file, env and flag precedence
 internal/agent/     loop, events, history, system prompt (no UI imports)
-internal/tools/     Tool interface, MustNew, Registry (built-in tools are added from Phase 5)
+internal/tools/     Tool interface, MustNew, Registry, the todo list and its tool (other built-in tools are added from Phase 5)
 internal/tui/       Bubble Tea chat UI (model, theme, layout, cards, chrome; golden tests in testdata/)
 internal/mcp/       MCP servers adapted to tools.Tool: connect, adapter, results, transports (Phase 4b)
 internal/session/   saved conversations: private files, atomic writes, list and load (Phase 9b)
@@ -98,6 +98,11 @@ text from a redraw, no leftover stand-in character, no banner.
   details, grant key) and `tools.Validator`; `MustNew` tools validate against their schema, and an invalid call is
   answered without asking. The TUI shows the details with `escape`, never `sanitize`: the user must see exactly what
   runs. Tests that are not about approval use `testSettings`, which allows every call.
+- **Todo list.** `tools.TodoList` holds the model's checklist; the `todo` tool is `Trusted` (never asks) and not read-only
+  (so calls run in order, with no lock), and reads its own arguments, ignoring unknown fields. The `Agent` owns the list:
+  `RegistryFor` adds the tool only next to another tool (the with-tools prompt mentions it, so keep the two together),
+  `currentInstructions` appends the list while a step is open (the budget counts it), `TodoUpdated` reports a change, and
+  `persist`/`Resume` save and restore it (`Reset` clears it). Build registries with `RegistryFor`, not `NewRegistry`.
 - **Read-only tools run concurrently; mutating tools run alone, in model order.** Mark a tool read-only only if
   it cannot change anything outside the process.
 - **File tools are confined to the working directory tree.**

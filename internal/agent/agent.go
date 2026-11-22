@@ -39,7 +39,8 @@ type Agent struct {
 	grants       map[grant]bool // what the user allowed for the session; lasts until the program exits
 	lastInput    int64          // input tokens the server counted for the last request; 0 until one is known
 
-	saving *saving // nil when sessions are off
+	todos  *tools.TodoList // the model's checklist; cleared by Reset, saved with the session
+	saving *saving         // nil when sessions are off
 
 	summaryFailures int // automatic summaries in a row that were refused or failed
 }
@@ -53,7 +54,7 @@ func New(client openai.Client, settings Settings, instructions string, registry 
 	if settings.MaxContextTokens <= 0 {
 		settings.MaxContextTokens = defaultMaxContextTokens
 	}
-	return &Agent{client: client, settings: settings, instructions: instructions, tools: registry, idleTimeout: defaultIdleTimeout, grants: map[grant]bool{}}
+	return &Agent{client: client, settings: settings, instructions: instructions, tools: registry, idleTimeout: defaultIdleTimeout, grants: map[grant]bool{}, todos: &tools.TodoList{}}
 }
 
 // Send starts a turn for the user's text and streams events on the returned channel.

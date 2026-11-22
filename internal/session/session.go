@@ -26,6 +26,12 @@ type Item struct {
 	Raw    json.RawMessage `json:"raw"`
 }
 
+// Todo is one step of the model's todo list, saved with the conversation it belongs to.
+type Todo struct {
+	Content string `json:"content"`
+	Status  string `json:"status"`
+}
+
 // File is one saved conversation.
 type File struct {
 	Version  int       `json:"version"`
@@ -39,6 +45,7 @@ type File struct {
 	Title    string    `json:"title,omitempty"`    // the first prompt, for lists: the items lose it when a summary replaces it
 	Turns    int       `json:"turns,omitempty"`    // all the turns of the conversation, those a summary stands for included
 	Replaced int       `json:"replaced,omitempty"` // turns a summary stands for, which are no longer in Items
+	Todos    []Todo    `json:"todos,omitempty"`    // the model's todo list when the conversation was saved
 	Items    []Item    `json:"items"`
 }
 

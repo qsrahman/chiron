@@ -34,7 +34,8 @@ type Prompt struct {
 	Source   string // where the tool comes from, if not this program: for an MCP tool, how its server is run
 }
 
-// Trusted is implemented by a tool that the user's configuration allows to run without asking.
+// Trusted is implemented by a tool that runs without asking: one that the user's configuration allows, or a built-in one
+// that only changes the program's own notes (todo).
 type Trusted interface {
 	Trusted() bool
 }

@@ -242,7 +242,7 @@ func TestReconnectGivesTheAgentTheToolsOfAServerThatJoined(t *testing.T) {
 	c := &mcpControl{ctx: context.Background(), hub: hub, agent: a, workDir: t.TempDir()}
 
 	first := c.connect()
-	if first.Status != "mcp 0/1" || !strings.Contains(first.Servers[0][1], "failed") || a.ToolList().Ask != nil {
+	if first.Status != "mcp 0/1" || !strings.Contains(first.Servers[0][1], "failed") || a.ToolList().Ask != nil || len(a.ToolList().Free) != 0 {
 		t.Fatalf("first = %+v, tools %+v: the server should have failed", first, a.ToolList())
 	}
 
@@ -252,8 +252,8 @@ func TestReconnectGivesTheAgentTheToolsOfAServerThatJoined(t *testing.T) {
 	if second.Status != "mcp 1/1" || !strings.HasPrefix(second.Servers[0][1], "connected · 1 tool") {
 		t.Errorf("second = %+v", second)
 	}
-	if list := a.ToolList(); len(list.Ask) != 1 || list.Ask[0] != "late__echo" {
-		t.Errorf("the agent's tools after /reconnect: %+v", list)
+	if list := a.ToolList(); len(list.Ask) != 1 || list.Ask[0] != "late__echo" || len(list.Free) != 1 || list.Free[0] != "todo" {
+		t.Errorf("the agent's tools after /reconnect: %+v (the todo tool comes with the first other tool and never asks)", list)
 	}
 
 	if third := c.Reconnect(""); len(third.Notes) != 1 || !strings.Contains(third.Notes[0], "Nothing to reconnect") {

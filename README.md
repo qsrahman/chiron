@@ -37,6 +37,7 @@ Type `/` in the chat to list them; Up/Down choose, Tab completes, Esc closes. Th
 | `/model [NAME]` | Show the model, or switch to NAME |
 | `/effort [LEVEL]` | Show the reasoning effort, or set it (`default` sends none) |
 | `/servers` | List the MCP servers: state, tools offered (and hidden), what the definitions cost, log path |
+| `/todo` | Show the model's todo list, finished steps included |
 | `/tools` | List the tools and which of them ask before they run |
 | `/undo` | Remove the last exchange from the conversation |
 | `/retry` | Send the last prompt again |
@@ -47,6 +48,22 @@ Type `/` in the chat to list them; Up/Down choose, Tab completes, Esc closes. Th
 | `/summary` | Show the summary that stands for the oldest turns |
 
 A lone `/word` that is no command is reported and not sent; a longer line such as `/usr/bin is missing` is a prompt.
+
+## The todo list
+
+When it has any tool (a built-in one, or from an MCP server), the model also gets a `todo` tool for keeping a checklist
+of a task with three or more steps. Every call sends the whole list, which replaces the old one; an empty list clears
+it. Statuses are `pending`, `in_progress`, `completed` and `cancelled`, and only one step may be `in_progress`: a list
+with two, an empty step, an unknown status, more than 30 steps or a step over 200 characters is refused with the reason,
+and the old list stays. The tool never asks for approval, since it changes nothing outside chiron.
+
+- **Panel:** while a step is open, a panel above the input shows `todo · 1/5 done` and the open steps (`▸` in progress,
+  `○` pending), at most five, with the rest counted. It disappears when every step is done or dropped; `/todo` prints
+  the whole list.
+- **The model keeps it in view:** while a step is open the list is added to the instructions of every request, because
+  the history keeps the tool calls of the newest turn only and `/compact` drops more.
+- **Sessions:** the list is saved with the session and comes back with `--resume` and the `/sessions` picker. `/reset`
+  clears it; `/undo` and `/retry` leave it as it is, as they leave changed files.
 
 ## Queue and tool cards
 
@@ -306,7 +323,7 @@ Every chat conversation (not a `-p` run) is saved after each turn, and after `/u
 `$XDG_STATE_HOME/chiron/sessions/` (`~/.local/state/chiron/sessions/`), one JSON file each, named by its start
 time (`20261118-153012-k3f9`). The directory is private (`0700`), so are the files (`0600`), and a file is replaced
 atomically: a failed write leaves the previous one. A conversation that never got an answer writes nothing, and
-`/reset` starts a new file and keeps the old one.
+`/reset` starts a new file and keeps the old one. The file holds the model's todo list too.
 
 - **Resume** with `--resume` (the latest of the current directory) or `--resume ID`. The messages and the tool calls
   of the newest turn are shown again, the model sees the whole saved history, and the conversation goes on in the

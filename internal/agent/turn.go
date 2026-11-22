@@ -68,7 +68,11 @@ func (a *Agent) run(ctx context.Context, text string, events chan<- Event) error
 		t.rounds++
 		sent := len(t.items) // what the response answered
 		t.items = append(t.items, outputItems(response.Output)...)
+		listed := a.todos.Revision()
 		outputs := a.runCalls(ctx, calls, events)
+		if a.todos.Revision() != listed {
+			events <- TodoUpdated{Items: a.todos.Items()}
+		}
 		for i, call := range calls {
 			t.items = append(t.items, callOutputItem(call.CallID, outputs[i]))
 		}

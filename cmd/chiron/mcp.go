@@ -11,7 +11,6 @@ import (
 	"github.com/qsrahman/chiron/internal/agent"
 	"github.com/qsrahman/chiron/internal/config"
 	"github.com/qsrahman/chiron/internal/mcp"
-	"github.com/qsrahman/chiron/internal/tools"
 	"github.com/qsrahman/chiron/internal/tui"
 )
 
@@ -80,7 +79,7 @@ func (c *mcpControl) apply() tui.Startup {
 		startup.Servers = append(startup.Servers, [2]string{info.Name, info.Describe()})
 	}
 
-	registry, err := tools.NewRegistry(list...)
+	registry, err := c.agent.RegistryFor(list...) // adds the todo tool when there is another tool
 	if err != nil {
 		startup.Notes = append(startup.Notes, "MCP tools are not available: "+err.Error())
 		return startup

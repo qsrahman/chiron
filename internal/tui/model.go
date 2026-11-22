@@ -37,6 +37,7 @@ type Agent interface {
 	Summary() string
 	Messages() []agent.Message
 	ListSessions() ([]agent.SessionInfo, error)
+	Todos() []agent.Todo
 	ResumeSession(id string) error
 	DeleteSession(id string) error
 	SessionID() string
@@ -141,6 +142,7 @@ type Model struct {
 	suggest  suggestState   // the list that opens while a command is typed
 	approval approval       // the modal that asks about a tool call
 	queue    queueState     // prompts typed during a turn
+	todos    []agent.Todo   // the model's todo list, as the agent last reported it
 	cards    cardState      // the tool card chosen with Tab
 
 	// contextTokens is the size of the conversation: counted by the server after a response, or estimated (contextEstimated)
@@ -212,6 +214,7 @@ func New(a Agent, info Info) Model {
 	}
 	m.applyTheme(newTheme(true, nil)) // replaced when the terminal reports its background
 	m.restore()
+	m.syncTodos()
 	m.estimateContext()
 	m.layout()
 	m.refresh()
@@ -570,6 +573,8 @@ func (m *Model) handleEvent(event agent.Event) {
 		m.finishTool(e)
 	case agent.ApprovalRequested:
 		m.openApproval(e)
+	case agent.TodoUpdated:
+		m.todos = e.Items
 	case agent.Usage:
 		m.contextTokens, m.contextEstimated = e.InputTokens+e.OutputTokens, false
 	case agent.Done:
@@ -635,7 +640,7 @@ func (m *Model) layout() {
 	// A window at the bottom of the transcript stays there when its height changes (the suggestion list opens and
 	// closes, the queue grows, the terminal is resized): otherwise the next output lands below the fold.
 	atBottom := m.viewport.AtBottom()
-	m.viewport.SetHeight(max(1, m.height-headerHeight-inputHeight-helpHeight-m.suggestionHeight()-m.queueHeight()-m.searchHeight()-m.pickerHeight()))
+	m.viewport.SetHeight(max(1, m.height-headerHeight-inputHeight-helpHeight-m.suggestionHeight()-m.queueHeight()-m.todoHeight()-m.searchHeight()-m.pickerHeight()))
 	if atBottom {
 		m.viewport.GotoBottom()
 	}
@@ -703,6 +708,9 @@ func (m *Model) refresh() {
 // View draws the header, the transcript, the input box and the help bar.
 func (m Model) View() tea.View {
 	parts := []string{m.headerView(), m.viewport.View()}
+	if todo := m.todoView(); todo != "" {
+		parts = append(parts, todo)
+	}
 	if queue := m.queueView(); queue != "" {
 		parts = append(parts, queue)
 	}

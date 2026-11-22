@@ -64,6 +64,9 @@ func (a *Agent) persist() (note string, err error) {
 		Created: s.created, Updated: now, Summary: a.history.summary, Title: s.title, Replaced: a.history.replaced,
 	}
 	f.Turns = f.Replaced
+	for _, t := range a.todos.Items() {
+		f.Todos = append(f.Todos, session.Todo{Content: t.Content, Status: t.Status})
+	}
 	for _, it := range a.history.items {
 		raw, err := json.Marshal(it.param)
 		if err != nil {
@@ -146,6 +149,11 @@ func (a *Agent) Resume(f session.File, endpoint string) error {
 			break
 		}
 	}
+	var todos []Todo
+	for _, t := range f.Todos {
+		todos = append(todos, Todo{Content: t.Content, Status: t.Status})
+	}
+	a.todos.Restore(todos) // a session saved without a list clears the one in memory
 	a.lastInput, a.summaryFailures = 0, 0
 	if a.saving != nil {
 		a.saving.id, a.saving.created = f.ID, f.Created // goes on in the same file

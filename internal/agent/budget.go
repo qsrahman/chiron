@@ -76,7 +76,7 @@ func (a *Agent) maxContext() int { return a.settings.MaxContextTokens }
 func (a *Agent) fixedTokens() int { return a.instructionTokens() + a.toolTokens() }
 
 func (a *Agent) instructionTokens() int {
-	return tools.EstimateTokens(map[string]string{"instructions": a.instructions})
+	return tools.EstimateTokens(map[string]string{"instructions": a.currentInstructions()})
 }
 
 func (a *Agent) toolTokens() int {

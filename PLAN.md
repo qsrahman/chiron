@@ -315,6 +315,29 @@ From muagent's `commands.py`, the completer in `repl.py` and `tests/test_command
 - **Settings are read where used,** so `/model` and `/effort` take effect on the next request. The agent exposes
   `SetModel` and `SetReasoningEffort`, which are only called between turns.
 
+### 4.9 Todo list (designed from ergane's `todos.py`)
+
+- **Tool:** `todo` with `todos: [{content, status}]`; statuses `pending`, `in_progress`, `completed`, `cancelled`. Every call
+  replaces the whole list, an empty list clears it, and sending the list that is already there changes nothing. A list
+  with two `in_progress`, an empty or over-long step (200 characters), an unknown status or more than 30 steps is
+  refused with a text that says how to fix it, and the old list stays. Fields the tool does not know (`activeForm` from
+  other agents' lists) are ignored: a real model sent one, and refusing it cost a round for nothing.
+- **Approval and order:** the tool is `Trusted` (never asks) and not read-only, so two calls in one response run one at a
+  time in the model's order and no lock is needed (the loop waits for the call).
+- **Offered with another tool only** (`Agent.RegistryFor`), so a chat without tools stays a plain chat; the with-tools
+  prompt, which carries the one bullet about it, is used exactly then.
+- **Kept in view:** the list lives on the `Agent` (`tools.TodoList`). While a step is open it is appended to the
+  instructions of every request (`currentInstructions`, also counted by the budget), since the history keeps the calls of
+  the newest turn only and a summary drops more.
+- **Events and UI:** `TodoUpdated{Items}` after a round that changed the list; a panel above the input while a step is
+  open; `/todo` prints the list. The generic card of the call stays.
+- **Sessions:** saved in the session file (`todos`, optional, the format version stays 1); `Resume` restores it, and a
+  session saved without one clears the list in memory. `/reset` clears it; `/undo` and `/retry` leave it, as they leave
+  files. (ergane does not save its list.)
+- **Measured** on the configured model with an echo tool next to it: for a task of dependent steps it used the list in 3
+  of 6 runs with the bullet and 2 of 6 without; for a question and for one call, in 0 of 12 runs. The bullet is
+  conservative on purpose; `TestRealAPITodo` (integration tag) repeats the measurement.
+
 ## 5. Tools (v1)
 
 | Tool | Read-only | Notes |
@@ -324,7 +347,7 @@ From muagent's `commands.py`, the completer in `repl.py` and `tests/test_command
 | `write_file` | no | Create or overwrite; approval required. |
 | `edit_file` | no | Exact string replace; fails when `old` is missing or not unique unless `replace_all`. |
 | `shell` | no | `sh -c`, timeout, output cap, process-group kill on cancel. |
-| `todo` | yes | In-memory list shown in the TUI; replaces the whole list per call. |
+| `todo` | no (trusted) | Whole-list replace, one `in_progress`; never asks, runs alone; panel in the TUI, saved with the session (section 4.9). Done after v0.9.0. |
 | `ask_user` | yes | Blocks on a `QuestionAsked` reply. |
 | `web_fetch` | yes | `net/http` + HTML-to-markdown library (chosen in Phase 8), size cap, timeout. |
 | MCP tools | no | Namespaced `server__tool`; every call asks for approval unless listed in the server's `autoApprove`. The server's own read-only hint is ignored. |
@@ -402,7 +425,7 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 4b.2 (done, v0.5.1) | MCP client, second part. Restart after a lost connection (3 per session; the call that found it dead fails and is not repeated), `/servers` (state, tool count, hidden-tool count, token cost of the definitions, log path) and `/reconnect [name]` (waits for background startup before deciding what failed, applies its change between turns through `SetTools`, and is how a late or failed server joins), the `tools` allow-list and `instructions` options. | A killed server is restarted by the next call (at most 3 times); `/reconnect` adds a server that missed the deadline and takes effect at the next turn; `tools` rejects a name the server lacks; `instructions` appear in the system prompt framed as notes from the server; golden tests for `/servers`. Tagged v0.5.1. |
 | 5 | `read_file` (line-numbered, `offset`/`limit`, default 200 lines, lines cut at 2000 characters), `list_dir`, `write_file`, `edit_file`, working-directory confinement. `edit_file` and `write_file` over an existing file require that it was read in this session and fail if it changed on disk since; a non-unique match returns a message asking for more context or `replace_all`. Edits show a unified diff in the approval prompt (`go-udiff`, already in the module graph). Tool descriptions live in embedded `.md` files. | Reads work and run in parallel; mutations go through the approval prompt; an edit without a prior read, after an outside change, or with an ambiguous match fails cleanly; paths outside the working tree are rejected. |
 | 6 | `shell`: every command asks for approval (no read-only allowlist in v1). Output is capped; the truncation marker names a file holding the full output. No background jobs in v1. | A hung command is killed on cancel and the loop recovers; long output is truncated with a pointer to the full file. |
-| 7 | `todo` (states pending/in_progress/completed, at most one in_progress, shown in the TUI), `ask_user` with typed questions (`yes_no`, `single_choice`, `multi_choice`, `free_text`; at most 5 choices; a description is required). The todo list lives on the agent and is saved in the session file; it is not rebuilt from the history, because earlier turns keep only their messages and a summary drops more | The model can pause, ask and resume; an invalid question is rejected with a clear error. |
+| 7 (todo done after v0.9.0) | `todo` (states pending/in_progress/completed, at most one in_progress, shown in the TUI), `ask_user` with typed questions (`yes_no`, `single_choice`, `multi_choice`, `free_text`; at most 5 choices; a description is required). The todo list lives on the agent and is saved in the session file; it is not rebuilt from the history, because earlier turns keep only their messages and a summary drops more | The model can pause, ask and resume; an invalid question is rejected with a clear error. |
 | 8 | `web_fetch` (web search is decided later; see section 8) | Redirects, size limits and non-HTML handled. |
 | 9a (done, v0.6.0) | Compaction and budget (section 4.7). `max_context_tokens` budget over the whole request, estimated and corrected by the server's `usage.input_tokens`; **automatic** in-turn shortening of the tool results of earlier rounds when the next request would pass the budget; `/compact [focus]` summarises the oldest turns with the chat model (headings, refusal rules, a summary that is notes and not instructions, always one summary, never an item of the history); `auto_compact: true` does the same before a turn at 75% (off by default); one retry after a server refuses a request as too long; `/summary` and the budget rows of `/context`. | A long conversation is summarised and still answers questions about the early turns (checked against a real model); a bad summary is refused and the history stays whole; `/retry` and `/undo` leave a valid history after a summary; shortened results say how much is hidden; `/context` shows the budget and where the summary starts. Tagged v0.6.0. |
 | 9b (done, v0.6.1) | Sessions. Every conversation is saved automatically after each turn (JSON in `$XDG_STATE_HOME/chiron/sessions/`, directory `0700`, files `0600`, written atomically; opt out with `sessions: false` or `--no-save`); `--resume` resumes the latest session of this directory and `--resume ID` a named one (v0.6.1 had `--continue` for the first; it was folded into `--resume` after v0.7.0), `/sessions` opens a list of this directory's sessions that resumes the chosen one in place or deletes it after a confirmation (not the one in use); the transcript (messages and tool cards) is rebuilt from the saved items; reasoning items are dropped when the model or endpoint differs from the one that wrote them. | A resumed session continues and answers about what came before; a file is private and a failed write never loses the previous file; opting out writes nothing; a resumed history is valid (every call has its output). Tagged v0.6.1. |

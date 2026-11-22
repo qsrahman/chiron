@@ -161,3 +161,87 @@ func TestRealAPICompact(t *testing.T) {
 		t.Errorf("the summary lost facts from the replaced turns: %q", got)
 	}
 }
+
+// TestRealAPITodo measures when the real model uses the todo tool: it should keep a list for a task of several steps,
+// and leave it alone for a question or a single call. Prompt wording is judged by rates over several runs, not by one
+// answer. The tool is offered next to an echo tool, as it is in the program.
+func TestRealAPITodo(t *testing.T) {
+	const runs = 6
+	scenarios := []struct {
+		name   string
+		prompt string
+		wantAt func(used int) bool
+		say    string
+	}{
+		{"several steps", "Do these steps in order, each one using the result of the one before: 1. echo the word a. 2. echo the result of step 1 followed by b. 3. echo the result of step 2 followed by c. 4. echo the result of step 3 followed by d. 5. tell me the final result.",
+			func(used int) bool { return used >= 1 }, "must use the list at least once"},
+		{"a question", "What is the capital of France? Answer with one word.",
+			func(used int) bool { return used <= 1 }, "must almost never use the list"},
+		{"one call", "Call the echo tool with the text hi and tell me what it returned.",
+			func(used int) bool { return used <= 1 }, "must almost never use the list"},
+	}
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			used, failures := 0, 0
+			for i := 0; i < runs; i++ {
+				echo := tools.MustNew("echo", "Returns the text it is given.", true, func(_ context.Context, a struct {
+					Text string `json:"text" jsonschema:"the text to echo"`
+				}) (string, error) {
+					return a.Text, nil
+				})
+				probe := realAgent(t, &tools.Registry{})
+				reg, err := probe.RegistryFor(echo)
+				if err != nil {
+					t.Fatal(err)
+				}
+				probe.SetTools(reg, probe.instructions)
+				instructions, err := BuildInstructions(context.Background(), t.TempDir(), time.Now(), true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if os.Getenv("TODO_PROMPT") == "off" { // to compare the wording with no wording at all
+					instructions = removeLine(instructions, "keep a checklist with the `todo` tool")
+				}
+				probe.SetTools(reg, instructions)
+
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				called, bad := false, false
+				for event := range probe.Send(ctx, sc.prompt) {
+					switch e := event.(type) {
+					case ToolStarted:
+						called = called || e.Name == "todo"
+					case ToolFinished:
+						if e.Name == "todo" && e.Outcome != CallOK {
+							bad = true
+							t.Logf("a todo call was refused: %s", e.Output)
+						}
+					case Error:
+						t.Logf("turn failed: %v", e.Err)
+					}
+				}
+				cancel()
+				if called {
+					used++
+				}
+				if bad {
+					failures++
+				}
+			}
+			t.Logf("%s: the todo tool was used in %d of %d runs (%d refused lists)", sc.name, used, runs, failures)
+			if !sc.wantAt(used) {
+				t.Errorf("%s: %s, but it was used in %d of %d runs", sc.name, sc.say, used, runs)
+			}
+		})
+	}
+}
+
+// removeLine drops the lines of text that contain part.
+func removeLine(text, part string) string {
+	var kept []string
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.Contains(line, part) {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
+}

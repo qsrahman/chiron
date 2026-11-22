@@ -17,6 +17,7 @@
    /servers           List the MCP servers and how they are doing
    /sessions          Choose a saved session of this directory to resume
    /summary           Show the summary that stands for the oldest turns
+   /todo              Show the model's todo list
    /tools             List the tools and which of them ask before they run
    /undo              Remove the last exchange from the conversation
 
@@ -30,7 +31,6 @@
    ctrl+c       cancel a turn, clear the input, quit
    ctrl+d       quit on an empty input
    mouse wheel  scroll the transcript (hold Shift to select text)
-
 
 
 

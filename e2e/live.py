@@ -892,9 +892,47 @@ def sessions():
         t.close()
 
 
+def todo():
+    """The model keeps a todo list with the todo tool: it never asks, the panel shows the open steps, /todo prints them."""
+    t = start()
+    try:
+        t.wait_for("mcp 1/1", 30)
+        for p in ("Use the todo tool once to write a plan for painting a fence: exactly three steps, the first in_progress and the other two pending. Then reply with just OK.",
+                  "You must call the todo tool with three steps, the first in_progress. Do not answer in words first."):
+            t.type(p)
+            try:
+                t.wait_for("todo · ", 60)
+                break
+            except Failure:
+                settle(t, "no todo call")
+        else:
+            raise Skip("the model did not call the todo tool")
+        t.idle()
+        t.lacks("Approval needed", "the todo tool asked for approval")
+        t.contains("▸", "the step in progress is not marked")
+        t.contains("○", "a pending step is not marked")
+        t.expect(re.search(r"todo · 0/3 done", t.text), "the panel does not count the steps")
+        invariants(t, "todo panel")
+        t.type("/todo")
+        t.contains("[>]")
+        t.contains("[ ]")
+        t.type("Now call the todo tool once more with the same three steps all marked completed. Then reply with just OK.")
+        t.wait_for("Working", 20)
+        t.idle()
+        t.expect("todo · " not in t.text, "the panel stays after every step is completed")
+        t.type("/todo")
+        t.contains("[x]", "the finished list is not printed")
+        t.type("/reset")
+        t.type("/todo")
+        t.contains("No todos", "/reset did not clear the list")
+        return t
+    finally:
+        t.close()
+
+
 SCENARIOS = [startup_and_chat, clipboard_and_title, markdown, approval_and_cards, queue_and_cancel, commands, restart_after_death, scrolling,
              resize, quit_protection, multiline_input, long_output_card, failing_server_and_flags, non_interactive,
-             compact, sessions, prompt_history, toolbox_startup, toolbox_files, toolbox_shell, toolbox_fetch_and_search, toolbox_large_output]
+             compact, sessions, prompt_history, todo, toolbox_startup, toolbox_files, toolbox_shell, toolbox_fetch_and_search, toolbox_large_output]
 
 
 def main():

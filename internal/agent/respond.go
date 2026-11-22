@@ -92,8 +92,8 @@ func (a *Agent) request(items []item) responses.ResponseNewParams {
 		Store:   openai.Bool(false),
 		Include: []responses.ResponseIncludable{responses.ResponseIncludableReasoningEncryptedContent},
 	}
-	if a.instructions != "" {
-		p.Instructions = openai.String(a.instructions)
+	if instructions := a.currentInstructions(); instructions != "" {
+		p.Instructions = openai.String(instructions)
 	}
 	if specs := a.tools.Specs(); len(specs) > 0 {
 		p.Tools = specs
