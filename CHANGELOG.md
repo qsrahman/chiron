@@ -4,6 +4,8 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-22
+
 ### Fixed
 
 - **A panic in a tool no longer ends the program.** A tool that panics (a bug in an MCP server's SDK, later a built-in
