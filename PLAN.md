@@ -8,8 +8,8 @@ Last reviewed: 2026-11-23 (the tools plan was revised after reading ergane's, se
 A terminal-based AI coding agent written in Go. It talks to the user in a Bubble Tea TUI, uses the
 OpenAI Responses API (`openai-go`) and operates on the local machine through tools: file read, write and edit,
 shell, web fetch, todo list and asking the user. It streams output, runs independent tools
-concurrently, and can load extra tools from MCP servers. Web search is deliberately undecided (see section 8);
-OpenAI's built-in `web_search` tool will not be used.
+concurrently, and can load extra tools from MCP servers. Web search is not built in: it comes through an MCP server
+(section 5.5); OpenAI's built-in `web_search` tool will not be used.
 
 Non-goals for v1: a GUI, sandboxing of shell commands, multi-agent orchestration, MCP OAuth flows, per-project
 config, background jobs, images, a hosted search tool.
@@ -32,7 +32,7 @@ config, background jobs, images, a hosted search tool.
 | Language / UI | Go, Bubble Tea v2 (`charm.land/bubbletea/v2`) | Single binary, first-class concurrency, strongest Go TUI ecosystem. |
 | API | OpenAI Responses via `github.com/openai/openai-go/v3` | Requested. Typed streaming events and an accumulator are built in. |
 | History | Local history, `store=false` | We own sessions, compaction and resume; works under zero data retention. Output items are replayed as-is (including reasoning items) using the SDK's `param.Override` + `RawJSON()` pattern. |
-| Safety | Ask before every `write_file`, `edit_file`, `shell`, `web_fetch` and `web_search`; per-tool "always allow for this session". File tools are confined to the working directory (`os.Root`), and never read chiron's own config and state directories. Shell is not sandboxed. See section 5.2. | Predictable and simple. A web tool that does not ask lets an injected page read a file and send it out. |
+| Safety | Ask before every `write_file`, `edit_file`, `shell` and `web_fetch` (and every MCP call, search included); per-tool "always allow for this session". File tools are confined to the working directory (`os.Root`), and never read chiron's own config and state directories. Shell is not sandboxed. See section 5.2. | Predictable and simple. A fetch that does not ask lets an injected page read a file and send it out. |
 | Search | One read-only `search_files` (name glob and content regexp); no separate glob, grep or `list_dir` | Every shell command asks, so searching through the shell would ask every time. One tool keeps the definitions small (`read_file` lists directories). |
 | Tool schemas | Generated from Go structs with `google/jsonschema-go` (`jsonschema.For[T]`) | Already a dependency of the MCP SDK; nothing hand-written. |
 | MCP | Official `github.com/modelcontextprotocol/go-sdk`; stdio servers (`CommandTransport`) and remote HTTP servers (Streamable HTTP client transport) | Official SDK; tools adapt to our `Tool` interface. Both transports are needed by the config. |
@@ -359,7 +359,7 @@ Revised after a reading of ergane's tools plan, which was drawn from opencode, p
 | `todo` | no (trusted) | Whole-list replace, one `in_progress`; never asks, runs alone; panel in the TUI, saved with the session (section 4.9). Done after v0.9.0. |
 | `ask_user` | yes | Blocks on a `QuestionAsked` reply. Without an interactive terminal (`-p`) it fails at once with an error that tells the model to go on with its best judgement and state its assumptions, instead of waiting for an answer nobody can give. |
 | `web_fetch` | no | Asks before each call (section 5.5). SSRF-safe client, pages of converted text, 5 MB cap, 30 s. |
-| `web_search` | no | Optional: Brave, built when a key is configured, asks before each call (section 5.5). MCP search servers keep working either way. |
+| `web_search` | no | **Not built in.** Search comes through an MCP server (every call asks, unless the tool is in `autoApprove`), because it is bound to a provider and a key and the config already holds those (section 5.5). |
 | MCP tools | no | Namespaced `server__tool`; every call asks for approval unless listed in the server's `autoApprove`. The server's own read-only hint is ignored. |
 
 ### 5.1 What chiron's loop asks of every tool
@@ -369,7 +369,7 @@ Revised after a reading of ergane's tools plan, which was drawn from opencode, p
    footer survives the global cut.
 2. **`ReadOnly()` decides whether a tool asks,** and read-only calls of one response run at the same time. Such a tool
    honours its context and is safe to call from several goroutines.
-3. **A tool that needs a setting** (the search key) is built in `main` with it and offered only when it is set, next to
+3. **A tool that needs a setting** is built in `main` with it and offered only when it is set, next to
    `Agent.RegistryFor`.
 4. **Credentials live only in the user's own files** (`config.json` holds the API key), so no file tool may read them
    (section 5.2).
@@ -394,7 +394,7 @@ Revised after a reading of ergane's tools plan, which was drawn from opencode, p
   from the child's environment: they are the secrets chiron holds. Names that merely look secret (`*_TOKEN`) are kept, since
   a command may need them (`gh`, `git`). MCP servers keep inheriting the whole environment (section 9.2).
 - **Exfiltration.** Reads that never ask plus a fetch that never asks would let an injected page tell the model to read a
-  file and send it out. That is why the web tools ask, and why they are not read-only.
+  file and send it out. That is why `web_fetch` asks, and why it is not read-only.
 - **The approval prompt shows the change.** For `edit_file` and `write_file` `Describer.Details` is a unified diff computed
   without writing (`go-udiff`, already in the module graph), against the existing file or, for a new one, its start. The
   model is told one line; the user reviews the diff.
@@ -440,11 +440,15 @@ Revised after a reading of ergane's tools plan, which was drawn from opencode, p
   `max_length` page the converted text and the footer names the next index; the description says the result is
   untrusted. `robots.txt` is not consulted (a fetch the user directed, not a crawler; opencode, pi and codex do not
   either): a decision to confirm.
-- **`web_search` (Brave)** is optional: `query`, `count` (1 to 20), `freshness`; the other parameters are left out, since
-  each costs tokens in every request. The key is `brave_api_key` in the config (`${BRAVE_API_KEY}` works), the request
-  carries it in a header and it appears in no URL, result or error; the tool is offered only when it is set and asks before
-  each call, because the query leaves the machine. One retry when the rate limit resets within 5 seconds. A search server
-  through MCP (the `toolbox` of the author's own config has one) remains the other way; building this tool is a decision.
+- **`web_search` stays on MCP,** and `web_fetch` is built in. Fetch needs no key or provider, is the one that can be steered
+  to an arbitrary URL, and gains from what only chiron can do: a grant per host, a question skipped for a URL the user
+  typed, an address check on the connection, and no Node or `npx` at start (a server that does not start within the
+  10 s deadline is simply missing). Search is bound to a provider and a key (Brave, Exa, Tavily), which the config's
+  `mcpServers` already hold, sends only a few words out, and already asks per call as an MCP tool. The author's own
+  `toolbox` server has Brave search and fetch, and its e2e scenario keeps covering search. A built-in Brave tool would be
+  a client, a key setting, a retry rule and tests to own for no gain; the design that was written for it (a `brave_api_key`
+  in the config, a header and never a URL, offered only when set, one retry on a short rate limit) is in the history of
+  this file if a reason appears: frequent MCP start failures in daily use would be one.
 
 ### 5.6 Libraries
 
@@ -469,7 +473,7 @@ SSRF-safe dialer, the edit normalizer and the output capper.
 - Confinement: `..`, a sibling with the same prefix (`/work` and `/work-other`), a symlink out, an absolute symlink, the
   deny list with the home directory as the working directory.
 - The approval preview: the diff is shown and nothing is written before the answer.
-- Fake HTTP servers for fetch and search, never the real network; the search key in no URL, result or error.
+- Fake HTTP servers for fetch, never the real network.
 - On real models (AGENTS.md): they pick the file tools over `cat` in the shell, report an ambiguous edit instead of
   guessing, write nothing outside the roots, and edit as well with `edit_file` as with a patch.
 
@@ -547,7 +551,7 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 5 | In steps, each its own commit. **5a** the confinement helper on `os.Root` with the deny list and its tests (section 5.7). **5b** `read_file` (files and directories, size cap with the offset footer) and `search_files`. **5c** the approval preview (`Describer.Details` as a diff), then `write_file` and `edit_file` (exact then normalized, read-before-edit, modified-since-read). Tool descriptions live in embedded `.md` files; `MustNew` checks names and descriptions (5.1). | Reads work and run in parallel; mutations go through the approval prompt with a diff; an edit without a prior read, after an outside change, or with an ambiguous match fails cleanly; paths outside the tree and chiron's own directories are rejected; footers survive the output cap. Then the real-model evaluation of 5.7. |
 | 6 | `shell` as in section 5.4: every command asks, stdin closed, process-group kill on timeout and cancel, the secrets of chiron removed from the environment, head and tail of long output, no spill file. No background jobs in v1. | A hung command is killed on cancel and the loop recovers; long output keeps its start and its end with a note; `printenv` shows no `OPENAI_API_KEY`. |
 | 7 (todo done after v0.9.0) | `todo` (states pending/in_progress/completed, at most one in_progress, shown in the TUI), `ask_user` with typed questions (`yes_no`, `single_choice`, `multi_choice`, `free_text`; at most 5 choices; a description is required; without an interactive terminal it fails with an error that tells the model to go on with its best judgement). The todo list lives on the agent and is saved in the session file; it is not rebuilt from the history, because earlier turns keep only their messages and a summary drops more | The model can pause, ask and resume; an invalid question is rejected with a clear error. |
-| 8 | `web_fetch` as in section 5.5 (asks, SSRF-safe, paged); then, if wanted, the built-in `web_search`. | Redirects and size limits are enforced; an address that resolves to a private range is refused; binary and non-HTML are handled; a fake server shows the key in no URL, result or error. |
+| 8 | `web_fetch` as in section 5.5 (asks, SSRF-safe, paged). Search is not built: it stays an MCP server. | Redirects and size limits are enforced; an address that resolves to a private range is refused; binary and non-HTML are handled; a fake server serves HTML, JSON, binary, a redirect to a private address and an oversized body. |
 | 9a (done, v0.6.0) | Compaction and budget (section 4.7). `max_context_tokens` budget over the whole request, estimated and corrected by the server's `usage.input_tokens`; **automatic** in-turn shortening of the tool results of earlier rounds when the next request would pass the budget; `/compact [focus]` summarises the oldest turns with the chat model (headings, refusal rules, a summary that is notes and not instructions, always one summary, never an item of the history); `auto_compact: true` does the same before a turn at 75% (off by default); one retry after a server refuses a request as too long; `/summary` and the budget rows of `/context`. | A long conversation is summarised and still answers questions about the early turns (checked against a real model); a bad summary is refused and the history stays whole; `/retry` and `/undo` leave a valid history after a summary; shortened results say how much is hidden; `/context` shows the budget and where the summary starts. Tagged v0.6.0. |
 | 9b (done, v0.6.1) | Sessions. Every conversation is saved automatically after each turn (JSON in `$XDG_STATE_HOME/chiron/sessions/`, directory `0700`, files `0600`, written atomically; opt out with `sessions: false` or `--no-save`); `--resume` resumes the latest session of this directory and `--resume ID` a named one (v0.6.1 had `--continue` for the first; it was folded into `--resume` after v0.7.0), `/sessions` opens a list of this directory's sessions that resumes the chosen one in place or deletes it after a confirmation (not the one in use); the transcript (messages and tool cards) is rebuilt from the saved items; reasoning items are dropped when the model or endpoint differs from the one that wrote them. | A resumed session continues and answers about what came before; a file is private and a failed write never loses the previous file; opting out writes nothing; a resumed history is valid (every call has its output). Tagged v0.6.1. |
 | 9c (done, v0.6.2) | Input niceties. Prompt history: **Up and Down recall earlier prompts** while the input is empty (or holds an unedited recalled prompt), persisted in a private file (about 1,000 entries), with Ctrl-R search; this replaces Up/Down line scrolling, which goes back to PgUp/PgDn and the mouse wheel (a queued prompt is still taken back first by Up); `$EDITOR` for a long prompt (`tea.ExecProcess`); Ctrl-Z suspend (`tea.Suspend`). | Up and Down walk through the history and back to the draft; a recalled prompt can be edited; history survives a restart and holds no duplicates in a row; Ctrl-R finds an old prompt; the editor's text comes back as the prompt; the live end-to-end check is updated for the changed keys. Tagged v0.6.2. |
@@ -568,8 +572,8 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 - Check which features survive a custom `base_url`. Servers that only partly implement the Responses API may
   lack `reasoning.encrypted_content` or `responses.compact`. Phase 1
   should test against the real API first; then decide whether to disable those features when `base_url` is set.
-- Web search: an MCP search server works today; a built-in Brave tool is designed (section 5.5) and waits for a reason.
-  The OpenAI built-in tool is excluded (it works only on an OpenAI endpoint, and chiron could not ask before a search).
+- Web search: through an MCP server (decided, section 5.5); no built-in tool. The OpenAI built-in tool is excluded (it
+  works only on an OpenAI endpoint, and chiron could not ask before a search).
 - Confirm the exact name of the MCP SDK's Streamable HTTP client transport and how to attach custom headers
   (Phase 4).
 - Phase 4a.1: the modal overlay was prototyped with lipgloss `Layer`/`Compositor` and works (done); no fallback needed.
@@ -577,10 +581,9 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 - HTML to Markdown: `html-to-markdown/v2`, checked on pages that matter in Phase 8; a readability extractor only if its
   output is poor.
 - **Tool decisions to confirm** (defaults in brackets; each is a small change to section 5): a second confinement root for
-  the system temp directory, for scratch scripts [yes]; `robots.txt` for `web_fetch` [no]; a built-in `web_search` next to
-  MCP search servers [no, until there is a reason]; a setting that lets `web_fetch` reach private addresses [only if
-  needed]; all tools on by default, or `web_*` offered only when configured [`web_search` only with a key; check the
-  size of the definitions with `/context` first].
+  the system temp directory, for scratch scripts [yes]; `robots.txt` for `web_fetch` [no]; a setting that lets
+  `web_fetch` reach private addresses [only if needed]; the built-in tools on by default [yes; check the size of the
+  definitions with `/context` first]. Decided: `web_fetch` built in, `web_search` through MCP.
 
 ## 9. Lessons from other agents (studied 2026-11-17)
 
@@ -687,5 +690,5 @@ the tools of dcode, and the web tools of Ollama's desktop app. Adopted in sectio
   (ergane's `TOOLS.md`, and workshop-mcp's test).
 - **A tool that needs a setting is built with it and offered only when it is set** (ergane's factory in `cli.py`).
 
-Not adopted: images in `read_file` (no use yet), `edits[]` and a dry run, a hosted search tool, ergane's pure Python
+Not adopted: images in `read_file` (no use yet), `edits[]` and a dry run, a hosted search tool and a built-in Brave search (section 5.5), ergane's pure Python
 search without `.gitignore` (a later step here too), and robots.txt for `web_fetch` (a decision in section 8).
