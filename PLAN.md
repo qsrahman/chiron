@@ -8,8 +8,8 @@ Last reviewed: 2026-11-23 (the tools plan was revised twice: after ergane's plan
 A terminal-based AI coding agent written in Go. It talks to the user in a Bubble Tea TUI, uses the
 OpenAI Responses API (`openai-go`) and operates on the local machine through tools: file read, write and edit,
 shell, web fetch, todo list and asking the user. It streams output, runs independent tools
-concurrently, and can load extra tools from MCP servers. Web search is not built in: it comes through an MCP server
-(section 5.5); OpenAI's built-in `web_search` tool will not be used.
+concurrently, and can load extra tools from MCP servers. Web search is a small keyless built-in (DuckDuckGo, best effort);
+another provider comes through an MCP server (section 5.5). OpenAI's hosted `web_search` tool will not be used.
 
 Non-goals for v1: a GUI, sandboxing of shell commands, multi-agent orchestration, MCP OAuth flows, per-project
 config, background jobs, images, a hosted search tool.
@@ -32,7 +32,7 @@ config, background jobs, images, a hosted search tool.
 | Language / UI | Go, Bubble Tea v2 (`charm.land/bubbletea/v2`) | Single binary, first-class concurrency, strongest Go TUI ecosystem. |
 | API | OpenAI Responses via `github.com/openai/openai-go/v3` | Requested. Typed streaming events and an accumulator are built in. |
 | History | Local history, `store=false` | We own sessions, compaction and resume; works under zero data retention. Output items are replayed as-is (including reasoning items) using the SDK's `param.Override` + `RawJSON()` pattern. |
-| Safety | Ask before every `write_file`, `edit_file`, `shell` and `web_fetch` (and every MCP call, search included); per-tool "always allow for this session". File tools are confined to the working directory (`os.Root`), and never read chiron's own config and state directories. Shell is not sandboxed. See section 5.2. | Predictable and simple. A fetch that does not ask lets an injected page read a file and send it out. |
+| Safety | Ask before every `write_file`, `edit_file`, `shell`, `web_fetch` and `web_search` (and every MCP call); per-tool "always allow for this session". File tools are confined to the working directory and the temp directory (`os.Root`); run chiron in a project directory. Shell is not sandboxed. See section 5.2. | Predictable and simple. A fetch that does not ask lets an injected page read a file and send it out. |
 | Search | `list_dir` and one read-only `search_files` (name glob and content regexp); no separate glob or grep | Every shell command asks, so searching through the shell would ask every time. One search tool keeps the definitions few. `read_file` does not list directories: ergane folded the two, then split them after using it, because one tool with two jobs was confusing. |
 | Tool schemas | Generated from Go structs with `google/jsonschema-go` (`jsonschema.For[T]`) | Already a dependency of the MCP SDK; nothing hand-written. |
 | MCP | Official `github.com/modelcontextprotocol/go-sdk`; stdio servers (`CommandTransport`) and remote HTTP servers (Streamable HTTP client transport) | Official SDK; tools adapt to our `Tool` interface. Both transports are needed by the config. |
@@ -361,7 +361,7 @@ workshop-mcp), then from what it learned by building the tools and evaluating th
 | `todo` | no (trusted) | Whole-list replace, one `in_progress`; never asks, runs alone; panel in the TUI, saved with the session (section 4.9). Done after v0.9.0. |
 | `ask_user` | yes | Blocks on a `QuestionAsked` reply. Without an interactive terminal (`-p`) it fails at once with an error that tells the model to go on with its best judgement and state its assumptions, instead of waiting for an answer nobody can give. |
 | `web_fetch` | no | Asks before each call (section 5.5). SSRF-safe client, pages of converted text, 5 MB cap, 30 s. |
-| `web_search` | no | **Not built in.** Search comes through an MCP server (every call asks, unless the tool is in `autoApprove`), because it is bound to a provider and a key and the config already holds those (section 5.5). |
+| `web_search` | no | Keyless: a form POST to DuckDuckGo's HTML endpoint, best effort; `query` and `max_results` (1 to 20, default 10). Asks before each call. On by default, with `builtin_tools` to switch off. Another provider through an MCP server (section 5.5). |
 | MCP tools | no | Namespaced `server__tool`; every call asks for approval unless listed in the server's `autoApprove`. The server's own read-only hint is ignored. |
 
 Eight built-in tools, with `todo` and `ask_user`; OpenAI suggests fewer than 20 at the start of a turn, and every definition
@@ -378,8 +378,8 @@ built-in tool and no MCP server chiron is the plain chat, with the prompt that h
    honours its context and is safe to call from several goroutines.
 3. **A tool that needs a setting** is built in `main` with it and offered only when it is set, next to
    `Agent.RegistryFor`.
-4. **Credentials live only in the user's own files** (`config.json` holds the API key), so no file tool may read them
-   (section 5.2).
+4. **Credentials live only in the user's own files** (`config.json` holds the API key). The file tools are confined to the
+   roots, and chiron's own directories are not singled out (section 5.2).
 5. **Guidance about a tool goes in its description,** not in the system prompt, with one exception found by evaluation
    (section 5.7). A prompt change needs real-model tests.
 6. **Names and descriptions are checked when the tool is made:** `MustNew` refuses a name outside `[A-Za-z0-9_-]{1,64}`
@@ -394,11 +394,11 @@ built-in tool and no MCP server chiron is the plain chat, with the prompt that h
   realpath checks of other agents. A symlink inside a tree must be relative; an absolute one is refused with a message.
   Everything else is refused, with a message telling the model to ask the user. The temp directory is where scratch scripts
   and the saved output of `shell` go (section 5.4).
-- **A deny list for chiron's own directories.** The config directory (the API key) and the state directory (saved
-  sessions, prompt history, server logs) are refused by every file tool and as a `cwd`, even when the working directory is
-  the home directory and they sit inside the tree. *Ergane decided against this:* `run_command` could read them anyway,
-  so a deny list protects only part of the surface. Here the difference is that `shell` asks before it runs and `read_file`
-  does not, so the deny list closes the one path that is silent; the cost is a path check after resolution.
+- **No deny list (decided).** chiron's own config and state directories (the API key, the prompt history, the saved
+  sessions) are not refused by the file tools: `shell` can read them whatever those tools do, so a list would protect only
+  part of the surface, and the roots are the protection. The residual risk is stated, not hidden: with the working directory at
+  the home directory, `read_file`, which does not ask, can return `config.json`. Run chiron in a project directory; the README
+  says so. (An earlier draft kept a deny list because `shell` asks and `read_file` does not; the author chose ergane's rule.)
 - **Writes** use the root's own file calls, create files exclusively where they must be new, never follow a symlink, and
   replace a file by writing a temporary file in the same directory and renaming it, keeping its mode and, for a text file,
   its byte order mark.
@@ -461,24 +461,34 @@ built-in tool and no MCP server chiron is the plain chat, with the prompt that h
   such tables and charset sniffing and a depth guard, then deleted them for `is_global`, `UnicodeDammit` and a catch of the
   recursion error. Every redirect hop is checked, at most 10; the body is read through `io.LimitReader` after decompression
   (5 MB); 30 s and the turn's context. Both layers stay: the question protects against a bad URL the user approves by
-  reflex, the filter against an address that should never be reached. A local development server is refused by default (a
-  setting if it is needed).
+  reflex, the filter against an address that should never be reached. Loopback and private addresses, a local
+  development server included, are refused by default (decided); the config setting `allow_private_fetch` allows them.
 - **Output:** HTML to Markdown (`html-to-markdown/v2`), other text as it is (the charset from the header, or `x/net/html/charset`
   when it is missing); `start_index` and `max_length` page the converted text and the footer names the next index; the
   description says the result is untrusted. `robots.txt` is not consulted (a fetch the user directed, not a crawler; opencode,
   pi, codex and ergane do not either).
-- **`web_search` stays on MCP,** and `web_fetch` is built in. Fetch needs no key or provider, is the one that can be steered
-  to an arbitrary URL, and gains from what only chiron can do: a grant per host, a question skipped for a URL the user
-  typed, an address check on the connection, and no Node or `npx` at start (a server that does not start within the
-  10 s deadline is simply missing). Search is bound to a provider and a key (Brave, Exa, Tavily), which the config's
-  `mcpServers` already hold, sends only a few words out, and already asks per call as an MCP tool. The author's own
-  `toolbox` server has Brave search and fetch, and its e2e scenario keeps covering search.
-- **Evidence that could change that:** ergane built a *keyless* search in about 70 lines, a form POST to DuckDuckGo's HTML
-  endpoint parsed for results, asking before each call. It measured that an honest user agent got `200` and ten results
-  every time, while browser-like headers got `202` and nothing. It treats `202`, `403`, `429` and an empty body as "refused,
-  try again later", never as "no results". It is unofficial and can break or be blocked, and the terms were not checked.
-  That removes the key as the reason for MCP, so it stays a decision (section 8): a zero-configuration fallback against a
-  reliable provider the user already has.
+- **`web_search` is a small keyless built-in (decided), and `web_fetch` is built in too.** Fetch is the one that can be steered
+  to an arbitrary URL and gains from what only chiron can do: a grant per host, a question skipped for a URL the user typed,
+  an address check on the connection, and no Node or `npx` at start. Search works without a key by reading DuckDuckGo's HTML
+  results, designed from ergane's tool (about 70 lines, written from the page and not copied, since the project that showed
+  the approach is MIT-licensed and any copied line would need its notice). MCP search servers (the author's `toolbox` has
+  Brave) stay the way to use another provider, and the README says how.
+  - **The request:** a form POST to `https://html.duckduckgo.com/html` with `q`, `kl` (region, empty) and `kp` (safe search,
+    moderate), an honest user agent (`chiron/<version>`) and a 15 s timeout.
+  - **The parse:** `golang.org/x/net/html` (already in the module graph as an indirect dependency): each result's title link
+    and snippet; results whose link contains `y.js` are ads and skipped; a link of the form `//duckduckgo.com/l/?uddg=...` is
+    unwrapped to the real URL. The output is numbered: title, URL, snippet.
+  - **A block is said aloud.** DuckDuckGo answers a client it dislikes with an empty page and status `202`, not an error. A
+    `202`, `403` or `429`, or an empty body, returns "search was refused or returned nothing, try again later", never "no
+    results". A parsed page with no results says there are none.
+  - **Measured by ergane** (three runs each): an honest user agent got `200` and ten results every time; browser-like
+    headers (a Chrome user agent with `Sec-Ch-Ua` and `Sec-Fetch-*`) got `202` and nothing. So no spoofed headers, and no TLS
+    impersonation, which evades bot filters and would add a native dependency.
+  - **It asks before each call** (the query leaves the machine, and a page can tell the model what to search for), and its
+    results are third-party text, labelled untrusted in the description.
+  - **Risk, accepted:** the endpoint is not an API, so the tool can break or be blocked without notice, and DuckDuckGo's terms
+    were not checked. It is best effort and offered by default; `builtin_tools` switches it off, and an MCP search server is
+    the reliable route.
 
 ### 5.6 Libraries
 
@@ -492,6 +502,7 @@ built-in tool and no MCP server chiron is the plain chat, with the prompt that h
 | Escape codes | `charmbracelet/x/ansi` (already in use) | a regexp |
 | HTTP and the SSRF check | `net/http`, `net.Dialer.Control`, `net/netip` | a client library, tables of IP ranges |
 | HTML to Markdown | `github.com/JohannesKaufmann/html-to-markdown/v2` (MIT, maintained) | writing a converter |
+| Parsing the search results page | `golang.org/x/net/html` (an indirect dependency already; it becomes a direct one) | a regexp over HTML |
 
 Later or only if needed: `.gitignore` rules for `search_files` and `list_dir` (ergane honours them from the repository root
 down, with a deeper file overriding a shallower one, never shows `.git`, and counts what a listing left out; an ignored
@@ -504,13 +515,14 @@ the SSRF-safe dialer, the edit normalizer and the output capper.
 ### 5.7 Verification
 
 - A test that every parameter of every built-in has a description, and that every footer survives the 20 KiB cut.
-- Confinement: `..`, a sibling with the same prefix (`/work` and `/work-other`), a symlink out, an absolute symlink, the
-  deny list with the home directory as the working directory.
+- Confinement: `..`, a sibling with the same prefix (`/work` and `/work-other`), a symlink out, an absolute symlink.
 - File edge cases ergane met: a named pipe in the tree (it blocked the search for ever, so only regular files are read), a
   file with one enormous line (reads are bounded), a byte order mark and mixed line endings kept, a write to a directory.
 - The approval preview: the diff is shown, it is the edit that is done, nothing is written before the answer, and an edit
   that cannot succeed does not ask.
 - Fake HTTP servers for fetch, never the real network: HTML, JSON, binary, a redirect to a private address, an oversized body.
+- `web_search` on a saved results page: ordinary results, an ad, a `uddg` redirect and no results; a fake server answering
+  `202`, `403`, `429` and an empty body each gives the "refused" message and never "no results".
 - **On real models (AGENTS.md),** from ergane's evaluation: real tools on a temporary project, the permission question
   answered by a function that records and denies, at least five runs of each scenario on the models in use, the baseline
   first, and a scenario that is worse on a model blocks the change. The simulated shell must answer realistically and not
@@ -593,6 +605,7 @@ From OpenAI's guidance on function definitions, as ergane applied it (and trimme
   unset sends none, because non-reasoning models reject it; the flag also takes `default`), `max_turns` (model calls
   per prompt, default 25, replaces the fixed constant; removed after v0.10.0, see 4.2) and `streaming` (default true; false makes one non-streaming
   request, for servers with broken SSE).
+- `allow_private_fetch` (planned with Phase 8): `true` lets `web_fetch` reach loopback and private addresses.
 - `builtin_tools` (planned with Phase 5): `false` for none or a list of names for only those, as an MCP server's `tools` does; the flag
   `--no-builtin` turns them all off for one run.
 - Each `mcpServers` entry may list `"autoApprove": ["tool", ...]`, or give `true` for every tool of the server (those it
@@ -624,10 +637,10 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 4a.2 (done, v0.4.1) | Queue and expandable cards. **Queue:** Enter while a turn runs adds the prompt to a list shown above the input; the next is sent when a turn ends without error; Ctrl-C cancels the turn and drops the queue (the UI says how many were dropped); after a turn that fails on its own the queue is held, a notice says N prompts are waiting and nothing is sent until the next Enter; Up on an empty input pulls the last queued prompt back into the input. Commands are still refused while a turn runs and are never queued. **Cards:** Tab / Shift+Tab select a card when the input is empty, Enter or Space toggle 5 lines versus the whole result, Esc returns to typing; the viewport scrolls so the selected card stays visible. | Queued prompts run in order; an error holds the queue and Ctrl-C drops it; Up returns the last queued prompt; cards expand and collapse and the selected one stays in view; golden tests for the queue and an expanded card. Tagged v0.4.1. |
 | 4b.1 (done, v0.5.0) | MCP client, first part (section 4.6). `mcpServers` config typed and validated (`command`/`args`/`env` or `url`/`headers`, `enabled`, `autoApprove`; the other fields arrive in 4b.2 and are an unknown key until then), strict `${VAR}` expansion, URL and redirect checks, parallel background connect with a shared 10 s deadline (a server that misses it stays out until 4b.2's `/reconnect`), stdio and streamable HTTP transports, private stderr logs, tool adapter with unique names and its own approval prompt (server, tool, arguments, where the server runs), result mapping, the central output cap, `server → tool` cards, a startup status line per server and a count in the header, parallel shutdown, and `--no-mcp`. Registry and instructions are built when the connect finishes and handed to the agent (`SetTools`, between turns). `-p` waits for the servers. | A real stdio server and an httptest HTTP server both work, including headers; an unapproved MCP call asks and an `autoApprove`d one does not; Allow for session covers the tool; a cross-origin redirect does not carry headers; a failing or slow server is reported and does not stop the agent; no secret appears in errors, logs or status; `--no-mcp` starts nothing; golden tests for the startup status and the MCP prompt. Tagged v0.5.0. |
 | 4b.2 (done, v0.5.1) | MCP client, second part. Restart after a lost connection (3 per session; the call that found it dead fails and is not repeated), `/servers` (state, tool count, hidden-tool count, token cost of the definitions, log path) and `/reconnect [name]` (waits for background startup before deciding what failed, applies its change between turns through `SetTools`, and is how a late or failed server joins), the `tools` allow-list and `instructions` options. | A killed server is restarted by the next call (at most 3 times); `/reconnect` adds a server that missed the deadline and takes effect at the next turn; `tools` rejects a name the server lacks; `instructions` appear in the system prompt framed as notes from the server; golden tests for `/servers`. Tagged v0.5.1. |
-| 5 | In steps, each its own commit, each with its tests and a mutation check. **5a** the confinement helper on `os.Root` (working and temp directories) with the deny list and its tests (section 5.7). **5b** `read_file`, `list_dir` and `search_files`, and the switch (`builtin_tools`, `--no-builtin`; `Agent.RegistryFor` does the filtering). **5c** the approval preview (`Describer.Details` as a diff that is the edit that is done), then `write_file` and `edit_file` (exact then normalized, read-before-edit, modified-since-read, refused before asking when it cannot succeed). Tool descriptions live in embedded `.md` files and follow section 5.8; `MustNew` checks names and descriptions (5.1). **5d** the real-model evaluation of 5.7, with the prompt rule for showing a file in full. | Reads work and run in parallel; mutations go through the approval prompt with a diff; an edit without a prior read, after an outside change, or with an ambiguous match fails cleanly; paths outside the roots and chiron's own directories are rejected; footers survive the output cap; the 5.7 scenarios pass on the models in use. |
+| 5 (next) | In steps, each its own commit, each with its tests and a mutation check. **5a** the confinement helper on `os.Root` (working and temp directories) with its tests (section 5.7). **5b** `read_file`, `list_dir` and `search_files`, and the switch (`builtin_tools`, `--no-builtin`; `Agent.RegistryFor` does the filtering). **5c** the approval preview (`Describer.Details` as a diff that is the edit that is done), then `write_file` and `edit_file` (exact then normalized, read-before-edit, modified-since-read, refused before asking when it cannot succeed). Tool descriptions live in embedded `.md` files and follow section 5.8; `MustNew` checks names and descriptions (5.1). **5d** the real-model evaluation of 5.7, with the prompt rule for showing a file in full. | Reads work and run in parallel; mutations go through the approval prompt with a diff; an edit without a prior read, after an outside change, or with an ambiguous match fails cleanly; paths outside the roots are rejected; footers survive the output cap; the 5.7 scenarios pass on the models in use. |
 | 6 | `shell` as in section 5.4: every command asks, stdin closed, process-group kill on timeout and cancel, `OPENAI_API_KEY` removed from the environment, head and tail of long output with the whole saved to a file in the temp directory and named in the note. No background jobs in v1. | A hung command is killed on cancel and the loop recovers, also when a child left the process group; long output keeps its start and its end and names the file with all of it; `printenv` shows no `OPENAI_API_KEY`. |
 | 7 (todo done after v0.9.0) | `todo` (states pending/in_progress/completed, at most one in_progress, shown in the TUI), `ask_user` with typed questions (`yes_no`, `single_choice`, `multi_choice`, `free_text`; at most 5 choices; a description is required; without an interactive terminal it fails with an error that tells the model to go on with its best judgement). The todo list lives on the agent and is saved in the session file; it is not rebuilt from the history, because earlier turns keep only their messages and a summary drops more | The model can pause, ask and resume; an invalid question is rejected with a clear error. |
-| 8 | `web_fetch` as in section 5.5 (asks, SSRF-safe with `netip` and no tables of ranges, type checked before the body is read, paged). Search is not built: it stays an MCP server. | Redirects and size limits are enforced; an address that resolves to a private range is refused; binary and non-HTML are handled; a fake server serves HTML, JSON, binary, a redirect to a private address and an oversized body. |
+| 8 | In steps. **8a** `web_fetch` as in section 5.5 (asks, host grants, a URL the user typed needs no question, SSRF-safe with `netip` and no tables of ranges, loopback and private addresses refused unless `allow_private_fetch`, type checked before the body is read, paged). **8b** `web_search` (keyless DuckDuckGo, best effort, asks, a block said aloud). | Redirects and size limits are enforced; an address that resolves to a private range is refused; binary and non-HTML are handled; a fake server serves HTML, JSON, binary, a redirect to a private address and an oversized body; the search tests of 5.7 pass; one real fetch and one real search by hand, since the tests use fakes. |
 | 9a (done, v0.6.0) | Compaction and budget (section 4.7). `max_context_tokens` budget over the whole request, estimated and corrected by the server's `usage.input_tokens`; **automatic** in-turn shortening of the tool results of earlier rounds when the next request would pass the budget; `/compact [focus]` summarises the oldest turns with the chat model (headings, refusal rules, a summary that is notes and not instructions, always one summary, never an item of the history); `auto_compact: true` does the same before a turn at 75% (off by default); one retry after a server refuses a request as too long; `/summary` and the budget rows of `/context`. | A long conversation is summarised and still answers questions about the early turns (checked against a real model); a bad summary is refused and the history stays whole; `/retry` and `/undo` leave a valid history after a summary; shortened results say how much is hidden; `/context` shows the budget and where the summary starts. Tagged v0.6.0. |
 | 9b (done, v0.6.1) | Sessions. Every conversation is saved automatically after each turn (JSON in `$XDG_STATE_HOME/chiron/sessions/`, directory `0700`, files `0600`, written atomically; opt out with `sessions: false` or `--no-save`); `--resume` resumes the latest session of this directory and `--resume ID` a named one (v0.6.1 had `--continue` for the first; it was folded into `--resume` after v0.7.0), `/sessions` opens a list of this directory's sessions that resumes the chosen one in place or deletes it after a confirmation (not the one in use); the transcript (messages and tool cards) is rebuilt from the saved items; reasoning items are dropped when the model or endpoint differs from the one that wrote them. | A resumed session continues and answers about what came before; a file is private and a failed write never loses the previous file; opting out writes nothing; a resumed history is valid (every call has its output). Tagged v0.6.1. |
 | 9c (done, v0.6.2) | Input niceties. Prompt history: **Up and Down recall earlier prompts** while the input is empty (or holds an unedited recalled prompt), persisted in a private file (about 1,000 entries), with Ctrl-R search; this replaces Up/Down line scrolling, which goes back to PgUp/PgDn and the mouse wheel (a queued prompt is still taken back first by Up); `$EDITOR` for a long prompt (`tea.ExecProcess`); Ctrl-Z suspend (`tea.Suspend`). | Up and Down walk through the history and back to the draft; a recalled prompt can be edited; history survives a restart and holds no duplicates in a row; Ctrl-R finds an old prompt; the editor's text comes back as the prompt; the live end-to-end check is updated for the changed keys. Tagged v0.6.2. |
@@ -648,22 +661,22 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 - Check which features survive a custom `base_url`. Servers that only partly implement the Responses API may
   lack `reasoning.encrypted_content` or `responses.compact`. Phase 1
   should test against the real API first; then decide whether to disable those features when `base_url` is set.
-- Web search: through an MCP server (decided, section 5.5); no built-in tool. The OpenAI built-in tool is excluded (it
-  works only on an OpenAI endpoint, and chiron could not ask before a search).
+- Web search: a keyless DuckDuckGo built-in, best effort, on by default (decided, section 5.5); MCP for another provider.
+  DuckDuckGo's terms of use were not checked. The OpenAI hosted tool is excluded (it works only on an OpenAI endpoint, and
+  chiron could not ask before a search).
 - Confirm the exact name of the MCP SDK's Streamable HTTP client transport and how to attach custom headers
   (Phase 4).
 - Phase 4a.1: the modal overlay was prototyped with lipgloss `Layer`/`Compositor` and works (done); no fallback needed.
 - Phase 4b.1: confirm OpenAI's tool-count and function-name limits for the Responses API with a real request.
 - HTML to Markdown: `html-to-markdown/v2`, checked on pages that matter in Phase 8; a readability extractor only if its
   output is poor.
-- **Tool decisions to confirm** (defaults in brackets; each is a small change to section 5). Settled by ergane's
-  experience and adopted: the temp directory as a second root, which also holds the saved output of `shell`; no
-  `robots.txt`; no patch tool; everything on by default with `builtin_tools` and `--no-builtin` to switch off. Open: a
-  keyless DuckDuckGo `web_search` as a built-in, next to MCP search servers [no: MCP, which the author already has; reconsider
-  if the keyless tool is wanted out of the box, since ergane measured that it works with an honest user agent]; a setting
-  that lets `web_fetch` reach private addresses [only if needed]; `.gitignore` rules in `search_files` and `list_dir` [a
-  later step, and a library choice: section 5.6]; the size of the definitions of all the tools [check with `/context`].
-  Decided: `web_fetch` built in, `web_search` through MCP.
+- **Tool decisions** (all settled on 2026-11-23, in a round of questions; each is a small change to section 5): the temp
+  directory as a second root, which also holds the saved output of `shell`, removed when older than a day at startup; no
+  `robots.txt`; no patch tool; no deny list; everything on by default with `builtin_tools` and `--no-builtin` to switch
+  off; `web_fetch` built in, refusing loopback and private addresses unless `allow_private_fetch`, with a URL the user
+  typed needing no question (tried in Phase 8); `web_search` a keyless DuckDuckGo built-in on by default; `.gitignore` rules
+  in `search_files` and `list_dir` later (a library choice: section 5.6); the first phase is 5. Still to measure: the size
+  of the definitions of all the tools, with `/context`.
 
 ## 9. Lessons from other agents (studied 2026-11-17)
 
@@ -763,8 +776,8 @@ Ollama's desktop app. What section 5 took from them, and where it differs:
   readable, which a file in the state directory would not be).
 - **The environment of the shell: inherit all but `OPENAI_API_KEY`** (ergane's decision 13). Stripping what the config
   references, or what looks like a secret by name (dcode), would break `git` and `gh`.
-- **The deny list for the program's own directories is kept,** against ergane's reversal: its argument is that the shell can
-  read them anyway, but here the shell asks and `read_file` does not.
+- **No deny list for the program's own directories** (ergane's rule, chosen by the author after weighing the other: the shell
+  asks and `read_file` does not, which a list would have covered). The roots are the protection; run chiron in a project directory.
 - **Confinement with `os.Root`.** Ergane and dcode check symlinks by hand with realpath; the standard library has done it
   since Go 1.24.
 - **The web tools ask** (ergane's decision 3, and the same exfiltration argument as the Ollama app's rule that a fetch only
@@ -786,5 +799,5 @@ Ollama's desktop app. What section 5 took from them, and where it differs:
   same in the phase table.
 
 Not adopted: pictures in `read_file` (ergane built them: sniffing the bytes, a size limit, and a refusal remembered for the
-session; chiron has no use yet), `edits[]` and a dry run, a hosted search tool, a built-in search for now (section 5.5), and
-`robots.txt` for `web_fetch`.
+session; chiron has no use yet), `edits[]` and a dry run, a hosted search tool, ergane's TLS impersonation and spoofed
+headers for search, and `robots.txt` for `web_fetch`.
