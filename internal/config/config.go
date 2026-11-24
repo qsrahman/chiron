@@ -69,7 +69,7 @@ type MCPServer struct {
 	// Enabled defaults to true; a disabled server is not started.
 	Enabled *bool `json:"enabled"`
 	// AutoApprove says which of the server's tools never ask before a call.
-	AutoApprove AutoApprove `json:"autoApprove"`
+	AutoApprove AutoApprove `json:"auto_approve"`
 	// Tools, when present, lists the only tools of the server that are offered; a name the server does not have is
 	// an error, so that a typo cannot offer nothing without saying so. An empty list offers none.
 	Tools []string `json:"tools"`
@@ -92,7 +92,7 @@ func (a *AutoApprove) UnmarshalJSON(data []byte) error {
 	}
 	var tools []string
 	if err := json.Unmarshal(data, &tools); err != nil {
-		return errors.New("autoApprove must be true, false or a list of tool names")
+		return errors.New("auto_approve must be true, false or a list of tool names")
 	}
 	a.Tools = tools
 	return nil
@@ -189,6 +189,9 @@ func Load(path string, warn io.Writer) (File, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&f); err != nil {
+		if strings.Contains(err.Error(), `unknown field "autoApprove"`) {
+			return File{}, fmt.Errorf("parsing %s: autoApprove was renamed auto_approve (in each of the mcpServers): %w", path, err)
+		}
 		return File{}, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {

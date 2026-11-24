@@ -225,7 +225,7 @@ func TestDefaultPath(t *testing.T) {
 
 func TestLoadMCPServers(t *testing.T) {
 	path := writeConfig(t, `{"mcpServers": {
-		"docs":    {"url": "https://example.com/mcp", "headers": {"X-Key": "${KEY}"}, "autoApprove": ["search"], "tools": ["search", "fetch"], "instructions": true},
+		"docs":    {"url": "https://example.com/mcp", "headers": {"X-Key": "${KEY}"}, "auto_approve": ["search"], "tools": ["search", "fetch"], "instructions": true},
 		"toolbox": {"command": "npx", "args": ["-y", "pkg"], "env": {"TOKEN": "${TOKEN}"}, "enabled": false}
 	}}`, 0o600)
 
@@ -284,7 +284,7 @@ func TestAutoApproveTakesATrueFalseOrAList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			field := ""
 			if tt.value != "" {
-				field = `, "autoApprove": ` + tt.value
+				field = `, "auto_approve": ` + tt.value
 			}
 			f, err := Load(writeConfig(t, `{"mcpServers": {"s": {"command": "x"`+field+`}}}`, 0o600), &bytes.Buffer{})
 			if err != nil {
@@ -292,7 +292,7 @@ func TestAutoApproveTakesATrueFalseOrAList(t *testing.T) {
 			}
 			a := f.MCPServers["s"].AutoApprove
 			if a.All != tt.wantAll || !reflect.DeepEqual(a.Tools, tt.wantTools) {
-				t.Errorf("autoApprove = %+v", a)
+				t.Errorf("auto_approve = %+v", a)
 			}
 			for tool, want := range tt.covers {
 				if a.Covers(tool) != want {
@@ -303,11 +303,22 @@ func TestAutoApproveTakesATrueFalseOrAList(t *testing.T) {
 	}
 }
 
+// The key was renamed from autoApprove: a config that still has the old one must say what to do, not only name it.
+func TestTheOldAutoApproveKeyIsRefusedWithTheNewName(t *testing.T) {
+	path := writeConfig(t, `{"mcpServers": {"s": {"command": "x", "autoApprove": true}}}`, 0o600)
+
+	_, err := Load(path, &bytes.Buffer{})
+
+	if err == nil || !strings.Contains(err.Error(), "autoApprove was renamed auto_approve") || !strings.Contains(err.Error(), path) {
+		t.Errorf("error = %v", err)
+	}
+}
+
 func TestAutoApproveRejectsAnythingElse(t *testing.T) {
 	for _, value := range []string{`"yes"`, `1`, `{"a": true}`, `[1, 2]`} {
-		_, err := Load(writeConfig(t, `{"mcpServers": {"s": {"command": "x", "autoApprove": `+value+`}}}`, 0o600), &bytes.Buffer{})
-		if err == nil || !strings.Contains(err.Error(), "autoApprove must be true, false or a list of tool names") {
-			t.Errorf("autoApprove %s: err = %v", value, err)
+		_, err := Load(writeConfig(t, `{"mcpServers": {"s": {"command": "x", "auto_approve": `+value+`}}}`, 0o600), &bytes.Buffer{})
+		if err == nil || !strings.Contains(err.Error(), "auto_approve must be true, false or a list of tool names") {
+			t.Errorf("auto_approve %s: err = %v", value, err)
 		}
 	}
 }

@@ -45,7 +45,7 @@ func TestAdapterNeverClaimsToBeReadOnlyAndTrustsOnlyWhatIsConfigured(t *testing.
 		t.Error("an MCP tool is neither read-only nor trusted by default")
 	}
 	if a := adapted(t, "echo", true); a.ReadOnly() || !a.Trusted() {
-		t.Error("an autoApprove tool is trusted but still runs alone")
+		t.Error("an auto_approve tool is trusted but still runs alone")
 	}
 }
 

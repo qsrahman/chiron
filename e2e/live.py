@@ -348,7 +348,7 @@ def commands():
 
 
 def restart_after_death():
-    t = start(servers={"local": local_server(autoApprove=True)})
+    t = start(servers={"local": local_server(auto_approve=True)})
     try:
         t.wait_for("mcp 1/1", 30)
         t.type("Call the local__die tool now with no arguments. Call it exactly once.")
@@ -369,7 +369,7 @@ def restart_after_death():
 
 
 def scrolling():
-    t = start(servers={"local": local_server(autoApprove=True)}, rows=20)
+    t = start(servers={"local": local_server(auto_approve=True)}, rows=20)
     try:
         t.wait_for("mcp 1/1", 30)
         say(t, "Call the local__env tool with the name E2E_LINES, once, and then say DONE.")
@@ -482,7 +482,7 @@ def multiline_input():
 
 
 def long_output_card():
-    t = start(servers={"local": local_server(autoApprove=True)})
+    t = start(servers={"local": local_server(auto_approve=True)})
     try:
         t.wait_for("mcp 1/1", 30)
         say(t, "Call the local__env tool with the name E2E_LINES, once, and then say DONE.")
@@ -523,13 +523,13 @@ def failing_server_and_flags():
 
 
 def non_interactive():
-    path = write_config("print", {"local": local_server(autoApprove=True)})
+    path = write_config("print", {"local": local_server(auto_approve=True)})
     env = {**os.environ, "XDG_STATE_HOME": os.path.join(WORK, "state")}
     prompt = "Call the local__echo tool with the text ping and tell me exactly what it returned."
     r = subprocess.run([BIN, "--config", path, "-p", prompt], capture_output=True, text=True, timeout=180, env=env)
     if "echo: ping" not in r.stdout:
         raise Skip(f"the model did not call the tool (stdout {r.stdout!r})")
-    # without autoApprove a call is denied in -p mode, with --yes it runs
+    # without auto_approve a call is denied in -p mode, with --yes it runs
     path2 = write_config("print2", {"local": local_server()})
     denied = subprocess.run([BIN, "--config", path2, "-p", prompt], capture_output=True, text=True, timeout=180, env=env)
     if "denied" not in denied.stderr:
@@ -548,9 +548,12 @@ def toolbox_entry():
     """The user's own `toolbox` MCP server, as configured (its secrets stay in the environment, never read here)."""
     try:
         with open(os.path.expanduser("~/.config/chiron/config.json")) as f:
-            return json.load(f)["mcpServers"]["toolbox"]
+            entry = json.load(f)["mcpServers"]["toolbox"]
     except (OSError, KeyError):
         return None
+    if "autoApprove" in entry:  # a config not yet migrated to the new key still works for the run
+        entry["auto_approve"] = entry.pop("autoApprove")
+    return entry
 
 
 def toolbox_term(**kw):

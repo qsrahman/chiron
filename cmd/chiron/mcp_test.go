@@ -89,7 +89,7 @@ func TestPromptWaitsForMCPServersAndUsesTheirTools(t *testing.T) {
 	isolate(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	model, requests := modelServer(t)
-	cfg := mcpConfig(t, model.URL, localServer(`, "autoApprove": ["echo"]`))
+	cfg := mcpConfig(t, model.URL, localServer(`, "auto_approve": ["echo"]`))
 
 	var out, errOut bytes.Buffer
 	if code := run(context.Background(), []string{"-p", "go", "--config", cfg}, &out, &errOut); code != 0 {
@@ -215,7 +215,7 @@ func TestTheAllowListHidesToolsAndATypoFailsTheServer(t *testing.T) {
 	t.Run("a name that exists", func(t *testing.T) {
 		model, requests := modelServer(t)
 		var out, errOut bytes.Buffer
-		cfg := mcpConfig(t, model.URL, localServer(`, "tools": ["echo"], "autoApprove": ["echo"]`))
+		cfg := mcpConfig(t, model.URL, localServer(`, "tools": ["echo"], "auto_approve": ["echo"]`))
 		if code := run(context.Background(), []string{"-p", "go", "--config", cfg}, &out, &errOut); code != 0 {
 			t.Fatalf("exit code %d, stderr: %s", code, errOut.String())
 		}

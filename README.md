@@ -110,19 +110,19 @@ and prints failures to stderr. `--no-mcp` starts none.
 - **Every MCP call asks first**, because a server's own claim that a tool only reads cannot be trusted. The dialog
   shows `server → tool`, the arguments, and a line saying where the server runs (its command, or the host of its
   URL). Allow for session covers that tool with any arguments. To let a tool run without asking, list it under
-  `autoApprove`: a list of tool names as the server gives them (`"autoApprove": ["search"]`), or `true` for every tool
+  `auto_approve`: a list of tool names as the server gives them (`"auto_approve": ["search"]`), or `true` for every tool
   of that server, those it adds later included (`false` is the default). `/tools` lists those as running without
   asking. MCP calls run one at a time. A call times out after 2 minutes, and Ctrl-C cancels it.
   For example, with the three servers of the [configuration](#configuration) below:
 
   ```json
-  "context7": { "url": "https://mcp.context7.com/mcp", "autoApprove": ["resolve-library-id", "query-docs"] },
-  "grep":     { "url": "https://mcp.grep.app", "autoApprove": true },
+  "context7": { "url": "https://mcp.context7.com/mcp", "auto_approve": ["resolve-library-id", "query-docs"] },
+  "grep":     { "url": "https://mcp.grep.app", "auto_approve": true },
   "toolbox":  { "command": "npx", "args": ["-y", "@qsrahman/workshop-mcp@latest"] }
   ```
 
   Calls to `context7`'s `resolve-library-id` and `query-docs` never ask, and neither does any call to `grep`. Every
-  other `context7` tool, and every `toolbox` tool, asks first (`"autoApprove": false` says the same as leaving it
+  other `context7` tool, and every `toolbox` tool, asks first (`"auto_approve": false` says the same as leaving it
   out). A list is the safer form: `true` also trusts tools the server adds later. `/tools` shows what runs without
   asking.
 - **Local servers** run with this program's environment plus their own `env`. They can therefore see variables such
@@ -274,10 +274,10 @@ One file, `~/.config/chiron/config.json` (or `$XDG_CONFIG_HOME/chiron/config.jso
     "context7": {
       "url": "https://mcp.context7.com/mcp",
       "headers": { "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}" },
-      "autoApprove": ["resolve-library-id", "query-docs"],
+      "auto_approve": ["resolve-library-id", "query-docs"],
       "enabled": true
     },
-    "grep": { "url": "https://mcp.grep.app", "autoApprove": true },
+    "grep": { "url": "https://mcp.grep.app", "auto_approve": true },
     "toolbox": {
       "command": "npx",
       "args": ["-y", "@qsrahman/workshop-mcp@latest"],
@@ -308,7 +308,7 @@ One file, `~/.config/chiron/config.json` (or `$XDG_CONFIG_HOME/chiron/config.jso
 - `"${NAME}"` in any string value is replaced from the environment, so secrets need not live in the file.
   If you do put a key in the file, keep it private: `chmod 600 ~/.config/chiron/config.json`.
 - An MCP server is either a local process (`command`, `args`, `env`) or a remote one (`url`, `headers`), plus
-  `enabled` (default true) and `autoApprove`. Giving both `command` and `url`, or neither, is an error.
+  `enabled` (default true) and `auto_approve`. Giving both `command` and `url`, or neither, is an error.
 - Custom `base_url` servers must implement the OpenAI Responses API; some OpenAI-side features may not work
   there.
 - Web search is not built in. If you want it, add a search-capable MCP server under `mcpServers`.
@@ -348,7 +348,7 @@ atomically: a failed write leaves the previous one. A conversation that never go
 ## Safety
 
 Today every MCP tool call asks for approval (see [Approvals](#approvals)) unless the server's tool is in its
-`autoApprove` list, and a server you start can do whatever its program can do, with the environment of chiron: review
+`auto_approve` list, and a server you start can do whatever its program can do, with the environment of chiron: review
 what you configure. The todo tool never asks, since it changes nothing outside chiron.
 
 Planned with the built-in tools: every file write, file edit and shell command asks for approval, with an option to

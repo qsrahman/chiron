@@ -4,6 +4,12 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Changed
+
+- **The `autoApprove` key of an MCP server is now `auto_approve`,** like every other key of the config file. The old name is
+  refused with a message that says so (`autoApprove was renamed auto_approve`): rename it in each of your `mcpServers`. The
+  value is as before: a list of tool names, `true` for every tool, or `false`.
+
 ## [0.11.0] - 2026-11-22
 
 ### Fixed

@@ -45,7 +45,7 @@ venv it creates under `e2e/.venv`). Nothing is mocked: the model is the one in y
 real stdio process. It costs a few dozen model calls and takes a few minutes; `-k name` runs the scenarios whose name
 contains `name`. The `toolbox_*` scenarios use the `toolbox` server of your own config file when it has one (and skip
 otherwise): files are written and edited only in a temporary working directory and checked on disk afterwards, the
-shell runs `echo`, one page is fetched and one Brave search is made, and your `autoApprove` list decides which calls
+shell runs `echo`, one page is fetched and one Brave search is made, and your `auto_approve` list decides which calls
 ask. It is never part of `go test`. Run it after a change to the UI, the turn loop or MCP, because the
 unit tests look at the model's state and the entries, not at the screen (a command's output that was never refreshed
 onto the screen passed every unit test and was only seen here). When a scenario fails, decide first whether the
@@ -85,7 +85,7 @@ text from a redraw, no leftover stand-in character, no banner.
   agent loop and the TUI need no change; the TUI shows every call as a card.
 - **MCP.** `internal/mcp` is the only package that imports the MCP SDK. A `Hub` starts the servers in parallel
   (`Start`), `Wait` blocks until they have answered, `Tools` returns the adapters with unique names, `Close` ends
-  everything. Its tools are never read-only and may be `tools.Trusted` (config `autoApprove`), `tools.Titled`
+  everything. Its tools are never read-only and may be `tools.Trusted` (config `auto_approve`), `tools.Titled`
   (`server → tool`) and `tools.Describer` (with a `Source`). The agent gets them through `Agent.SetTools`, only while
   idle: `main` runs `connectMCP` in the TUI's `Info.Startup`, and the UI holds prompts until it is done. Secrets
   (header and env values, URLs) never go into an error, a log or a status. Tests start the test binary itself as a
