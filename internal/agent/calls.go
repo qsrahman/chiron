@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"unicode/utf8"
 
 	"github.com/openai/openai-go/v3/responses"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/qsrahman/chiron/internal/tools"
 )
@@ -25,7 +25,6 @@ const (
 // other call runs alone, so mutations happen one at a time in the order the model gave them.
 func (a *Agent) runCalls(ctx context.Context, calls []responses.ResponseFunctionToolCall, events chan<- Event) []string {
 	outputs := make([]string, len(calls))
-	slots := make(chan struct{}, maxParallelCalls)
 	for start := 0; start < len(calls); {
 		end := start + 1
 		if a.isReadOnly(calls[start]) {
@@ -34,15 +33,15 @@ func (a *Agent) runCalls(ctx context.Context, calls []responses.ResponseFunction
 			}
 		}
 
-		var wg sync.WaitGroup
+		var group errgroup.Group
+		group.SetLimit(maxParallelCalls)
 		for i := start; i < end; i++ {
-			wg.Go(func() {
-				slots <- struct{}{}
-				defer func() { <-slots }()
+			group.Go(func() error {
 				outputs[i] = a.runCall(ctx, calls[i], events)
+				return nil
 			})
 		}
-		wg.Wait()
+		group.Wait()
 		start = end
 	}
 	return outputs
