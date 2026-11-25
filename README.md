@@ -238,26 +238,47 @@ change something runs alone, in the order the model asked.
 A cancelled or failed answer stays on screen but is not added to the conversation history, so the next
 message continues from the last complete answer.
 
-Flags:
+## Command-line options
 
-| Flag | Meaning |
-|---|---|
-| `-p "prompt"` | Send one prompt, stream the answer to stdout and exit. `Ctrl-C` cancels. Without `-p`, the chat UI starts. |
-| `--model name` | Model to use. |
-| `--base-url url` | API base URL for OpenAI-compatible servers. |
-| `--reasoning-effort level` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; `default` sends none even if the file sets one. Models that do not reason reject the setting, so it is only sent when you set it. |
-| `--streaming`, `--no-streaming` | Stream the reply as it arrives (the default), or send one request and show the whole reply at once, for servers whose streaming is broken. |
-| `--resume [id]` | Resume the latest saved conversation of this directory, or the one named `id` (or the only one whose name starts with it). `--resume id` and `--resume=id` both work. |
-| `--no-save` | Do not save this conversation. |
-| `--config path` | Config file (default below). A missing explicit file is an error. |
-| `--version` | Print the version. |
+```
+chiron [options]
+```
 
-There is no `--api-key` flag, on purpose: keys given on the command line leak through shell history and
-process lists.
+| Option | Default | Meaning |
+|---|---|---|
+| `-p "prompt"` | (chat UI) | Send one prompt, print the answer to stdout and exit. `Ctrl-C` cancels. Never saved. |
+| `--config path` | `~/.config/chiron/config.json` | Config file. A missing explicit file is an error; a missing default one is fine. |
+| `--model name` | file, else `gpt-5.4-mini` | Model to use. |
+| `--base-url url` | file, else `https://api.openai.com/v1/` | API base URL for OpenAI-compatible servers. |
+| `--reasoning-effort level` | file, else none sent | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; `default` sends none even if the file sets one. Models that do not reason reject the setting, so it is only sent when you set it. |
+| `--streaming`, `--no-streaming` | streaming | Stream the reply as it arrives, or send one request and show the whole reply at once (for servers whose streaming is broken). |
+| `--resume [id]` | | Resume the latest saved conversation of this directory, or the one named `id` (or the only one whose name starts with it). `--resume id` and `--resume=id` both work. With `-p` the session is continued but not added to. |
+| `--no-save` | | Do not save this conversation. |
+| `--no-mcp` | | Start none of the MCP servers of the config file. |
+| `--yes` | | Allow every tool call without asking. With `-p`, calls that would ask are denied unless you pass this. |
+| `--version` | | Print the version and exit. |
+
+Single or double dash both work (`-model` is `--model`). A stray argument is an error (exit status 2). There is no
+`--api-key` flag, on purpose: keys given on the command line leak through shell history and process lists.
+
+Examples:
+
+```bash
+chiron                                          # chat in the current directory
+chiron -p "Summarise the README in one line"    # one answer on stdout
+chiron --model gpt-5.4 --reasoning-effort high  # a stronger model for this run
+chiron --base-url http://localhost:11434/v1 --model qwen3 --no-streaming   # a local server
+chiron --resume                                 # latest conversation of this directory
+chiron --resume 2026-11-24                      # the one whose name starts with this
+chiron -p "Continue" --resume --yes             # continue it, non-interactively, allowing every tool call
+chiron --config ./work.json --no-mcp --no-save  # another config, no MCP servers, nothing saved
+chiron --reasoning-effort default               # ignore the file's reasoning_effort
+```
 
 ## Configuration
 
-One file, `~/.config/chiron/config.json` (or `$XDG_CONFIG_HOME/chiron/config.json`):
+One file, `~/.config/chiron/config.json` (or `$XDG_CONFIG_HOME/chiron/config.json`; `--config` names another).
+Every key is optional. A complete example:
 
 ```json
 {
@@ -282,35 +303,88 @@ One file, `~/.config/chiron/config.json` (or `$XDG_CONFIG_HOME/chiron/config.jso
       "command": "npx",
       "args": ["-y", "@qsrahman/workshop-mcp@latest"],
       "env": { "BRAVE_API_KEY": "${BRAVE_API_KEY}" },
-      "enabled": true
+      "tools": ["web_search"],
+      "instructions": true
     }
   }
 }
 ```
 
-- **Precedence:** command-line flags, then the file, then the defaults (the default model is `gpt-5.4-mini`).
-  The environment has **one** variable, `OPENAI_API_KEY`, which beats `api_key` in the file. There is deliberately
-  no variable for the base URL or the model: one for the base URL would let a project's `.envrc` send your key and
-  every prompt somewhere else, and the common names are exported by other programs. The base URL is always passed
-  to the client explicitly, so the OpenAI library's own reading of `OPENAI_BASE_URL` cannot redirect it either. (The
-  library still reads `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID` and `OPENAI_CUSTOM_HEADERS`; those cannot change where
-  the key goes.) Only this user-level file is read, never one from the working directory.
+### Top-level keys
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `model` | string | `gpt-5.4-mini` | Model name. Flag: `--model`. |
+| `base_url` | string | `https://api.openai.com/v1/` | API base URL; the server must implement the OpenAI Responses API. Flag: `--base-url`. |
+| `api_key` | string | none | API key. `OPENAI_API_KEY` in the environment beats it. Use `"${OPENAI_API_KEY}"` rather than a literal; a literal key in a file others can read draws a warning. Not needed for a local server that wants none. |
+| `reasoning_effort` | string | none sent | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. Flag: `--reasoning-effort`. |
+| `streaming` | bool | `true` | Stream replies. Flags: `--streaming`, `--no-streaming`. |
+| `max_output_tokens` | integer | `0` (no cap) | Most the model may generate for one reply, reasoning included; the server decides when unset. A reply that hits it is cut off and shown with the reason `max_output_tokens`. The summary request has its own cap (8,000). Negative is an error. |
+| `max_context_tokens` | integer | `65536` | The conversation budget: when it is exceeded, old tool output is shortened (see "Context budget"). Negative is an error. |
+| `auto_compact` | bool | `false` | Summarise old turns by itself when the budget is still exceeded. `/compact` does it on demand. |
+| `sessions` | bool | `true` | Save chat conversations (see [Sessions](#sessions)). `false` saves nothing, like `--no-save`. |
+| `mcpServers` | object | none | MCP servers by name; see below. |
+
+Examples of the smaller settings:
+
+```json
+{ "model": "gpt-5.4", "reasoning_effort": "high" }
+```
+
+```json
+{ "base_url": "http://localhost:11434/v1", "model": "qwen3", "streaming": false, "max_context_tokens": 32768 }
+```
+
+```json
+{ "max_output_tokens": 4096, "auto_compact": true, "sessions": false }
+```
+
+### `mcpServers` entries
+
+The key is the server's name (letters, digits, `_` and `-`). A server is either a **local process** (`command`) or a
+**remote one** (`url`): giving both, or neither, is an error. How they behave is described in
+[MCP servers](#mcp-servers).
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `command` | string | | Program to run (local server). |
+| `args` | string list | none | Its arguments. Only with `command`. |
+| `env` | object | none | Extra environment variables for it (added to this program's own). Only with `command`. |
+| `url` | string | | Streamable HTTP endpoint (remote server): `https`, or `http` for localhost only; no user name or password. |
+| `headers` | object | none | Headers sent to that host only. Only with `url`. |
+| `enabled` | bool | `true` | `false` keeps the entry but does not start it. |
+| `auto_approve` | `true`, `false` or list | `false` | Tools that run without asking: a list of the server's tool names, or `true` for all of them, those added later included. |
+| `tools` | string list | all | Only these tools are offered. A name the server does not have fails that server; an empty list offers none. |
+| `instructions` | bool | `false` | Add the server's own usage notes to the system prompt. |
+
+Examples:
+
+```json
+"fs":     { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] },
+"search": { "url": "https://mcp.example.com/mcp", "headers": { "Authorization": "Bearer ${SEARCH_TOKEN}" } },
+"docs":   { "url": "http://localhost:8080/mcp", "auto_approve": ["search"], "tools": ["search", "fetch"] },
+"later":  { "command": "my-server", "enabled": false }
+```
+
+### Rules
+
+- **Precedence:** command-line flags, then the file, then the defaults. The environment has **one** variable,
+  `OPENAI_API_KEY`, which beats `api_key` in the file. There is deliberately no variable for the base URL or the model:
+  one for the base URL would let a project's `.envrc` send your key and every prompt somewhere else, and the common
+  names are exported by other programs. The base URL is always passed to the client explicitly, so the OpenAI library's
+  own reading of `OPENAI_BASE_URL` cannot redirect it either. (The library still reads `OPENAI_ORG_ID`,
+  `OPENAI_PROJECT_ID` and `OPENAI_CUSTOM_HEADERS`; those cannot change where the key goes.) Only this user-level file
+  is read, never one from the working directory.
 - **A key that is not a setting is an error** that names the key and the file, so a typo such as `max_turn` is not
-  silently ignored. `base_url` and `api_key` are optional.
-- `reasoning_effort` (unset sends nothing) and `streaming` correspond to the flags above.
-- `max_output_tokens` caps what the model may generate for one reply, reasoning included (unset sends no cap, so the
-  model or server decides). A reply that hits it is cut off and shown with the reason `max_output_tokens`. The request
-  that writes a summary has a cap of its own (8,000), which this setting does not change.
-- `max_context_tokens` and `auto_compact` are described under "Context budget" above, `sessions` under [Sessions](#sessions).
+  silently ignored. The keys `context_window`, `max_turns` and `autoApprove` (now `auto_approve`) no longer exist and
+  are refused the same way.
+- **`"${NAME}"`** is replaced from the environment in `model`, `base_url` and `api_key`, and in an MCP server's
+  `command`, `args`, `env`, `url` and `headers` when the server starts (a variable that is not set fails that server;
+  the message names the variable, never a value). If you put a key in the file, keep it private:
+  `chmod 600 ~/.config/chiron/config.json`.
 - The status line shows how much of the context budget the conversation uses (for example `25.5k tokens · 39%` at the
-  right edge under the input box, of the default 65,536). Before the first response it is an estimate, marked `~`, so a new or resumed conversation shows its size at once. There is no key for the model's real context window; `context_window` is an unknown key.
-- `mcpServers` is described in [MCP servers](#mcp-servers). A typo in an entry is an error, like any other key.
-- `"${NAME}"` in any string value is replaced from the environment, so secrets need not live in the file.
-  If you do put a key in the file, keep it private: `chmod 600 ~/.config/chiron/config.json`.
-- An MCP server is either a local process (`command`, `args`, `env`) or a remote one (`url`, `headers`), plus
-  `enabled` (default true) and `auto_approve`. Giving both `command` and `url`, or neither, is an error.
-- Custom `base_url` servers must implement the OpenAI Responses API; some OpenAI-side features may not work
-  there.
+  right edge under the input box, of the default 65,536). Before the first response it is an estimate, marked `~`.
+  There is no key for the model's real context window.
 - Web search is not built in. If you want it, add a search-capable MCP server under `mcpServers`.
 
 ## Notes
