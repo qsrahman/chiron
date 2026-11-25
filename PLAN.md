@@ -354,7 +354,7 @@ workshop-mcp), then from what it learned by building the tools and evaluating th
 |---|---|---|
 | `read_file` | yes | A text file only (UTF-8, no NUL byte; a directory or a binary file is an error that says what to use). Numbered lines; `offset` and `limit`; the output is cut by size (about 16,000 characters, not by a fixed number of lines) with a footer that names the offset to continue from; a line is cut at 10,000 characters; a missing path suggests the nearest name. |
 | `list_dir` | yes | One entry per line, directories first and ending in `/`, symlinks marked `@`; capped, and says when it stopped. |
-| `search_files` | yes | `name` (a glob over paths, `**` allowed) and `contains` (a regular expression over file contents), at least one; results are paths, or `path:line: text`; capped, with a footer. Skips `.git` and `node_modules` (`.gitignore` later), reads regular files only and says how many files it skipped as too large or binary, so "no matches" never also means "not searched". |
+| `search_files` | yes | `name` (a glob over paths, `**` allowed) and `contains` (a regular expression over file contents), at least one; results are paths, or `path:line: text`; capped, with a footer. **Runs ripgrep** (`rg --files -g` for names, `rg -e` for contents), so `.gitignore` rules, hidden files, binary files and `.git` are handled by `rg`'s defaults. It is offered only when `rg` is found on `PATH` at startup; without it the tool is not registered, is not sent to the model, and is not named in the system prompt (a one-line notice says why). `rg` is run with the confined directory as its working directory, `--no-config`, no `--follow`, and the pattern after `-e` and the path after `--`, so a model-written value cannot become a flag; the context's deadline and the output cap apply. The count of binary or too-large files skipped is lost (`rg` does not report it); the footer says what was capped. |
 | `write_file` | no | Create or overwrite; parent directories are created; refuses a symlink, a directory or another file that is not regular; over an existing file it needs a read of that file in this session and fails if the file changed since. The model reads one line back; the diff goes to the approval prompt. |
 | `edit_file` | no | One change per call: `path`, `old_text`, `new_text`, `replace_all`. Exact match, then normalized (section 5.3). Same read-before-edit rule as `write_file`. A call that cannot succeed is refused before the user is asked. The model reads one line back (`Edited path (2 replacements)`). |
 | `shell` | no | `command`, `cwd`, `timeout_s`; one fresh process per call (section 5.4). |
@@ -504,12 +504,11 @@ built-in tool and no MCP server chiron is the plain chat, with the prompt that h
 | HTML to Markdown | `github.com/JohannesKaufmann/html-to-markdown/v2` (MIT, maintained) | writing a converter |
 | Parsing the search results page | `golang.org/x/net/html` (an indirect dependency already; it becomes a direct one) | a regexp over HTML |
 
-Later or only if needed: `.gitignore` rules for `search_files` and `list_dir` (ergane honours them from the repository root
+Later or only if needed: `.gitignore` rules for `list_dir` (`search_files` gets them from `rg`; ergane honours them from the repository root
 down, with a deeper file overriding a shallower one, never shows `.git`, and counts what a listing left out; an ignored
 file can still be read by name). The maintained Go options are few: `go-gitignore` and its forks have not been touched since
 2023 or 2024, and `go-git`'s `plumbing/format/gitignore` has a pattern and a matcher that need only `strings` but lives in a
-large module, so check what it adds to `go.mod` first. Also: ripgrep when it is installed (none of the other agents can rely
-on it either), a readability extractor if the converter's output is poor, `robotstxt` if the decision changes. Kept custom:
+large module, so check what it adds to `go.mod` first. Also: a readability extractor if the converter's output is poor, `robotstxt` if the decision changes. Kept custom:
 the SSRF-safe dialer, the edit normalizer and the output capper.
 
 ### 5.7 Verification
@@ -674,8 +673,9 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
   directory as a second root, which also holds the saved output of `shell`, removed when older than a day at startup; no
   `robots.txt`; no patch tool; no deny list; everything on by default with `builtin_tools` and `--no-builtin` to switch
   off; `web_fetch` built in, refusing loopback and private addresses unless `allow_private_fetch`, with a URL the user
-  typed needing no question (tried in Phase 8); `web_search` a keyless DuckDuckGo built-in on by default; `.gitignore` rules
-  in `search_files` and `list_dir` later (a library choice: section 5.6); the first phase is 5. Still to measure: the size
+  typed needing no question (tried in Phase 8); `web_search` a keyless DuckDuckGo built-in on by default; `search_files` runs
+  ripgrep and is left out of the session when `rg` is not installed (README says so; `list_dir` stays, in pure Go); `.gitignore`
+  rules in `list_dir` later (a library choice: section 5.6); the first phase is 5. Still to measure: the size
   of the definitions of all the tools, with `/context`.
 
 ## 9. Lessons from other agents (studied 2026-11-17)
