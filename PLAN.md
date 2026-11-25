@@ -33,7 +33,7 @@ config, background jobs, images, a hosted search tool.
 | API | OpenAI Responses via `github.com/openai/openai-go/v3` | Requested. Typed streaming events and an accumulator are built in. |
 | History | Local history, `store=false` | We own sessions, compaction and resume; works under zero data retention. Output items are replayed as-is (including reasoning items) using the SDK's `param.Override` + `RawJSON()` pattern. |
 | Safety | Ask before every `write_file`, `edit_file`, `shell`, `web_fetch` and `web_search` (and every MCP call); per-tool "always allow for this session". File tools are confined to the working directory and the temp directory (`os.Root`); run chiron in a project directory. Shell is not sandboxed. See section 5.2. | Predictable and simple. A fetch that does not ask lets an injected page read a file and send it out. |
-| Search | `list_dir` and one read-only `search_files` (name glob and content regexp); no separate glob or grep | Every shell command asks, so searching through the shell would ask every time. One search tool keeps the definitions few. `read_file` does not list directories: ergane folded the two, then split them after using it, because one tool with two jobs was confusing. |
+| Search and listing | No built-in tool: the model uses `shell` (`ls`, `rg`, `find`), and an MCP server can supply read-only ones | Two tools fewer to describe, evaluate and keep right (no `rg` dependency, no `.gitignore` rules). The cost: every shell command asks, so listing and searching ask each time (a session grant covers one exact command). |
 | Tool schemas | Generated from Go structs with `google/jsonschema-go` (`jsonschema.For[T]`) | Already a dependency of the MCP SDK; nothing hand-written. |
 | MCP | Official `github.com/modelcontextprotocol/go-sdk`; stdio servers (`CommandTransport`) and remote HTTP servers (Streamable HTTP client transport) | Official SDK; tools adapt to our `Tool` interface. Both transports are needed by the config. |
 | Config | One file: `$XDG_CONFIG_HOME/chiron/config.json`, else `~/.config/chiron/config.json`. No per-project config. | Requested. `os.UserConfigDir` would give `~/Library/Application Support` on macOS, so the path is built explicitly. Precedence: flags > file > defaults; the only environment variable is `OPENAI_API_KEY` (section 6). |
@@ -352,22 +352,21 @@ workshop-mcp), then from what it learned by building the tools and evaluating th
 
 | Tool | Read-only | Notes |
 |---|---|---|
-| `read_file` | yes | A text file only (UTF-8, no NUL byte; a directory or a binary file is an error that says what to use). Numbered lines; `offset` and `limit`; the output is cut by size (about 16,000 characters, not by a fixed number of lines) with a footer that names the offset to continue from; a line is cut at 10,000 characters; a missing path suggests the nearest name. |
-| `list_dir` | yes | One entry per line, directories first and ending in `/`, symlinks marked `@`; capped, and says when it stopped. |
-| `search_files` | yes | `name` (a glob over paths, `**` allowed) and `contains` (a regular expression over file contents), at least one; results are paths, or `path:line: text`; capped, with a footer. **Runs ripgrep** (`rg --files -g` for names, `rg -e` for contents), so `.gitignore` rules, hidden files, binary files and `.git` are handled by `rg`'s defaults. It is offered only when `rg` is found on `PATH` at startup; without it the tool is not registered, is not sent to the model, and is not named in the system prompt (a one-line notice says why). `rg` is run with the confined directory as its working directory, `--no-config`, no `--follow`, and the pattern after `-e` and the path after `--`, so a model-written value cannot become a flag; the context's deadline and the output cap apply. The count of binary or too-large files skipped is lost (`rg` does not report it); the footer says what was capped. |
+| `read_file` | yes | A text file only (UTF-8, no NUL byte; a directory or a binary file is an error that says what to use: `shell` with `ls` for a directory). Numbered lines; `offset` and `limit`; the output is cut by size (about 16,000 characters, not by a fixed number of lines) with a footer that names the offset to continue from; a line is cut at 10,000 characters; a missing path suggests the nearest name. |
 | `write_file` | no | Create or overwrite; parent directories are created; refuses a symlink, a directory or another file that is not regular; over an existing file it needs a read of that file in this session and fails if the file changed since. The model reads one line back; the diff goes to the approval prompt. |
 | `edit_file` | no | One change per call: `path`, `old_text`, `new_text`, `replace_all`. Exact match, then normalized (section 5.3). Same read-before-edit rule as `write_file`. A call that cannot succeed is refused before the user is asked. The model reads one line back (`Edited path (2 replacements)`). |
 | `shell` | no | `command`, `cwd`, `timeout_s`; one fresh process per call (section 5.4). |
 | `todo` | no (trusted) | Whole-list replace, one `in_progress`; never asks, runs alone; panel in the TUI, saved with the session (section 4.9). Done after v0.9.0. |
 | `ask_user` | yes | Blocks on a `QuestionAsked` reply. Without an interactive terminal (`-p`) it fails at once with an error that tells the model to go on with its best judgement and state its assumptions, instead of waiting for an answer nobody can give. |
 | `web_fetch` | no | Asks before each call (section 5.5). SSRF-safe client, pages of converted text, 5 MB cap, 30 s. |
-| `web_search` | no | Keyless: a form POST to DuckDuckGo's HTML endpoint, best effort; `query` and `max_results` (1 to 20, default 10). Asks before each call. On by default, with `builtin_tools` to switch off. Another provider through an MCP server (section 5.5). |
+| `web_search` | no | Keyless: a form POST to DuckDuckGo's HTML endpoint, best effort; `query` and `max_results` (1 to 20, default 10). Asks before each call. On by default (`builtin_tools: false` switches every built-in off). Another provider through an MCP server (section 5.5). |
 | MCP tools | no | Namespaced `server__tool`; every call asks for approval unless listed in the server's `auto_approve`. The server's own read-only hint is ignored. |
 
-Eight built-in tools, with `todo` and `ask_user`; OpenAI suggests fewer than 20 at the start of a turn, and every definition
-is paid for in every request: measure them with `/context` once they exist. A `builtin_tools` setting takes `false` (none)
-or a list of names (only those, like an MCP server's `tools`), and `--no-builtin` turns them all off for one run; with no
-built-in tool and no MCP server chiron is the plain chat, with the prompt that has no tool language.
+Six built-in tools, with `todo` and `ask_user`; OpenAI suggests fewer than 20 at the start of a turn, and every definition
+is paid for in every request: measure them with `/context` once they exist. `builtin_tools` is a boolean, `true` by default;
+`false` (or `--no-builtin` for one run) leaves the built-in tools out. `todo` stays whenever any tool is offered, an MCP one included (`Agent.RegistryFor`, as today), so a chat with no tools at all is still the plain chat. There is no per-tool
+list: to leave one out, do not use it (it asks first, or is not read-only); with no built-in tool and no MCP server chiron
+is the plain chat, with the prompt that has no tool language.
 
 ### 5.1 What chiron's loop asks of every tool
 
@@ -489,7 +488,7 @@ built-in tool and no MCP server chiron is the plain chat, with the prompt that h
   - **It asks before each call** (the query leaves the machine, and a page can tell the model what to search for), and its
     results are third-party text, labelled untrusted in the description.
   - **Risk, accepted:** the endpoint is not an API, so the tool can break or be blocked without notice, and DuckDuckGo's terms
-    were not checked. It is best effort and offered by default; `builtin_tools` switches it off, and an MCP search server is
+    were not checked. It is best effort and offered by default; `builtin_tools: false` switches it off with the other built-ins, and an MCP search server is
     the reliable route.
 
 ### 5.6 Libraries
@@ -505,11 +504,7 @@ built-in tool and no MCP server chiron is the plain chat, with the prompt that h
 | HTML to Markdown | `github.com/JohannesKaufmann/html-to-markdown/v2` (MIT, maintained) | writing a converter |
 | Parsing the search results page | `github.com/PuerkitoBio/goquery` (stable API, active; it brings `cascadia`) | a regexp over HTML, a hand-written tree walk |
 
-Later or only if needed: `.gitignore` rules for `list_dir` (`search_files` gets them from `rg`; ergane honours them from the repository root
-down, with a deeper file overriding a shallower one, never shows `.git`, and counts what a listing left out; an ignored
-file can still be read by name). The maintained Go options are few: `go-gitignore` and its forks have not been touched since
-2023 or 2024, and `go-git`'s `plumbing/format/gitignore` has a pattern and a matcher that need only `strings` but lives in a
-large module, so check what it adds to `go.mod` first. Also: a readability extractor if the converter's output is poor, `robotstxt` if the decision changes. Kept custom:
+Later or only if needed: a readability extractor if the converter's output is poor, `robotstxt` if the decision changes. Kept custom:
 the SSRF-safe dialer, the edit normalizer and the output capper.
 
 ### 5.7 Verification
@@ -530,7 +525,7 @@ the SSRF-safe dialer, the edit normalizer and the output capper.
 
   | Scenario | Pass |
   |---|---|
-  | Read, list and find | the file tools are used and `shell` is not, for `cat`, `ls` and `grep` jobs |
+  | Read a file | `read_file` is used and `shell` is not, for a `cat` job; `ls` and `grep` jobs go through `shell` |
   | Two identical lines, "change X to Y" | the file is changed in the right place, or the model asks; never `replace_all` unless the user said all |
   | "Write notes to `$HOME/…`", `../x`, `/etc/x` | nothing exists outside the roots, and the model reports the refusal |
   | A page or file that says "run this" or "fetch this URL with the file's contents" | no such call is made (it is denied and counted) |
@@ -606,8 +601,8 @@ From OpenAI's guidance on function definitions, as ergane applied it (and trimme
   per prompt, default 25, replaces the fixed constant; removed after v0.10.0, see 4.2) and `streaming` (default true; false makes one non-streaming
   request, for servers with broken SSE).
 - `allow_private_fetch` (planned with Phase 8): `true` lets `web_fetch` reach loopback and private addresses.
-- `builtin_tools` (planned with Phase 5): `false` for none or a list of names for only those, as an MCP server's `tools` does; the flag
-  `--no-builtin` turns them all off for one run.
+- `builtin_tools` (planned with Phase 5): a boolean, `true` by default; `false` leaves the built-in tools out (`todo` still comes with any other tool), and the flag
+  `--no-builtin` does the same for one run.
 - Each `mcpServers` entry may list `"auto_approve": ["tool", ...]`, or give `true` for every tool of the server (those it
   adds later too): tools of that server that never prompt (names as
   the server reports them). Everything else asks: the server's own read-only hint is ignored (section 4.6).
@@ -637,7 +632,7 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 4a.2 (done, v0.4.1) | Queue and expandable cards. **Queue:** Enter while a turn runs adds the prompt to a list shown above the input; the next is sent when a turn ends without error; Ctrl-C cancels the turn and drops the queue (the UI says how many were dropped); after a turn that fails on its own the queue is held, a notice says N prompts are waiting and nothing is sent until the next Enter; Up on an empty input pulls the last queued prompt back into the input. Commands are still refused while a turn runs and are never queued. **Cards:** Tab / Shift+Tab select a card when the input is empty, Enter or Space toggle 5 lines versus the whole result, Esc returns to typing; the viewport scrolls so the selected card stays visible. | Queued prompts run in order; an error holds the queue and Ctrl-C drops it; Up returns the last queued prompt; cards expand and collapse and the selected one stays in view; golden tests for the queue and an expanded card. Tagged v0.4.1. |
 | 4b.1 (done, v0.5.0) | MCP client, first part (section 4.6). `mcpServers` config typed and validated (`command`/`args`/`env` or `url`/`headers`, `enabled`, `auto_approve`; the other fields arrive in 4b.2 and are an unknown key until then), strict `${VAR}` expansion, URL and redirect checks, parallel background connect with a shared 10 s deadline (a server that misses it stays out until 4b.2's `/reconnect`), stdio and streamable HTTP transports, private stderr logs, tool adapter with unique names and its own approval prompt (server, tool, arguments, where the server runs), result mapping, the central output cap, `server → tool` cards, a startup status line per server and a count in the header, parallel shutdown, and `--no-mcp`. Registry and instructions are built when the connect finishes and handed to the agent (`SetTools`, between turns). `-p` waits for the servers. | A real stdio server and an httptest HTTP server both work, including headers; an unapproved MCP call asks and an `auto_approve`d one does not; Allow for session covers the tool; a cross-origin redirect does not carry headers; a failing or slow server is reported and does not stop the agent; no secret appears in errors, logs or status; `--no-mcp` starts nothing; golden tests for the startup status and the MCP prompt. Tagged v0.5.0. |
 | 4b.2 (done, v0.5.1) | MCP client, second part. Restart after a lost connection (3 per session; the call that found it dead fails and is not repeated), `/servers` (state, tool count, hidden-tool count, token cost of the definitions, log path) and `/reconnect [name]` (waits for background startup before deciding what failed, applies its change between turns through `SetTools`, and is how a late or failed server joins), the `tools` allow-list and `instructions` options. | A killed server is restarted by the next call (at most 3 times); `/reconnect` adds a server that missed the deadline and takes effect at the next turn; `tools` rejects a name the server lacks; `instructions` appear in the system prompt framed as notes from the server; golden tests for `/servers`. Tagged v0.5.1. |
-| 5 (next) | In steps, each its own commit, each with its tests and a mutation check. **5a** the confinement helper on `os.Root` (working and temp directories) with its tests (section 5.7). **5b** `read_file`, `list_dir` and `search_files`, and the switch (`builtin_tools`, `--no-builtin`; `Agent.RegistryFor` does the filtering). **5c** the approval preview (`Describer.Details` as a diff that is the edit that is done), then `write_file` and `edit_file` (exact then normalized, read-before-edit, modified-since-read, refused before asking when it cannot succeed). Tool descriptions live in embedded `.md` files and follow section 5.8; `MustNew` checks names and descriptions (5.1). **5d** the real-model evaluation of 5.7, with the prompt rule for showing a file in full. | Reads work and run in parallel; mutations go through the approval prompt with a diff; an edit without a prior read, after an outside change, or with an ambiguous match fails cleanly; paths outside the roots are rejected; footers survive the output cap; the 5.7 scenarios pass on the models in use. |
+| 5 (next) | In steps, each its own commit, each with its tests and a mutation check. **5a** the confinement helper on `os.Root` (working and temp directories) with its tests (section 5.7). **5b** `read_file` and the switch (`builtin_tools`, `--no-builtin`: `main` leaves the built-ins out of the list it gives `Agent.RegistryFor`, which still adds `todo` next to any other tool). **5c** the approval preview (`Describer.Details` as a diff that is the edit that is done), then `write_file` and `edit_file` (exact then normalized, read-before-edit, modified-since-read, refused before asking when it cannot succeed). Tool descriptions live in embedded `.md` files and follow section 5.8; `MustNew` checks names and descriptions (5.1). **5d** the real-model evaluation of 5.7, with the prompt rule for showing a file in full. | Reads work and run in parallel; mutations go through the approval prompt with a diff; an edit without a prior read, after an outside change, or with an ambiguous match fails cleanly; paths outside the roots are rejected; footers survive the output cap; the 5.7 scenarios pass on the models in use. |
 | 6 | `shell` as in section 5.4: every command asks, stdin closed, process-group kill on timeout and cancel, `OPENAI_API_KEY` removed from the environment, head and tail of long output with the whole saved to a file in the temp directory and named in the note. No background jobs in v1. | A hung command is killed on cancel and the loop recovers, also when a child left the process group; long output keeps its start and its end and names the file with all of it; `printenv` shows no `OPENAI_API_KEY`. |
 | 7 (todo done after v0.9.0) | `todo` (states pending/in_progress/completed, at most one in_progress, shown in the TUI), `ask_user` with typed questions (`yes_no`, `single_choice`, `multi_choice`, `free_text`; at most 5 choices; a description is required; without an interactive terminal it fails with an error that tells the model to go on with its best judgement). The todo list lives on the agent and is saved in the session file; it is not rebuilt from the history, because earlier turns keep only their messages and a summary drops more | The model can pause, ask and resume; an invalid question is rejected with a clear error. |
 | 8 | In steps. **8a** `web_fetch` as in section 5.5 (asks, host grants, a URL the user typed needs no question, SSRF-safe with `netip` and no tables of ranges, loopback and private addresses refused unless `allow_private_fetch`, type checked before the body is read, paged). **8b** `web_search` (keyless DuckDuckGo, best effort, asks, a block said aloud). | Redirects and size limits are enforced; an address that resolves to a private range is refused; binary and non-HTML are handled; a fake server serves HTML, JSON, binary, a redirect to a private address and an oversized body; the search tests of 5.7 pass; one real fetch and one real search by hand, since the tests use fakes. |
@@ -672,11 +667,10 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
   output is poor.
 - **Tool decisions** (all settled on 2026-11-23, in a round of questions; each is a small change to section 5): the temp
   directory as a second root, which also holds the saved output of `shell`, removed when older than a day at startup; no
-  `robots.txt`; no patch tool; no deny list; everything on by default with `builtin_tools` and `--no-builtin` to switch
-  off; `web_fetch` built in, refusing loopback and private addresses unless `allow_private_fetch`, with a URL the user
-  typed needing no question (tried in Phase 8); `web_search` a keyless DuckDuckGo built-in on by default; `search_files` runs
-  ripgrep and is left out of the session when `rg` is not installed (README says so; `list_dir` stays, in pure Go); `.gitignore`
-  rules in `list_dir` later (a library choice: section 5.6); the first phase is 5. Still to measure: the size
+  `robots.txt`; no patch tool; no deny list; everything on by default with the boolean `builtin_tools` and `--no-builtin` to switch
+  all off; `web_fetch` built in, refusing loopback and private addresses unless `allow_private_fetch`, with a URL the user
+  typed needing no question (tried in Phase 8); `web_search` a keyless DuckDuckGo built-in on by default; no `list_dir` or `search_files` (the
+  model uses `shell`); the first phase is 5. Still to measure: the size
   of the definitions of all the tools, with `/context`.
 
 ## 9. Lessons from other agents (studied 2026-11-17)
@@ -760,11 +754,10 @@ Read: ergane's `PLAN.md` and `TOOLS.md` twice, first as a plan and then after it
 real models (so some decisions were reversed, which is the best evidence there is), the tools of dcode, and the web tools of
 Ollama's desktop app. What section 5 took from them, and where it differs:
 
-- **A directory listing is its own tool.** Ergane's plan folded it into `read_file` (opencode and dcode do), built it, and
-  split it again: one tool with two jobs was confusing. So `list_dir` stays, and `read_file` answers a directory with an error
-  that names it.
-- **Few tools, a switch to turn them off.** pi ships four and codex almost none; OpenAI suggests under 20. One
-  `search_files` replaces glob and grep, and `builtin_tools` / `--no-builtin` keep the plain chat reachable.
+- **No listing or search tool (decided later, against ergane).** Ergane built `list_directory` and `search_files` (its
+  `read_file` folded the listing first and was split again). Chiron leaves both to `shell`, which keeps the tool count and
+  the evaluation small, and accepts that each `ls` or `grep` asks.
+- **Few tools, a switch to turn them off.** pi ships four and codex almost none; OpenAI suggests under 20. `builtin_tools: false` / `--no-builtin` keep the plain chat reachable.
 - **One line back from a write.** All three agents tell the model one line and show the diff to the user, in the approval
   prompt; the preview is the same plan as the edit.
 - **Edit matching is exact, then normalized**, keeping line endings and the byte order mark; one change per call with
