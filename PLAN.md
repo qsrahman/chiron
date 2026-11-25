@@ -456,10 +456,12 @@ built-in tool and no MCP server chiron is the plain chat, with the prompt that h
   refinement to try in Phase 8.
 - **The client is SSRF-safe:** http and https only; the type of the response is checked before the body is read, and
   binary is refused; the dialer's `Control` hook checks the address actually connected to, so a DNS answer that changes
-  cannot get past it, and it asks the standard library (`netip.Addr`: loopback, private, link-local, multicast,
-  unspecified and not global unicast are refused), not tables of ranges that would have to be kept right: ergane wrote
-  such tables and charset sniffing and a depth guard, then deleted them for `is_global`, `UnicodeDammit` and a catch of the
-  recursion error. Every redirect hop is checked, at most 10; the body is read through `io.LimitReader` after decompression
+  cannot get past it, and it asks `code.dny.dev/ssrf` (a maintained list of the special-purpose ranges, used as the
+  dialer's `Control`), not tables of ranges that we would have to keep right. The standard library alone is not enough: a
+  check of `netip.Addr` (tried) calls `100.64.0.0/10` (carrier-grade NAT, where Tailscale lives), `198.18.0.0/15`,
+  `192.0.0.0/24`, `2001:db8::/32` and the NAT64 prefix global unicast and lets them through. Check the package's upkeep
+  when it is added. ergane wrote ranges and charset sniffing and a depth guard, then deleted them for `is_global`,
+  `UnicodeDammit` and a catch of the recursion error. Every redirect hop is checked, at most 10; the body is read through `io.LimitReader` after decompression
   (5 MB); 30 s and the turn's context. Both layers stay: the question protects against a bad URL the user approves by
   reflex, the filter against an address that should never be reached. Loopback and private addresses, a local
   development server included, are refused by default (decided); the config setting `allow_private_fetch` allows them.
@@ -475,8 +477,8 @@ built-in tool and no MCP server chiron is the plain chat, with the prompt that h
   Brave) stay the way to use another provider, and the README says how.
   - **The request:** a form POST to `https://html.duckduckgo.com/html` with `q`, `kl` (region, empty) and `kp` (safe search,
     moderate), an honest user agent (`chiron/<version>`) and a 15 s timeout.
-  - **The parse:** `golang.org/x/net/html` (already in the module graph as an indirect dependency): each result's title link
-    and snippet; results whose link contains `y.js` are ads and skipped; a link of the form `//duckduckgo.com/l/?uddg=...` is
+  - **The parse:** `github.com/PuerkitoBio/goquery` (CSS selectors over `x/net/html`; needs Go 1.26 or newer): each result's
+    title link and snippet; results whose link contains `y.js` are ads and skipped; a link of the form `//duckduckgo.com/l/?uddg=...` is
     unwrapped to the real URL. The output is numbered: title, URL, snippet.
   - **A block is said aloud.** DuckDuckGo answers a client it dislikes with an empty page and status `202`, not an error. A
     `202`, `403` or `429`, or an empty body, returns "search was refused or returned nothing, try again later", never "no
@@ -495,14 +497,13 @@ built-in tool and no MCP server chiron is the plain chat, with the prompt that h
 | Need | Use | Instead of |
 |---|---|---|
 | Confinement, symlinks, `..` | `os.Root` (standard library) | a hand-written realpath check |
-| Globs with `**` | `github.com/bmatcuk/doublestar/v4` (MIT, maintained) | hand-rolling; `path.Match` has no `**` |
 | Regular expressions | `regexp` (RE2: matching is linear, so a model's pattern cannot hang the search, which ergane's Python needed a time limit for) | a time limit |
 | Unified diff | `go-udiff` (already in the module graph) | a diff of our own |
 | Process group and timeout | `syscall.Setpgid`, `exec.Cmd.Cancel`, `WaitDelay` | a process library |
 | Escape codes | `charmbracelet/x/ansi` (already in use) | a regexp |
-| HTTP and the SSRF check | `net/http`, `net.Dialer.Control`, `net/netip` | a client library, tables of IP ranges |
+| HTTP and the SSRF check | `net/http`, and `code.dny.dev/ssrf` as the dialer's `Control` | a client library, tables of IP ranges, a `netip` check alone (it passes CGNAT and other special ranges) |
 | HTML to Markdown | `github.com/JohannesKaufmann/html-to-markdown/v2` (MIT, maintained) | writing a converter |
-| Parsing the search results page | `golang.org/x/net/html` (an indirect dependency already; it becomes a direct one) | a regexp over HTML |
+| Parsing the search results page | `github.com/PuerkitoBio/goquery` (stable API, active; it brings `cascadia`) | a regexp over HTML, a hand-written tree walk |
 
 Later or only if needed: `.gitignore` rules for `list_dir` (`search_files` gets them from `rg`; ergane honours them from the repository root
 down, with a deeper file overriding a shallower one, never shows `.git`, and counts what a listing left out; an ignored
