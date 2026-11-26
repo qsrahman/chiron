@@ -4,6 +4,8 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-26
+
 ### Changed
 
 - **The `autoApprove` key of an MCP server is now `auto_approve`,** like every other key of the config file. The old name is
