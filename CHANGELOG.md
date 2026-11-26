@@ -10,6 +10,15 @@ All notable changes to the codebase are documented in this file. Format follows 
   refused with a message that says so (`autoApprove was renamed auto_approve`): rename it in each of your `mcpServers`. The
   value is as before: a list of tool names, `true` for every tool, or `false`.
 
+### Fixed
+
+- A `todo` call whose list cannot be read told the model `invalid arguments: invalid arguments: …`; it now says it once.
+
+### Security
+
+- `goldmark` (the Markdown parser under glamour) is upgraded to v1.7.17 for GO-2026-5320, a cross-site scripting flaw in
+  its HTML renderer. chiron renders to the terminal, not to HTML.
+
 ## [0.11.0] - 2026-11-22
 
 ### Fixed

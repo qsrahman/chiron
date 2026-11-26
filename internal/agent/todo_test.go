@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -179,6 +180,23 @@ func TestARefusedListGoesBackToTheModelAsTextAndChangesNothing(t *testing.T) {
 	}
 	if len(a.Todos()) != 0 {
 		t.Errorf("todos = %+v", a.Todos())
+	}
+}
+
+// The loop says that the arguments are invalid; the tool must not say it again.
+func TestAListThatCannotBeReadSaysSoOnce(t *testing.T) {
+	for name, arguments := range map[string]string{"not an object": `[1]`, "no list": `{}`} {
+		t.Run(name, func(t *testing.T) {
+			call := functionCall("c1", "todo", json.RawMessage(arguments))
+			srv := newFakeServer(t, callsThenAnswer(call)...)
+			a := agentWithTodo(t, srv, testSettings("m"))
+
+			f := finished(drain(t, a.Send(context.Background(), "go")), "c1")
+
+			if got := strings.Count(f.Output, "invalid arguments"); f.Outcome != CallFailed || got != 1 {
+				t.Errorf("%d times in %q (outcome %v)", got, f.Output, f.Outcome)
+			}
+		})
 	}
 }
 

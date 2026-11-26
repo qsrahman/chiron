@@ -191,10 +191,10 @@ func parseTodoArgs(arguments string) ([]TodoItem, error) {
 		Todos *[]TodoItem `json:"todos"`
 	}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		return nil, fmt.Errorf("invalid arguments: %w", err)
+		return nil, fmt.Errorf("reading the list: %w", err)
 	}
 	if args.Todos == nil {
-		return nil, errors.New(`invalid arguments: the "todos" list is missing`)
+		return nil, errors.New(`the "todos" list is missing`)
 	}
 	if err := validateTodos(*args.Todos); err != nil {
 		return nil, err
