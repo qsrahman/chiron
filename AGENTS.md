@@ -27,6 +27,13 @@ go test -race ./...   # required whenever concurrency code changes
 
 Build, vet and test must pass before a commit.
 
+Fuzz tests (`fuzz_test.go` in a package) run their seed inputs as part of `go test`. To search for new inputs, run one
+target at a time; a failing input is written to the package's `testdata/fuzz/`, and is committed with its fix:
+
+```bash
+go test ./internal/tui -run '^$' -fuzz '^FuzzRender$' -fuzztime 1m
+```
+
 Manual TUI check: build the binary and run it in a real terminal, or drive it through a pseudo-terminal
 (Python `pty`) sending a prompt and `Ctrl-C`; the TUI is not covered by the go tests' real terminal output. A pseudo-terminal check races the process exit: poll for it instead of reading it once.
 
@@ -74,7 +81,8 @@ text from a redraw, no leftover stand-in character, no banner.
   - The note the model reads names the kind of failure (`reasonOf`) and never repeats text a server wrote.
   - A cancellation stays recognisable (`errors.Is(err, context.Canceled)`) through `describeError`.
 - **Text from the model, tools and servers is sanitised** before display (`sanitize.go`, applied in `render` and to
-  the streamed text and the session info). New code that shows such text must go through the same path.
+  the streamed text and the session info). The Markdown renderer decodes HTML entities after that, so its input also goes
+  through `removeUnsafeEntities`. New code that shows such text must go through the same path.
 - **Config:** unknown keys are an error; the only environment variable is `OPENAI_API_KEY`; the client is always
   built with an explicit base URL (`newClient`), because the OpenAI library reads `OPENAI_BASE_URL` itself.
 - **Tool errors go to the model** as the tool output text, not as Go errors that abort the loop. A panic in a tool is

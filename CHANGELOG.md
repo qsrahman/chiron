@@ -12,10 +12,15 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Fixed
 
+- A tool result over 20 KiB that is not UTF-8 failed the call with a panic instead of being cut.
 - A `todo` call whose list cannot be read told the model `invalid arguments: invalid arguments: …`; it now says it once.
 
 ### Security
 
+- **A reply could drive the terminal through HTML entities.** Text was cleaned before the Markdown renderer ran, and the
+  renderer then decoded references such as `&#27;` or `&#x202e;`: a model, steered for example by a web page, could write
+  to the clipboard, move the cursor or reorder text. References to such characters are now removed before rendering.
+- Text that is not UTF-8 could come out of the cleaning with a bidirectional override that was not in it before.
 - `goldmark` (the Markdown parser under glamour) is upgraded to v1.7.17 for GO-2026-5320, a cross-site scripting flaw in
   its HTML renderer. chiron renders to the terminal, not to HTML.
 

@@ -135,7 +135,7 @@ func (m *Model) prose(text string, width int) string {
 	if m.markdown == nil {
 		return wrap(text, width)
 	}
-	out, err := m.markdown.Render(keepHyphenated(text))
+	out, err := m.markdown.Render(keepHyphenated(removeUnsafeEntities(text)))
 	if err != nil {
 		return wrap(text, width)
 	}

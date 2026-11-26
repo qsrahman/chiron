@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"html"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // unsafeText matches what could manipulate the terminal or spoof what it shows, in text that comes from the
@@ -22,7 +24,29 @@ func escape(text string) string {
 	})
 }
 
-// sanitize removes the characters described at unsafeText.
+// sanitize removes the characters described at unsafeText. Bytes that are not UTF-8 are replaced first: removing a
+// character from between two of them could join them into one of those characters.
 func sanitize(text string) string {
-	return unsafeText.ReplaceAllString(text, "")
+	return unsafeText.ReplaceAllString(strings.ToValidUTF8(text, "\uFFFD"), "")
+}
+
+// entity is anything html.UnescapeString may read as a character reference, with or without its semicolon.
+var entity = regexp.MustCompile(`&(?:#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]*);?`)
+
+// removeUnsafeEntities removes the character references that stand for what sanitize removes. The markdown renderer
+// decodes them (with html.UnescapeString), so clean text such as "&#27;" would reach the terminal as an escape. It
+// repeats until nothing changes, because removing one reference can join the text around it into another.
+func removeUnsafeEntities(markdown string) string {
+	for {
+		cleaned := entity.ReplaceAllStringFunc(markdown, func(ref string) string {
+			if unsafeText.MatchString(html.UnescapeString(ref)) {
+				return ""
+			}
+			return ref
+		})
+		if cleaned == markdown {
+			return cleaned
+		}
+		markdown = cleaned
+	}
 }
