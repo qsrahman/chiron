@@ -3,7 +3,7 @@
 A terminal AI coding agent in Go. It uses the OpenAI Responses API and a Bubble Tea TUI. It works on your machine
 through MCP servers you configure, and keeps its own todo list; built-in file, shell and web tools are planned.
 
-> **Status: v0.10.0.** You can chat with the model in a terminal UI or send a single prompt from the command line,
+> **Status: v0.11.1.** You can chat with the model in a terminal UI or send a single prompt from the command line,
 > give it tools by configuring MCP servers (every call asks for your approval unless you allow it), resume and manage
 > saved sessions, and watch the model's todo list. The built-in file, shell and web tools and `ask_user` are the next
 > phases (see [PLAN.md](PLAN.md)): until then, without MCP servers, the model cannot touch your files. This README is
