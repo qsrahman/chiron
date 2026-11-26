@@ -148,8 +148,12 @@ func TestRealAPICompact(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	a.settings.MaxContextTokens = 400 // keeps the newest turn or two
+	budget := a.settings.MaxContextTokens
+	// Small enough to keep only the newest turn or so, and large enough that the summarizer, whose input is cut to three
+	// characters per token of the budget, still reads every turn it replaces.
+	a.settings.MaxContextTokens = a.fixedTokens() + 700
 	c, err := a.Compact(ctx, "")
+	a.settings.MaxContextTokens = budget
 	if err != nil {
 		t.Fatalf("compact: %v", err)
 	}
@@ -216,7 +220,7 @@ func TestRealAPITodo(t *testing.T) {
 							t.Logf("a todo call was refused: %s", e.Output)
 						}
 					case Error:
-						t.Logf("turn failed: %v", e.Err)
+						t.Errorf("turn failed, so the rate means nothing: %v", e.Err)
 					}
 				}
 				cancel()
@@ -279,7 +283,11 @@ func TestRealAPILoopNotice(t *testing.T) {
 			done, loop := false, false
 			for event := range probe.Send(ctx, sc.prompt) {
 				if e, ok := event.(Error); ok {
-					loop = loop || strings.Contains(e.Err.Error(), "repeating")
+					if strings.Contains(e.Err.Error(), "repeating") {
+						loop = true
+					} else {
+						t.Errorf("turn failed, so the count means nothing: %v", e.Err)
+					}
 				}
 				if _, ok := event.(Done); ok {
 					done = true

@@ -96,13 +96,13 @@ def say(t, prompt, where=None):
     settle(t, where or prompt[:30])
 
 
-def ask_for_tool(t, prompt, retry=None, settle=0.5):
+def ask_for_tool(t, prompt, retry=None, pause=0.5):
     """Sends a prompt that should make the model call a tool, and waits for the approval dialog."""
     for p in (prompt, retry or prompt + " You must call the tool; do not answer in words first."):
         t.type(p)
         try:
             t.wait_for("Approval needed", 60)
-            t.pump(settle)  # the frame may still be arriving in pieces
+            t.pump(pause)  # the frame may still be arriving in pieces
             return
         except Failure:
             settle(t, "no tool call")
@@ -198,7 +198,7 @@ def approval_and_cards():
     try:
         t.wait_for("mcp 1/1", 30)
         # a key typed right after the dialog opened must not answer it, so none of the settling time is spent first
-        ask_for_tool(t, "Call the local__echo tool with the text hello. Call it exactly once.", settle=0)
+        ask_for_tool(t, "Call the local__echo tool with the text hello. Call it exactly once.", pause=0)
         t.send("y", 0.3)
         t.contains("Approval needed", "a key right after the dialog opened answered it")
         for text in ("local → echo", "text: hello", "Runs: ", "Allow", "Deny", "For the session"):
@@ -671,13 +671,13 @@ def toolbox_fetch_and_search():
         t.expect(re.search(r"\d+ lines?", t.lines[row_of(t, "✓ toolbox → fetch_url")]), "the fetch card has no line count")
         t.contains("Example Domain")
 
-        t.type("Use toolbox__brave_web_search to search for 'Go programming language' once, and name one result.")
-        t.wait_for("brave_web_search", 90)
+        t.type("Use toolbox__web_search to search for 'Go programming language' once, and name one result.")
+        t.wait_for("web_search", 90)
         t.idle(180)
-        invariants(t, "after brave_web_search")
-        t.contains("toolbox → brave_web_search")
-        if "ERROR" in t.text.split("brave_web_search")[-1][:400]:
-            raise Skip("the search failed (key, quota or network): " + " ".join(t.text.split("brave_web_search")[-1][:300].split()))
+        invariants(t, "after web_search")
+        t.contains("toolbox → web_search")
+        if "ERROR" in t.text.split("web_search")[-1][:400]:
+            raise Skip("the search failed (key, quota or network): " + " ".join(t.text.split("web_search")[-1][:300].split()))
     finally:
         t.close()
 
