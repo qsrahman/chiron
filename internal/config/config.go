@@ -75,7 +75,12 @@ type MCPServer struct {
 	Tools []string `json:"tools"`
 	// Instructions adds the server's own usage notes to the system prompt.
 	Instructions bool `json:"instructions"`
+	// StartupTimeout is how many seconds the server may take to start and list its tools. Unset uses 30.
+	StartupTimeout *int `json:"startup_timeout"`
 }
+
+// maxStartupTimeout is the longest a server may be given to start, in seconds.
+const maxStartupTimeout = 3600
 
 // AutoApprove is written as a list of the tools (by the names the server gives them) whose calls never ask, or as
 // true for every tool of the server, those it adds later included, or as false for none.
@@ -119,6 +124,9 @@ func validateServers(servers map[string]MCPServer, path string) error {
 			return fmt.Errorf("mcpServers.%s in %s: give a command or a url", name, path)
 		case s.Command != "" && len(s.Headers) > 0, s.URL != "" && (len(s.Args) > 0 || len(s.Env) > 0):
 			return fmt.Errorf("mcpServers.%s in %s: args and env go with command, headers go with url", name, path)
+		}
+		if t := s.StartupTimeout; t != nil && (*t < 1 || *t > maxStartupTimeout) {
+			return fmt.Errorf("mcpServers.%s in %s: startup_timeout must be from 1 to %d seconds, not %d", name, path, maxStartupTimeout, *t)
 		}
 	}
 	return nil

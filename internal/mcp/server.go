@@ -44,6 +44,26 @@ type server struct {
 	err       error       // why it did not start
 }
 
+// startupTimeout is how long this server may take to start.
+func (s *server) startupTimeout(o Options) time.Duration {
+	switch {
+	case s.cfg.StartupTimeout != nil:
+		return time.Duration(*s.cfg.StartupTimeout) * time.Second
+	case o.Timeout > 0:
+		return o.Timeout
+	}
+	return defaultStartupTimeout
+}
+
+// startWithin is start under the server's deadline, with a failure the deadline caused described as that.
+func (s *server) startWithin(ctx context.Context, o Options) {
+	timeout := s.startupTimeout(o)
+	ctx, cancel := context.WithTimeoutCause(ctx, timeout, context.DeadlineExceeded)
+	defer cancel()
+	s.start(ctx, o)
+	s.err = describe(ctx, s.err, timeout.String())
+}
+
 // start launches the server, connects and lists its tools. The outcome is left in the fields; a server that did not
 // start has released everything it had.
 func (s *server) start(ctx context.Context, o Options) {
@@ -178,7 +198,7 @@ func (s *server) live(ctx context.Context) (*sdk.ClientSession, error) {
 	if s.closeLog != nil {
 		s.closeLog()
 	}
-	ctx, cancel := context.WithTimeout(ctx, s.opts.timeout())
+	ctx, cancel := context.WithTimeout(ctx, s.startupTimeout(s.opts))
 	defer cancel()
 	transport, err := s.transport(true)
 	if err != nil {

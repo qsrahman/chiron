@@ -191,8 +191,9 @@ Informed by a read of muagent's `mcp_client.py` and `mcp_hub.py` (Python; see se
   again, and that server fails without stopping the others. (The three top-level fields keep the lenient
   environment fallback of section 6.) Server names may only use letters, digits, `_` and `-`.
 - **Connecting:** all enabled servers are launched before any is waited for, connect and list their tools in
-  parallel, and share one 10 s deadline counted from the launch (not configurable per server; `--no-mcp` starts none
-  for a run, in the TUI and with `-p`). The chat opens at once and shows "connecting"; a
+  parallel, each with its own deadline of `startup_timeout` seconds (default 30, since `npx` downloads a package on its
+  first run; until v0.11.1 all shared 10 s). The longest deadline bounds the wait; `--no-mcp` starts none for a run, in
+  the TUI and with `-p`. The chat opens at once and shows "connecting"; a
   prompt sent before they finish waits (up to that deadline) so the model sees the tools. Failure notices reach the
   TUI as messages, never printed over the screen. The registry is built once from the servers that connected in time;
   a late or failed server stays out for the session, and tool-list change notifications are ignored.

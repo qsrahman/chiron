@@ -14,23 +14,16 @@ import (
 	"github.com/qsrahman/chiron/internal/tools"
 )
 
-// defaultTimeout is the one deadline all servers share for starting, counted from the launch.
-const defaultTimeout = 10 * time.Second
+// defaultStartupTimeout is how long a server may take to start. It is generous because npx and the like download a
+// package on their first run.
+const defaultStartupTimeout = 30 * time.Second
 
 // Options are what the servers need besides their own configuration.
 type Options struct {
-	Timeout time.Duration               // for all servers together; 0 means 10 s
+	Timeout time.Duration               // for a server whose config gives none; 0 means 30 s
 	LogDir  string                      // where stdio servers write their error output
 	Version string                      // of this program, told to the servers
 	Lookup  func(string) (string, bool) // reads ${NAME}; nil means the environment
-}
-
-// timeout is the startup deadline.
-func (o Options) timeout() time.Duration {
-	if o.Timeout <= 0 {
-		return defaultTimeout
-	}
-	return o.Timeout
 }
 
 func (o Options) lookup() func(string) (string, bool) {
@@ -68,11 +61,10 @@ type Hub struct {
 	off     map[string]bool // the servers that are disabled
 }
 
-// Start launches every enabled server and returns at once. All of them start in parallel and share one deadline;
-// Wait says when they have all answered. A server that fails or is too slow is reported and stays out: it does not
+// Start launches every enabled server and returns at once. All of them start in parallel, each with its own
+// deadline, so the longest one bounds the wait; Wait says when they have all answered. A server that fails or is too slow is reported and stays out: it does not
 // stop the others.
 func Start(ctx context.Context, cfgs map[string]config.MCPServer, o Options) *Hub {
-	timeout := o.timeout()
 	h := &Hub{done: make(chan struct{}), opts: o, names: slices.Sorted(maps.Keys(cfgs)), off: map[string]bool{}}
 	for _, name := range h.names {
 		if cfgs[name].IsEnabled() {
@@ -82,14 +74,11 @@ func Start(ctx context.Context, cfgs map[string]config.MCPServer, o Options) *Hu
 		}
 	}
 
-	ctx, cancel := context.WithTimeoutCause(ctx, timeout, context.DeadlineExceeded)
+	ctx, cancel := context.WithCancel(ctx)
 	h.cancel = cancel
 	var wg sync.WaitGroup
 	for _, s := range h.servers {
-		wg.Go(func() {
-			s.start(ctx, o)
-			s.err = describe(ctx, s.err, timeout.String())
-		})
+		wg.Go(func() { s.startWithin(ctx, o) })
 	}
 	go func() {
 		wg.Wait()
@@ -157,15 +146,11 @@ func (h *Hub) Reconnect(ctx context.Context, name string) error {
 		}
 	}
 
-	timeout := h.opts.timeout()
-	ctx, cancel := context.WithTimeoutCause(ctx, timeout, context.DeadlineExceeded)
-	defer cancel()
 	var wg sync.WaitGroup
 	for _, s := range targets {
 		wg.Go(func() {
 			s.reset()
-			s.start(ctx, h.opts)
-			s.err = describe(ctx, s.err, timeout.String())
+			s.startWithin(ctx, h.opts)
 		})
 	}
 	wg.Wait()

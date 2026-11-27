@@ -95,7 +95,7 @@ text from a redraw, no leftover stand-in character, no banner.
   `func(ctx, Args) (string, error)`, wrap it with `tools.MustNew`, and add it to the registry in `main`. The
   agent loop and the TUI need no change; the TUI shows every call as a card.
 - **MCP.** `internal/mcp` is the only package that imports the MCP SDK. A `Hub` starts the servers in parallel
-  (`Start`), `Wait` blocks until they have answered, `Tools` returns the adapters with unique names, `Close` ends
+  (`Start`), each within its own startup timeout, `Wait` blocks until they have answered, `Tools` returns the adapters with unique names, `Close` ends
   everything. Its tools are never read-only and may be `tools.Trusted` (config `auto_approve`), `tools.Titled`
   (`server → tool`) and `tools.Describer` (with a `Source`). The agent gets them through `Agent.SetTools`, only while
   idle: `main` runs `connectMCP` in the TUI's `Info.Startup`, and the UI holds prompts until it is done. Secrets

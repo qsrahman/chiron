@@ -98,9 +98,9 @@ which allows every call for that run. No built-in tool can change anything yet; 
 ## MCP servers
 
 Servers listed under `mcpServers` in the config file give the model their tools. All enabled servers start in
-parallel when the program starts, with one 10-second deadline. The chat opens at once and the header says
-`connecting…`; a prompt you send meanwhile waits and goes out when the servers have answered, so the model sees their
-tools. Each server is then listed with how it started, and the header shows `mcp 2/3`. A server that fails, or is too
+parallel when the program starts, each with 30 seconds to answer (`startup_timeout` changes that; the first run of an
+`npx` server downloads its package). The chat opens at once and the header says `connecting…`; a prompt you send
+meanwhile waits and goes out when the servers have answered or run out of time, so the model sees their tools. Each server is then listed with how it started, and the header shows `mcp 2/3`. A server that fails, or is too
 slow, is reported and stays out for the session; it does not stop the others. With `-p` the run waits for the servers
 and prints failures to stderr. `--no-mcp` starts none.
 
@@ -357,6 +357,7 @@ The key is the server's name (letters, digits, `_` and `-`). A server is either 
 | `url` | string | | Streamable HTTP endpoint (remote server): `https`, or `http` for localhost only; no user name or password. |
 | `headers` | object | none | Headers sent to that host only. Only with `url`. |
 | `enabled` | bool | `true` | `false` keeps the entry but does not start it. |
+| `startup_timeout` | integer | `30` | Seconds the server may take to start and list its tools, from 1 to 3600. A prompt waits for it. |
 | `auto_approve` | `true`, `false` or list | `false` | Tools that run without asking: a list of the server's tool names, or `true` for all of them, those added later included. |
 | `tools` | string list | all | Only these tools are offered. A name the server does not have fails that server; an empty list offers none. |
 | `instructions` | bool | `false` | Add the server's own usage notes to the system prompt. |

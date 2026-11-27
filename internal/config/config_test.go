@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -346,6 +347,29 @@ func TestResolveTrimsTheAPIKey(t *testing.T) {
 			got, err := Resolve(File{APIKey: tt.file}, "config.json", tt.env, Flags{})
 			if err != nil || got.APIKey != tt.want {
 				t.Errorf("api key = %q, %v; want %q", got.APIKey, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestStartupTimeoutMustBeAPositiveNumberOfSeconds(t *testing.T) {
+	tests := []struct {
+		value string
+		ok    bool
+	}{{"1", true}, {"3600", true}, {"0", false}, {"-1", false}, {"3601", false}, {"1.5", false}, {`"30"`, false}}
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			data := `{"mcpServers": {"a": {"command": "x", "startup_timeout": ` + tt.value + `}}}`
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(path, io.Discard)
+			if (err == nil) != tt.ok {
+				t.Errorf("error = %v, want ok %v", err, tt.ok)
+			}
+			if err != nil && !strings.Contains(err.Error(), "startup_timeout") {
+				t.Errorf("error %q does not name the key", err)
 			}
 		})
 	}

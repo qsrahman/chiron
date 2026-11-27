@@ -7,11 +7,14 @@ All notable changes to the codebase are documented in this file. Format follows 
 ### Added
 
 - `/model` lists the models the server offers, and their names are completed after it.
+- `startup_timeout` in an MCP server's config: the seconds it may take to start.
 
 ### Changed
 
 - **Only the newest 50 saved sessions of a directory are kept.** Starting a new one deletes the older ones beyond that.
   Before, none was ever deleted.
+- Each MCP server now has 30 seconds to start (before: 10 seconds for all of them together), so a server that is slow
+  or hangs can hold the first prompt for that long.
 
 ### Fixed
 
