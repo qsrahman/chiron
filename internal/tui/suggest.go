@@ -56,7 +56,7 @@ func (m *Model) suggestions() (list []suggestion, typed bool) {
 		return nil, false
 	}
 	for _, a := range c.args(m) {
-		if strings.HasPrefix(a, strings.ToLower(rest)) {
+		if strings.HasPrefix(strings.ToLower(a), strings.ToLower(rest)) {
 			list = append(list, suggestion{accept: c.name + " " + a, label: a})
 		}
 	}

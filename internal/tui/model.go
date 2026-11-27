@@ -31,6 +31,7 @@ type Agent interface {
 	HasConversation() bool
 	Settings() agent.Settings
 	SetModel(model string)
+	Models(ctx context.Context) ([]string, error)
 	SetReasoningEffort(effort string)
 	ContextEstimate() agent.ContextEstimate
 	Compact(ctx context.Context, focus string) (agent.Compaction, error)
@@ -97,6 +98,13 @@ type compactedMsg struct {
 	err    error
 }
 
+// modelsMsg is the answer to a request for the server's models; show lists them, for /model.
+type modelsMsg struct {
+	names []string
+	err   error
+	show  bool
+}
+
 // eventMsg carries one agent event into Update; turnClosedMsg means the channel is closed.
 type eventMsg struct{ event agent.Event }
 type turnClosedMsg struct{}
@@ -144,6 +152,10 @@ type Model struct {
 	queue    queueState     // prompts typed during a turn
 	todos    []agent.Todo   // the model's todo list, as the agent last reported it
 	cards    cardState      // the tool card chosen with Tab
+
+	// models are the server's model names, for completing /model; modelsAsked keeps completion from asking again.
+	models      []string
+	modelsAsked bool
 
 	// contextTokens is the size of the conversation: counted by the server after a response, or estimated (contextEstimated)
 	// from what the next request would carry until one has come, so a new or resumed conversation shows its size too.
@@ -293,6 +305,11 @@ func (m Model) Init() tea.Cmd {
 // Update handles one message.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.update(msg)
+	// The names are asked for when they are first needed, in the background: the list opens when they come.
+	if !next.modelsAsked && strings.HasPrefix(next.input.Value(), "/model ") {
+		next.modelsAsked = true
+		cmd = tea.Batch(cmd, next.fetchModels(false))
+	}
 	next.layout() // the input grows and shrinks with its text
 	return next, cmd
 }
@@ -371,6 +388,10 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case editorDoneMsg:
 		m.finishEditor(msg)
+		return m, nil
+
+	case modelsMsg:
+		m.showModels(msg)
 		return m, nil
 
 	case compactedMsg:

@@ -35,7 +35,7 @@ Type `/` in the chat to list them; Up/Down choose, Tab completes, Esc closes. Th
 | `/clear` | Clear the screen; the conversation is kept |
 | `/reconnect [NAME]` | Start MCP servers again: the named one, or those that failed or lost their connection |
 | `/reset` | Forget the conversation and start over |
-| `/model [NAME]` | Show the model, or switch to NAME |
+| `/model [NAME]` | Show the model and list the server's models, or switch to NAME (Tab completes the names) |
 | `/effort [LEVEL]` | Show the reasoning effort, or set it (`default` sends none) |
 | `/servers` | List the MCP servers: state, tools offered (and hidden), what the definitions cost, log path |
 | `/todo` | Show the model's todo list, finished steps included |

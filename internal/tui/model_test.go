@@ -49,6 +49,10 @@ type fakeAgent struct {
 	resumedTodos []agent.Todo    // what the list is once a session was resumed
 	resumedMsgs  []agent.Message // what Messages returns once a session was resumed
 	titles       map[string]string
+
+	models     []string
+	modelsErr  error
+	modelCalls int
 }
 
 func (f *fakeAgent) Reset()                   { f.resets++; f.todos = nil }
@@ -62,7 +66,11 @@ func (f *fakeAgent) Settings() agent.Settings {
 	}
 	return s
 }
-func (f *fakeAgent) SetModel(model string)       { f.settings.Model = model }
+func (f *fakeAgent) SetModel(model string) { f.settings.Model = model }
+func (f *fakeAgent) Models(context.Context) ([]string, error) {
+	f.modelCalls++
+	return f.models, f.modelsErr
+}
 func (f *fakeAgent) SetReasoningEffort(e string) { f.settings.ReasoningEffort = e }
 func (f *fakeAgent) Compact(_ context.Context, focus string) (agent.Compaction, error) {
 	f.compactFocus = focus

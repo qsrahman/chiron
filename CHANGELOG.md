@@ -4,6 +4,10 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Added
+
+- `/model` lists the models the server offers, and their names are completed after it.
+
 ### Fixed
 
 - A server that ended a reply with a passing fault (overloaded, a rate limit, a server error) ended the turn at once.

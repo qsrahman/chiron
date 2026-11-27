@@ -35,7 +35,7 @@ func commandList() []command {
 		{name: "/reconnect", usage: "[NAME]", description: "Start MCP servers again: the named one, or those that failed", args: serverNames, run: (*Model).reconnectCommand},
 		{name: "/reset", description: "Forget the conversation and start over", run: (*Model).resetCommand},
 		{name: "/servers", description: "List the MCP servers and how they are doing", run: (*Model).serversCommand},
-		{name: "/model", usage: "[NAME]", description: "Show the model, or switch to NAME", run: (*Model).modelCommand},
+		{name: "/model", usage: "[NAME]", description: "List the server's models, or switch to NAME", args: modelNames, run: (*Model).modelCommand},
 		{name: "/effort", usage: "[LEVEL]", description: "Show the reasoning effort, or set it", args: effortLevels, run: (*Model).effortCommand},
 		{name: "/todo", description: "Show the model's todo list", run: (*Model).todoCommand},
 		{name: "/tools", description: "List the tools and which of them ask before they run", run: (*Model).toolsCommand},
@@ -132,7 +132,8 @@ func (m *Model) resetCommand(string) (tea.Cmd, error) {
 func (m *Model) modelCommand(arg string) (tea.Cmd, error) {
 	if arg == "" {
 		m.say("Model: " + m.agent.Settings().Model)
-		return nil, nil
+		m.modelsAsked = true
+		return m.fetchModels(true), nil
 	}
 	if strings.ContainsFunc(arg, unicode.IsSpace) {
 		return nil, errors.New("a model name has no spaces")
@@ -141,6 +142,42 @@ func (m *Model) modelCommand(arg string) (tea.Cmd, error) {
 	m.conversationChanged()
 	m.say("Model set to " + arg)
 	return nil, nil
+}
+
+// modelsTimeout is how long the server may take to list its models.
+const modelsTimeout = 5 * time.Second
+
+// modelNames are the values /model completes: nothing until the server has answered.
+func modelNames(m *Model) []string { return m.models }
+
+// fetchModels asks the server for its models in the background.
+func (m *Model) fetchModels(show bool) tea.Cmd {
+	a := m.agent
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), modelsTimeout)
+		defer cancel()
+		names, err := a.Models(ctx)
+		return modelsMsg{names, err, show}
+	}
+}
+
+// showModels keeps the names for completion and, for /model, lists them. A failure is only told to a user who asked.
+func (m *Model) showModels(msg modelsMsg) {
+	if msg.err == nil {
+		m.models = msg.names
+	}
+	if !msg.show {
+		return
+	}
+	switch {
+	case msg.err != nil:
+		m.say("Could not list the models: " + msg.err.Error())
+	case len(msg.names) == 0:
+		m.say("The server lists no models")
+	default:
+		m.sayTable([][2]string{{"available", strings.Join(msg.names, ", ")}})
+	}
+	m.refresh()
 }
 
 func effortLevels(*Model) []string { return append(slices.Clone(config.Efforts), "default") }

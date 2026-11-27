@@ -8,7 +8,7 @@
    /effort [LEVEL]    Show the reasoning effort, or set it
    /exit              Quit
    /help              List the commands and keys
-   /model [NAME]      Show the model, or switch to NAME
+   /model [NAME]      List the server's models, or switch to NAME
    /quit              Quit
    /reconnect [NAME]  Start MCP servers again: the named one, or those that
                       failed
