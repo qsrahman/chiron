@@ -1,13 +1,14 @@
 # chiron — Product Requirements Document
 
 Status: living document. Update it whenever a change affects scope, architecture or phases.
-Last reviewed: 2026-11-23 (the tools plan was revised twice: after ergane's plan, then after ergane built its tools; section 9.5).
+Last reviewed: 2026-11-27 (the tools plan was revised after ergane's plan, after ergane built its tools (section 9.5) and after its
+later fixes (section 9.6)).
 
 ## 1. Goal
 
 A terminal-based AI coding agent written in Go. It talks to the user in a Bubble Tea TUI, uses the
 OpenAI Responses API (`openai-go`) and operates on the local machine through tools: file read, write and edit,
-shell, web fetch, todo list and asking the user. It streams output, runs independent tools
+shell, web fetch and todo list. It streams output, runs independent tools
 concurrently, and can load extra tools from MCP servers. Web search is a small keyless built-in (DuckDuckGo, best effort);
 another provider comes through an MCP server (section 5.5). OpenAI's hosted `web_search` tool will not be used.
 
@@ -113,7 +114,7 @@ kills the whole tree.
 `TextDelta`, `Usage{InputTokens, OutputTokens}`, `Retry{Reason}`, `ToolStarted{CallID, Name, Arguments}`,
 `ToolFinished{CallID, Name, Output, Outcome}` (`CallOK`, `CallFailed`, `CallCancelled`, `CallDenied`),
 `ApprovalRequested{CallID, Tool, Summary, Details, GrantKey, Reply chan<- Decision}` (done in 4a.1),
-`QuestionAsked{Reply chan string}`, `TodoUpdated`, `Done`, `Error`. The agent returns `<-chan Event`.
+`TodoUpdated`, `Done`, `Error`. The agent returns `<-chan Event`.
 Approvals and questions are events with reply channels so any front-end (TUI now, others later) can answer them.
 
 ### 4.4 Testing strategy
@@ -350,22 +351,21 @@ From muagent's `commands.py`, the completer in `repl.py` and `tests/test_command
 ## 5. Tools (v1)
 
 Revised twice after ergane, a sibling project: first from its tools plan (drawn from opencode, pi, codex and
-workshop-mcp), then from what it learned by building the tools and evaluating them on real models (section 9.5). Only
+workshop-mcp), then from what it learned by building the tools and evaluating them on real models (section 9.5), with its later fixes added (9.6). Only
 `todo` is built here; the rest is the plan for Phases 5 to 8.
 
 | Tool | Read-only | Notes |
 |---|---|---|
-| `read_file` | yes | A text file only (UTF-8, no NUL byte; a directory or a binary file is an error that says what to use: `shell` with `ls` for a directory). Numbered lines; `offset` and `limit`; the output is cut by size (about 16,000 characters, not by a fixed number of lines) with a footer that names the offset to continue from; a line is cut at 10,000 characters; a missing path suggests the nearest name. |
-| `write_file` | no | Create or overwrite; parent directories are created; refuses a symlink, a directory or another file that is not regular; over an existing file it needs a read of that file in this session and fails if the file changed since. The model reads one line back; the diff goes to the approval prompt. |
-| `edit_file` | no | One change per call: `path`, `old_text`, `new_text`, `replace_all`. Exact match, then normalized (section 5.3). Same read-before-edit rule as `write_file`. A call that cannot succeed is refused before the user is asked. The model reads one line back (`Edited path (2 replacements)`). |
+| `read_file` | yes | A text file only (UTF-8, no NUL byte; a directory or a binary file is an error that says what to use: `shell` with `ls` for a directory). Lines as they are, without numbers (section 5.7 compares the two before this is final); `offset` and `limit`; the output is cut by size (about 16,000 characters, not by a fixed number of lines) with a footer that names the offset to continue from; a line is cut at 10,000 characters; a missing path suggests the nearest name. |
+| `write_file` | no | Create or overwrite; parent directories are created; refuses a symlink, a directory or another file that is not regular; over an existing file it needs a read of that file in this session and fails if the file changed since (a write or an edit of a file already read updates what was seen). The model reads one line back; the diff goes to the approval prompt. |
+| `edit_file` | no | One change per call: `path`, `old_text`, `new_text`, `replace_all`. Exact match, then normalized (section 5.3). No read is required first: finding `old_text` shows the model knows that text. A call that cannot succeed is refused before the user is asked. The model reads one line back (`Edited path (2 replacements)`). |
 | `shell` | no | `command`, `cwd`, `timeout_s`; one fresh process per call (section 5.4). |
 | `todo` | no (trusted) | Whole-list replace, one `in_progress`; never asks, runs alone; panel in the TUI, saved with the session (section 4.9). Done after v0.9.0. |
-| `ask_user` | yes | Blocks on a `QuestionAsked` reply. Without an interactive terminal (`-p`) it fails at once with an error that tells the model to go on with its best judgement and state its assumptions, instead of waiting for an answer nobody can give. |
 | `web_fetch` | no | Asks before each call (section 5.5). SSRF-safe client, pages of converted text, 5 MB cap, 30 s. |
 | `web_search` | no | Keyless: a form POST to DuckDuckGo's HTML endpoint, best effort; `query` and `max_results` (1 to 20, default 10). Asks before each call. On by default (`builtin_tools: false` switches every built-in off). Another provider through an MCP server (section 5.5). |
 | MCP tools | no | Namespaced `server__tool`; every call asks for approval unless listed in the server's `auto_approve`. The server's own read-only hint is ignored. |
 
-Six built-in tools, with `todo` and `ask_user`; OpenAI suggests fewer than 20 at the start of a turn, and every definition
+Six built-in tools and `todo`; OpenAI suggests fewer than 20 at the start of a turn, and every definition
 is paid for in every request: measure them with `/context` once they exist. `builtin_tools` is a boolean, `true` by default;
 `false` (or `--no-builtin` for one run) leaves the built-in tools out. `todo` stays whenever any tool is offered, an MCP one included (`Agent.RegistryFor`, as today), so a chat with no tools at all is still the plain chat. There is no per-tool
 list: to leave one out, do not use it (it asks first, or is not read-only); with no built-in tool and no MCP server chiron
@@ -416,12 +416,19 @@ is the plain chat, with the prompt that has no tool language.
 
 ### 5.3 `edit_file`
 
+- Paths, for every file tool: `~` is expanded and an absolute path is turned into one relative to its root before
+  `os.Root` sees it, since a root's methods refuse absolute paths. Both spellings of a root count: on macOS `$TMPDIR` is
+  under `/var`, a symlink to `/private/var`.
 - Try `old_text` exactly. If it is not found, try again after normalizing both sides: trailing whitespace on each line,
   smart quotes, Unicode dashes and spaces (opencode and pi both ship this, which is the evidence that it matters). A
   normalized match replaces the file's own text and keeps its indentation and its line endings (CRLF stays CRLF; a file
   with mixed endings is written back with its dominant one) and its byte order mark.
 - More than one match is an error that names the line numbers, unless `replace_all`. No match is an error that shows the
   lines of the file closest to the start of `old_text`, by a simple similarity score (standard library only).
+- Details ergane found by testing: an `old_text` of only whitespace matches only exactly (normalized, it would equal any
+  blank line); two matches that overlap are two matches, so ambiguous; a normalized match takes the unchanged first and
+  last lines from the file, not from `new_text`, and keeps the blank lines `new_text` ends with beyond those of
+  `old_text`; an edit that leaves the file as it was is an error.
 - Refused with a reason: an empty `old_text`, `old_text` equal to `new_text`, a file with a NUL byte or invalid UTF-8,
   a file over 8 MiB (use the shell).
 - **A call that would fail never asks.** The matching runs in `Validate`, which `execute` calls before the approval, so the
@@ -435,11 +442,13 @@ is the plain chat, with the prompt that has no tool language.
 ### 5.4 `shell`
 
 - `sh -c` in a fresh process each call, stdin from `/dev/null` (a command that reads it sees end-of-file instead of
-  hanging), its own process group, killed as a group on timeout (default 120 s; `timeout_s` may only lower it) or on
+  hanging), its own process group, stopped as a group (SIGTERM, then SIGKILL after a short grace) on timeout (default
+  120 s; `timeout_s` may raise it, up to 3600, or a long build could never finish) or on
   cancel (`exec.Cmd.Cancel` with `WaitDelay`, which also ends the wait for a child that left the group and still holds the
   output pipe: ergane's `run_command` hung there). The environment is the one in section 5.2.
 - Output: stdout and stderr together; a line `exit N` when the code is not zero; stderr labelled when there is any;
-  terminal escape codes stripped (`charmbracelet/x/ansi`, already in use); binary output replaced by a note; and over about
+  terminal escape codes stripped (`charmbracelet/x/ansi`, already in use); a line rewritten with carriage returns (a
+  progress bar) reduced to its last version; binary output replaced by a note; and over about
   16,000 characters the head (a quarter) and the tail with a line saying how much was left out, because a failing build
   prints its verdict last.
 - **The whole output is saved to a file in the temp directory** and the note names it, so the model can read the middle with
@@ -449,7 +458,8 @@ is the plain chat, with the prompt that has no tool language.
   the call, kept in one directory, and those older than a day are removed when chiron starts.
 - Every command asks (no read-only allowlist in v1), with the command as the grant key. No background jobs in v1: the
   description tells the model to use `cwd` and not `cd x &&`, and not to start a server or a watcher, which would run until
-  the timeout. An output stream that overflows is reported in the note.
+  the timeout. At most 10 MB of each stream is kept: a command that
+  writes more is a runaway (`yes`), so it is stopped and the note says so.
 
 ### 5.5 Web tools
 
@@ -467,6 +477,11 @@ is the plain chat, with the prompt that has no tool language.
   (5 MB); 30 s and the turn's context. Both layers stay: the question protects against a bad URL the user approves by
   reflex, the filter against an address that should never be reached. Loopback and private addresses, a local
   development server included, are refused by default (decided); the config setting `allow_private_fetch` allows them.
+- **No proxy:** the transport's `Proxy` is nil, set on purpose and tested. Through a proxy the dialer's check would see
+  the proxy's address and not the target's.
+- **Content:** ask for `text/markdown` first. From HTML take `<main>` or the single `<article>`, drop navigation,
+  footers, scripts and hidden elements, and make links absolute. A page is kept for a few minutes, so reading it in
+  parts fetches it once and every part is of the same page.
 - **Output:** HTML to Markdown (`html-to-markdown/v2`), other text as it is (the charset from the header, or `x/net/html/charset`
   when it is missing); `start_index` and `max_length` page the converted text and the footer names the next index; the
   description says the result is untrusted. `robots.txt` is not consulted (a fetch the user directed, not a crawler; opencode,
@@ -480,7 +495,8 @@ is the plain chat, with the prompt that has no tool language.
   - **The request:** a form POST to `https://html.duckduckgo.com/html` with `q`, `kl` (region, empty) and `kp` (safe search,
     moderate), an honest user agent (`chiron/<version>`) and a 15 s timeout.
   - **The parse:** `github.com/PuerkitoBio/goquery` (CSS selectors over `x/net/html`; needs Go 1.26 or newer): each result's
-    title link and snippet; results whose link contains `y.js` are ads and skipped; a link of the form `//duckduckgo.com/l/?uddg=...` is
+    title link and snippet; results of class `result--ad`, or whose link is DuckDuckGo's `/y.js`, are ads and skipped; a link that cannot be
+    parsed loses only its own result; a link of the form `//duckduckgo.com/l/?uddg=...` is
     unwrapped to the real URL. The output is numbered: title, URL, snippet.
   - **A block is said aloud.** DuckDuckGo answers a client it dislikes with an empty page and status `202`, not an error. A
     `202`, `403` or `429`, or an empty body, returns "search was refused or returned nothing, try again later", never "no
@@ -521,6 +537,9 @@ the SSRF-safe dialer, the edit normalizer and the output capper.
 - Fake HTTP servers for fetch, never the real network: HTML, JSON, binary, a redirect to a private address, an oversized body.
 - `web_search` on a saved results page: ordinary results, an ad, a `uddg` redirect and no results; a fake server answering
   `202`, `403`, `429` and an empty body each gives the "refused" message and never "no results".
+- `edit_file`: each case of section 5.3's details. Paths: `~`, an absolute path inside each root and spelled through
+  the `/var` symlink. `shell`: a progress bar, a runaway, a command that ignores SIGTERM. `web_fetch`: with
+  `HTTP_PROXY` set, no request reaches the proxy.
 - **On real models (AGENTS.md),** from ergane's evaluation: real tools on a temporary project, the permission question
   answered by a function that records and denies, at least five runs of each scenario on the models in use, the baseline
   first, and a scenario that is worse on a model blocks the change. The simulated shell must answer realistically and not
@@ -535,6 +554,8 @@ the SSRF-safe dialer, the edit normalizer and the output capper.
   | A 26 KB file, "what is the last section?" | the model continues with `offset` |
   | "Show me the contents of README.md" | the reply holds at least 90% of the lines (see below) |
   | Tests, builds | `cwd` is used, not `cd x &&`; no dev server or watcher is started |
+  | A scratch script (parse some data) | it is made in a new directory of the system temp directory, none in the project, and deleted |
+  | `read_file` with and without line numbers | edits succeed as often or more with plain lines (no number copied into `old_text`), and the `path:line` the prompt asks for in answers is still right; otherwise number the lines |
 
   **A finding to apply:** asked to show a file, ergane's model gave an excerpt, because the prompt said not to paste long
   output, the user never sees tool results, a result is capped at 16,000 characters, and a line over 2,000 characters was cut
@@ -543,6 +564,11 @@ the SSRF-safe dialer, the edit normalizer and the output capper.
   each, gpt-5.5 went from 0 of 5 to 5 of 5, a small local model stayed at 0 of 5, and the answers that must stay short ("summarize
   notes.txt in one sentence") stayed short on both. Chiron's prompt tells the model that the user sees only a short preview of
   each result, so the same trap is there; the rule is added with Phase 5 and tested.
+
+  **The scratch-script rule,** added to the prompt with Phase 5: make a new directory in the system's temporary location
+  (for example with `mktemp -d`), never in the project, run the script there and delete that directory afterwards, also
+  when it fails; no script when an answer or one tool call will do. ergane's first wording, "a new temporary directory",
+  made a model create `temp_x/` in the project.
 
 ### 5.8 Writing the tool descriptions
 
@@ -635,10 +661,10 @@ Each phase ends with: code, tests, docs review (PLAN, README, AGENTS, CHANGELOG)
 | 4a.2 (done, v0.4.1) | Queue and expandable cards. **Queue:** Enter while a turn runs adds the prompt to a list shown above the input; the next is sent when a turn ends without error; Ctrl-C cancels the turn and drops the queue (the UI says how many were dropped); after a turn that fails on its own the queue is held, a notice says N prompts are waiting and nothing is sent until the next Enter; Up on an empty input pulls the last queued prompt back into the input. Commands are still refused while a turn runs and are never queued. **Cards:** Tab / Shift+Tab select a card when the input is empty, Enter or Space toggle 5 lines versus the whole result, Esc returns to typing; the viewport scrolls so the selected card stays visible. | Queued prompts run in order; an error holds the queue and Ctrl-C drops it; Up returns the last queued prompt; cards expand and collapse and the selected one stays in view; golden tests for the queue and an expanded card. Tagged v0.4.1. |
 | 4b.1 (done, v0.5.0) | MCP client, first part (section 4.6). `mcpServers` config typed and validated (`command`/`args`/`env` or `url`/`headers`, `enabled`, `auto_approve`; the other fields arrive in 4b.2 and are an unknown key until then), strict `${VAR}` expansion, URL and redirect checks, parallel background connect with a shared 10 s deadline (a server that misses it stays out until 4b.2's `/reconnect`), stdio and streamable HTTP transports, private stderr logs, tool adapter with unique names and its own approval prompt (server, tool, arguments, where the server runs), result mapping, the central output cap, `server → tool` cards, a startup status line per server and a count in the header, parallel shutdown, and `--no-mcp`. Registry and instructions are built when the connect finishes and handed to the agent (`SetTools`, between turns). `-p` waits for the servers. | A real stdio server and an httptest HTTP server both work, including headers; an unapproved MCP call asks and an `auto_approve`d one does not; Allow for session covers the tool; a cross-origin redirect does not carry headers; a failing or slow server is reported and does not stop the agent; no secret appears in errors, logs or status; `--no-mcp` starts nothing; golden tests for the startup status and the MCP prompt. Tagged v0.5.0. |
 | 4b.2 (done, v0.5.1) | MCP client, second part. Restart after a lost connection (3 per session; the call that found it dead fails and is not repeated), `/servers` (state, tool count, hidden-tool count, token cost of the definitions, log path) and `/reconnect [name]` (waits for background startup before deciding what failed, applies its change between turns through `SetTools`, and is how a late or failed server joins), the `tools` allow-list and `instructions` options. | A killed server is restarted by the next call (at most 3 times); `/reconnect` adds a server that missed the deadline and takes effect at the next turn; `tools` rejects a name the server lacks; `instructions` appear in the system prompt framed as notes from the server; golden tests for `/servers`. Tagged v0.5.1. |
-| 5 (next) | In steps, each its own commit, each with its tests and a mutation check. **5a** the confinement helper on `os.Root` (working and temp directories) with its tests (section 5.7). **5b** `read_file` and the switch (`builtin_tools`, `--no-builtin`: `main` leaves the built-ins out of the list it gives `Agent.RegistryFor`, which still adds `todo` next to any other tool). **5c** the approval preview (`Describer.Details` as a diff that is the edit that is done), then `write_file` and `edit_file` (exact then normalized, read-before-edit, modified-since-read, refused before asking when it cannot succeed). Tool descriptions live in embedded `.md` files and follow section 5.8; `MustNew` checks names and descriptions (5.1). **5d** the real-model evaluation of 5.7, with the prompt rule for showing a file in full. | Reads work and run in parallel; mutations go through the approval prompt with a diff; an edit without a prior read, after an outside change, or with an ambiguous match fails cleanly; paths outside the roots are rejected; footers survive the output cap; the 5.7 scenarios pass on the models in use. |
-| 6 | `shell` as in section 5.4: every command asks, stdin closed, process-group kill on timeout and cancel, `OPENAI_API_KEY` removed from the environment, head and tail of long output with the whole saved to a file in the temp directory and named in the note. No background jobs in v1. | A hung command is killed on cancel and the loop recovers, also when a child left the process group; long output keeps its start and its end and names the file with all of it; `printenv` shows no `OPENAI_API_KEY`. |
-| 7 (todo done after v0.9.0) | `todo` (states pending/in_progress/completed, at most one in_progress, shown in the TUI), `ask_user` with typed questions (`yes_no`, `single_choice`, `multi_choice`, `free_text`; at most 5 choices; a description is required; without an interactive terminal it fails with an error that tells the model to go on with its best judgement). The todo list lives on the agent and is saved in the session file; it is not rebuilt from the history, because earlier turns keep only their messages and a summary drops more | The model can pause, ask and resume; an invalid question is rejected with a clear error. |
-| 8 | In steps. **8a** `web_fetch` as in section 5.5 (asks, host grants, a URL the user typed needs no question, SSRF-safe with `netip` and no tables of ranges, loopback and private addresses refused unless `allow_private_fetch`, type checked before the body is read, paged). **8b** `web_search` (keyless DuckDuckGo, best effort, asks, a block said aloud). | Redirects and size limits are enforced; an address that resolves to a private range is refused; binary and non-HTML are handled; a fake server serves HTML, JSON, binary, a redirect to a private address and an oversized body; the search tests of 5.7 pass; one real fetch and one real search by hand, since the tests use fakes. |
+| 5 (next) | In steps, each its own commit, each with its tests and a mutation check. **5a** the confinement helper on `os.Root` (working and temp directories) with its tests (section 5.7). **5b** `read_file` and the switch (`builtin_tools`, `--no-builtin`: `main` leaves the built-ins out of the list it gives `Agent.RegistryFor`, which still adds `todo` next to any other tool). **5c** the approval preview (`Describer.Details` as a diff that is the edit that is done), then `write_file` (read-before-write, modified-since-read) and `edit_file` (exact then normalized, refused before asking when it cannot succeed). Tool descriptions live in embedded `.md` files and follow section 5.8; `MustNew` checks names and descriptions (5.1). **5d** the real-model evaluation of 5.7, with the prompt rules for showing a file in full and for scratch scripts, and the line-number comparison. | Reads work and run in parallel; mutations go through the approval prompt with a diff; an overwrite without a prior read or after an outside change, and an edit with no or an ambiguous match, fail cleanly; paths outside the roots are rejected; footers survive the output cap; the 5.7 scenarios pass on the models in use. |
+| 6 | `shell` as in section 5.4: every command asks, stdin closed, process-group stop on timeout and cancel, runaway output stopped, `OPENAI_API_KEY` removed from the environment, head and tail of long output with the whole saved to a file in the temp directory and named in the note. No background jobs in v1. | A hung command is killed on cancel and the loop recovers, also when a child left the process group; long output keeps its start and its end and names the file with all of it; `printenv` shows no `OPENAI_API_KEY`. |
+| 7 (done after v0.9.0) | `todo` (states pending/in_progress/completed, at most one in_progress, shown in the TUI). The list lives on the agent and is saved in the session file; it is not rebuilt from the history, because earlier turns keep only their messages and a summary drops more. `ask_user`, once part of this phase, is not in v1 (section 9.6) | See section 4.9. |
+| 8 | In steps. **8a** `web_fetch` as in section 5.5 (asks, host grants, a URL the user typed needs no question, SSRF-safe with `code.dny.dev/ssrf` as the dialer's `Control`, no proxy, loopback and private addresses refused unless `allow_private_fetch`, type checked before the body is read, paged). **8b** `web_search` (keyless DuckDuckGo, best effort, asks, a block said aloud). | Redirects and size limits are enforced; an address that resolves to a private range is refused; binary and non-HTML are handled; a fake server serves HTML, JSON, binary, a redirect to a private address and an oversized body; the search tests of 5.7 pass; one real fetch and one real search by hand, since the tests use fakes. |
 | 9a (done, v0.6.0) | Compaction and budget (section 4.7). `max_context_tokens` budget over the whole request, estimated and corrected by the server's `usage.input_tokens`; **automatic** in-turn shortening of the tool results of earlier rounds when the next request would pass the budget; `/compact [focus]` summarises the oldest turns with the chat model (headings, refusal rules, a summary that is notes and not instructions, always one summary, never an item of the history); `auto_compact: true` does the same before a turn at 75% (off by default); one retry after a server refuses a request as too long; `/summary` and the budget rows of `/context`. | A long conversation is summarised and still answers questions about the early turns (checked against a real model); a bad summary is refused and the history stays whole; `/retry` and `/undo` leave a valid history after a summary; shortened results say how much is hidden; `/context` shows the budget and where the summary starts. Tagged v0.6.0. |
 | 9b (done, v0.6.1; after v0.11.1 only the newest 50 of a directory are kept) | Sessions. Every conversation is saved automatically after each turn (JSON in `$XDG_STATE_HOME/chiron/sessions/`, directory `0700`, files `0600`, written atomically; opt out with `sessions: false` or `--no-save`); `--resume` resumes the latest session of this directory and `--resume ID` a named one (v0.6.1 had `--continue` for the first; it was folded into `--resume` after v0.7.0), `/sessions` opens a list of this directory's sessions that resumes the chosen one in place or deletes it after a confirmation (not the one in use); the transcript (messages and tool cards) is rebuilt from the saved items; reasoning items are dropped when the model or endpoint differs from the one that wrote them. | A resumed session continues and answers about what came before; a file is private and a failed write never loses the previous file; opting out writes nothing; a resumed history is valid (every call has its output). Tagged v0.6.1. |
 | 9c (done, v0.6.2) | Input niceties. Prompt history: **Up and Down recall earlier prompts** while the input is empty (or holds an unedited recalled prompt), persisted in a private file (about 1,000 entries), with Ctrl-R search; this replaces Up/Down line scrolling, which goes back to PgUp/PgDn and the mouse wheel (a queued prompt is still taken back first by Up); `$EDITOR` for a long prompt (`tea.ExecProcess`); Ctrl-Z suspend (`tea.Suspend`). | Up and Down walk through the history and back to the draft; a recalled prompt can be edited; history survives a restart and holds no duplicates in a row; Ctrl-R finds an old prompt; the editor's text comes back as the prompt; the live end-to-end check is updated for the changed keys. Tagged v0.6.2. |
@@ -682,9 +708,9 @@ Crush (`charmbracelet/crush`) is the reference; gocode (`firebitsbr/gocode`) is 
 never invoked, permissions defined in config but never enforced, so it was only a source of ideas.
 
 Adopted (see the phase table): a real system prompt, loop detection, stream idle timeout, usage and context
-tracking, queued prompts, scoped session grants with a Deny-first dialog, read-before-edit and modified-since-read
+tracking, queued prompts, scoped session grants with a Deny-first dialog, read-before-write and modified-since-read
 checks, diffs in approvals, view limits, output cap (head and tail, with the whole saved to a file; section 5.4), a one-in_progress todo rule, typed
-questions, embedded tool descriptions, expandable tool cards with spinner and timing.
+questions (later dropped, section 9.6), embedded tool descriptions, expandable tool cards with spinner and timing.
 
 Decided against for now: a read-only shell allowlist (would add `mvdan.cc/sh` and a list to keep strict),
 background jobs, whitespace-tolerant edit fallback, `multiedit`, hooks, sub-agents, LSP, SQLite, multiple
@@ -765,7 +791,7 @@ Ollama's desktop app. What section 5 took from them, and where it differs:
   prompt; the preview is the same plan as the edit.
 - **Edit matching is exact, then normalized**, keeping line endings and the byte order mark; one change per call with
   `replace_all`; an ambiguous match names its lines, a missing one shows the closest. Chiron adds read-before-edit and
-  modified-since-read, which none of them has, and refuses an edit that cannot succeed before asking (ergane asks first).
+  modified-since-read, which none of them has (section 9.6 keeps them for `write_file` only), and refuses an edit that cannot succeed before asking (ergane asks first).
   No patch tool for any model.
 - **Tools cap themselves below the global cut and keep their footer** (ergane's constraint 1; dcode's `NOTE_RESERVE`).
 - **Shell:** stdin closed, process-group kill with `WaitDelay` for a child that left the group, head and tail, and the whole
@@ -798,3 +824,24 @@ Ollama's desktop app. What section 5 took from them, and where it differs:
 Not adopted: pictures in `read_file` (ergane built them: sniffing the bytes, a size limit, and a refusal remembered for the
 session; chiron has no use yet), `edits[]` and a dry run, a hosted search tool, ergane's TLS impersonation and spoofed
 headers for search, and `robots.txt` for `web_fetch`.
+
+### 9.6 Lessons from ergane's later work (2026-11-27)
+
+Read: ergane after its tools were built and used (its changes of 2026-11-24 to 27, and its code). Taken now: a fault a
+server reports inside a reply is retried when it passes and shortens the request when it says "too long", error bodies of
+compatible servers are read, the API key is trimmed (all in section 4.7 and the changelog), `/model` lists the server's
+models, only the newest 50 sessions of a directory are kept, and `startup_timeout` per MCP server. Taken into section 5:
+the `edit_file`, path, `shell` and web details above and the scratch-script rule.
+
+Simplified, after ergane:
+
+- **No `ask_user` in v1.** Ergane has none: the prompt tells the model to ask one short question in its reply, which
+  needs no tool, event, dialog or `-p` rule. It saves a tool definition in every request too.
+- **Read-before-write for `write_file` only** (this departs from section 9.5, which had it for `edit_file` too, and
+  ergane has neither): an edit must already quote the file's text, an overwrite shows no such knowledge.
+- **Plain lines from `read_file`,** to be confirmed in 5d. The open risk is the prompt's request for `path:line` in
+  answers, which numbered lines serve.
+
+Not taken: pictures from tools, a `read_only` switch per MCP server (`auto_approve` covers it), automatic summaries on
+by default, and discarding type-ahead before a question (the dialog's half-second guard serves).
+
