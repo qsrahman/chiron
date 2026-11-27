@@ -334,3 +334,19 @@ func TestDefaultPathAndStateDirFailTogetherWithoutAHome(t *testing.T) {
 		t.Errorf("StateDir() = %q, %v: want no path and an error", p, err)
 	}
 }
+
+func TestResolveTrimsTheAPIKey(t *testing.T) {
+	tests := []struct{ name, env, file, want string }{
+		{"from the environment", "sk-env\n", "sk-file", "sk-env"},
+		{"from the file", "", "  sk-file\r\n", "sk-file"},
+		{"a blank variable is not set", " \n", "sk-file", "sk-file"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Resolve(File{APIKey: tt.file}, "config.json", tt.env, Flags{})
+			if err != nil || got.APIKey != tt.want {
+				t.Errorf("api key = %q, %v; want %q", got.APIKey, err, tt.want)
+			}
+		})
+	}
+}

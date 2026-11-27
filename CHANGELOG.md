@@ -14,6 +14,8 @@ All notable changes to the codebase are documented in this file. Format follows 
   no longer taken for one.
 - Error answers from compatible servers are read: `{"error": "..."}` showed a JSON decoding error instead of the status,
   and `detail`, a plain `message` or plain text showed only the status text.
+- Spaces and line ends around the API key are removed. A key that ended in a newline failed as if the server could not
+  be reached.
 
 ## [0.11.1] - 2026-11-26
 

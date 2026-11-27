@@ -320,7 +320,7 @@ Every key is optional. A complete example:
 |---|---|---|---|
 | `model` | string | `gpt-5.4-mini` | Model name. Flag: `--model`. |
 | `base_url` | string | `https://api.openai.com/v1/` | API base URL; the server must implement the OpenAI Responses API. Flag: `--base-url`. |
-| `api_key` | string | none | API key. `OPENAI_API_KEY` in the environment beats it. Use `"${OPENAI_API_KEY}"` rather than a literal; a literal key in a file others can read draws a warning. Not needed for a local server that wants none. |
+| `api_key` | string | none | API key. `OPENAI_API_KEY` in the environment beats it. Spaces and line ends around either are removed. Use `"${OPENAI_API_KEY}"` rather than a literal; a literal key in a file others can read draws a warning. Not needed for a local server that wants none. |
 | `reasoning_effort` | string | none sent | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. Flag: `--reasoning-effort`. |
 | `streaming` | bool | `true` | Stream replies. Flags: `--streaming`, `--no-streaming`. |
 | `max_output_tokens` | integer | `0` (no cap) | Most the model may generate for one reply, reasoning included; the server decides when unset. A reply that hits it is cut off and shown with the reason `max_output_tokens`. The summary request has its own cap (8,000). Negative is an error. |

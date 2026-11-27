@@ -245,9 +245,10 @@ func Resolve(file File, path string, apiKeyEnv string, flags Flags) (Config, err
 	}
 
 	return Config{
-		Model:            cmp.Or(flags.Model, file.Model, DefaultModel),
-		BaseURL:          cmp.Or(flags.BaseURL, file.BaseURL),
-		APIKey:           cmp.Or(apiKeyEnv, file.APIKey),
+		Model:   cmp.Or(flags.Model, file.Model, DefaultModel),
+		BaseURL: cmp.Or(flags.BaseURL, file.BaseURL),
+		// Trimmed: a line end picked up from a file or a variable cannot go into an HTTP header.
+		APIKey:           cmp.Or(strings.TrimSpace(apiKeyEnv), strings.TrimSpace(file.APIKey)),
 		ReasoningEffort:  effort,
 		Streaming:        streaming,
 		MCPServers:       file.MCPServers,
