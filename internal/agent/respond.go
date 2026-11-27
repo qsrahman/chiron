@@ -18,6 +18,10 @@ import (
 // connection. Tools only run after a complete response, so a retry repeats a request, never an action.
 const streamRetries = 2
 
+// defaultBusyDelay is the pause before a server that reported a passing fault is asked again: this long before the
+// first retry, twice as long before the second.
+const defaultBusyDelay = 2 * time.Second
+
 // defaultIdleTimeout is how long a response stream may stay silent before the request is abandoned. It is
 // generous because reasoning models can think for a while between events.
 const defaultIdleTimeout = 2 * time.Minute
@@ -119,19 +123,34 @@ func (a *Agent) input(items []item) []responses.ResponseInputItemUnionParam {
 
 // respond makes one request and returns the model's final response, whatever its status; the caller judges
 // it with responseProblem. Text is sent as events before the status is looked at, so a partial reply is never
-// hidden. A stream that breaks is sent again up to streamRetries times, with a Retry event each time.
+// hidden. A request whose stream breaks, or whose server reports a fault that passes (after a pause), is sent again
+// up to streamRetries times, with a Retry event each time. A failure that says the request was too long is returned
+// as an error, for the caller to shorten it.
 func (a *Agent) respond(ctx context.Context, items []item, events chan<- Event) (*responses.Response, error) {
 	p := a.request(items)
+	send := a.streamOnce
 	if !a.settings.Streaming {
-		return a.respondOnce(ctx, p, events)
+		send = a.respondOnce
 	}
 	for attempt := 1; ; attempt++ {
-		response, err := a.streamOnce(ctx, p, events)
-		var cut *streamCut
-		if !errors.As(err, &cut) || attempt > streamRetries {
+		response, err := send(ctx, p, events)
+		if err == nil {
+			if fault := retryableFault(response); fault != nil {
+				response, err = nil, fault
+			}
+		}
+		reason, busy, ok := retryReason(err)
+		if !ok || attempt > streamRetries {
 			return response, err
 		}
-		events <- Retry{Reason: fmt.Sprintf("%s; trying again (%d of %d)", cut.reason, attempt, streamRetries)}
+		events <- Retry{Reason: fmt.Sprintf("%s; trying again (%d of %d)", reason, attempt, streamRetries)}
+		if busy {
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("waiting to try again: %w", ctx.Err())
+			case <-time.After(time.Duration(attempt) * a.busyDelay):
+			}
+		}
 	}
 }
 
@@ -148,7 +167,7 @@ func (a *Agent) respondOnce(ctx context.Context, p responses.ResponseNewParams, 
 }
 
 // streamOnce streams one request. It returns a *streamCut if the stream stopped without a final response and
-// without saying why; any other error would get the same answer again.
+// without saying why, and a *streamFault if the server reported an error inside it.
 func (a *Agent) streamOnce(parent context.Context, p responses.ResponseNewParams, events chan<- Event) (*responses.Response, error) {
 	// Abandon the request if the stream goes silent. The timer restarts on every event.
 	ctx, cancel := context.WithCancelCause(parent)
@@ -162,7 +181,7 @@ func (a *Agent) streamOnce(parent context.Context, p responses.ResponseNewParams
 	var (
 		final      *responses.Response
 		done       []responses.ResponseOutputItemUnion // finished items, for servers that leave them out of the final event
-		serverSaid string                              // the reason of an "error" event
+		serverSaid *streamFault                        // what an "error" event said
 		started    bool
 	)
 	for stream.Next() {
@@ -178,10 +197,7 @@ func (a *Agent) streamOnce(parent context.Context, p responses.ResponseNewParams
 			r := event.Response
 			final = &r
 		case "error":
-			serverSaid = "Stream error: " + event.Message
-			if event.Code != "" {
-				serverSaid = fmt.Sprintf("Stream error: %s: %s", event.Code, event.Message)
-			}
+			serverSaid = newStreamError(event.Code, event.Message)
 		}
 	}
 
@@ -191,16 +207,17 @@ func (a *Agent) streamOnce(parent context.Context, p responses.ResponseNewParams
 		switch {
 		case errors.Is(context.Cause(ctx), errStreamIdle):
 			return nil, fmt.Errorf("%w for %s", errStreamIdle, a.idleTimeout)
-		case parent.Err() != nil, errors.As(err, &api), errors.As(err, &streamErr), !started:
-			// Cancelled, refused by the API, an error event, or a request that never started (which the
-			// SDK already retried): the same request would fail the same way.
+		case parent.Err() == nil && errors.As(err, &streamErr):
+			return nil, faultOfEvent(streamErr)
+		case parent.Err() != nil, errors.As(err, &api), !started:
+			// Cancelled, refused by the API, or a request that never started (which the SDK already retried).
 			return nil, fmt.Errorf("streaming response: %w", err)
 		}
 		return nil, &streamCut{reason: "Stream cut off: " + strings.TrimRight(err.Error(), ".")}
 	}
 	if final == nil {
-		if serverSaid != "" {
-			return nil, errors.New(serverSaid) // the server said why; the same request would get the same answer
+		if serverSaid != nil {
+			return nil, serverSaid
 		}
 		return nil, &streamCut{reason: "Stream ended without a final response"}
 	}

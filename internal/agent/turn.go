@@ -176,6 +176,7 @@ func (a *Agent) shrink(ctx context.Context, t *turnState, prompt string, events 
 			return false
 		}
 	}
-	events <- Notice{Text: "The request was too long for the model; trying again, shorter"}
+	// A Retry, so that a front-end drops any text the failed attempt streamed.
+	events <- Retry{Reason: "The request was too long for the model; trying again, shorter"}
 	return true
 }

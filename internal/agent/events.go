@@ -61,7 +61,8 @@ type Usage struct{ InputTokens, OutputTokens int64 }
 // TodoUpdated reports that the model changed its todo list, which is Items as it is now; an empty list was cleared.
 type TodoUpdated struct{ Items []Todo }
 
-// Retry reports that a request is being sent again: a stream broke, or the model sent an empty reply. A
+// Retry reports that a request is being sent again: a stream broke, the server reported a passing fault or that the
+// request was too long, or the model sent an empty reply. A
 // front-end should drop the text it streamed for the attempt that failed, since the reply starts over.
 type Retry struct{ Reason string }
 

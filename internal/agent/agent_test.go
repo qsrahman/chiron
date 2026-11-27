@@ -353,13 +353,13 @@ func TestNonStreamingMode(t *testing.T) {
 
 func TestFailedFirstRoundSavesNothing(t *testing.T) {
 	srv := newFakeServer(t,
-		sse(failedEvent("server_error", "boom")),
+		sse(failedEvent("invalid_prompt", "boom")),
 		sse(textDelta("ok"), completed("ok")),
 	)
 	a := newTestAgent(srv)
 
 	events := drain(t, a.Send(context.Background(), "will fail"))
-	if err := lastError(t, events); !strings.Contains(err.Error(), "Response failed: server_error: boom") {
+	if err := lastError(t, events); !strings.Contains(err.Error(), "Response failed: invalid_prompt: boom") {
 		t.Errorf("error = %v", err)
 	}
 
@@ -415,7 +415,7 @@ func TestStreamThatKeepsBreakingGivesUp(t *testing.T) {
 	}
 }
 
-func TestErrorEventIsNotRetried(t *testing.T) {
+func TestALastingErrorEventIsNotRetried(t *testing.T) {
 	srv := newFakeServer(t, sse(errorEvent("rate_limit", "slow down")))
 	a := newTestAgent(srv)
 

@@ -162,8 +162,8 @@ func TestARefusalAsTooLongShortensEarlierResultsAndTriesAgain(t *testing.T) {
 	if out, _ := outputsOf(t, srv.request(t, 2))[0]["output"].(string); !strings.Contains(out, "characters hidden") {
 		t.Error("the second try should carry a shorter result")
 	}
-	if !hasNotice(events, "too long for the model") {
-		t.Error("the user should be told")
+	if got := retries(events); len(got) != 1 || !strings.Contains(got[0].Reason, "too long for the model") {
+		t.Errorf("the user should be told: %+v", got)
 	}
 }
 

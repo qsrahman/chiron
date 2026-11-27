@@ -6,6 +6,12 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ### Fixed
 
+- A server that ended a reply with a passing fault (overloaded, a rate limit, a server error) ended the turn at once.
+  The request is now sent again, up to twice, after a pause.
+- A request refused as too long inside a reply (an error in the stream, or a failed response) is now shortened and sent
+  again, like one refused with an HTTP error.
+- More ways of saying "too long" are recognized (such as "too many input tokens"), and a rate limit worded in tokens is
+  no longer taken for one.
 - Error answers from compatible servers are read: `{"error": "..."}` showed a JSON decoding error instead of the status,
   and `detail`, a plain `message` or plain text showed only the status text.
 

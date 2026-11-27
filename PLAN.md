@@ -253,7 +253,8 @@ From a read of muagent's `agent.py`, `context.py`, `compaction.py` and `TURN.md`
 | failed, refused, no text, other status | nothing, unless a round already ran | the matching message |
 | empty reply | retried once, with a notice | notice, then the reply |
 | stream breaks (no final event, no `error` event, or connection lost) | retried up to twice if nothing ran | notice, streamed text cleared, reply |
-| stream ends with an `error` event | as a failure (the same request would get the same answer) | the server's reason |
+| the server reports a passing fault (an `error` event, an `error` object in the stream or a failed response; overloaded, rate limit, server error) | retried up to twice, after 2 s and 4 s; then as a failure | notice, streamed text cleared, reply |
+| any other fault reported in the stream | as a failure (the same request would get the same answer) | the server's reason |
 | loop stop, idle timeout | whole turn with a closing note | the message |
 | context budget exceeded after shortening | whole turn with results dropped, closing note | the message |
 | cancelled (Ctrl-C) | after a completed round: whole turn, open calls answered as interrupted, closing note; before: nothing | `Cancelled` |
@@ -281,7 +282,8 @@ with the server's `usage.input_tokens` when present.
 - **The summary** goes first in every request as a user message that says it is notes about what happened and not
   instructions (it may repeat text from a web page that tried to give orders). It is not an item of the history, so
   `/undo` and `/retry` keep working on later turns.
-- **A server that refuses a request as too long** (HTTP 400 or 413 with `context_length_exceeded` or similar wording)
+- **A server that refuses a request as too long** (HTTP 400 or 413, or a fault inside the response, with
+  `context_length_exceeded` or similar wording; wording about a rate limit does not count)
   gets one retry: summarise before the first round, otherwise shorten earlier results.
 
 ### 4.8 Slash commands (Phase 3.8 onwards)

@@ -30,20 +30,40 @@ var statusHints = map[int]string{
 	http.StatusTooManyRequests: "The account is out of quota, or rate limited.",
 }
 
-var overflowWording = regexp.MustCompile(`(context|token).*(length|window|limit|exceed)`)
+var (
+	overflowWording = regexp.MustCompile(`too long` +
+		`|(context|token).*(length|window|limit|exceed)` +
+		`|exceed\w*.{0,60}(context|token)` +
+		`|input (length|size).{0,40}exceed` +
+		`|too many (input |prompt )?tokens`)
+	// A limit on how fast, not on how long, which may be worded in tokens too.
+	rateWording = regexp.MustCompile(`rate.?limit|per (second|minute|hour|day)`)
+)
 
-// isContextOverflow reports whether a server refused a request for being longer than its context window.
+const tooLongHint = "The conversation is too long for the model."
+
+// saysOverflow reports whether an error's code or words say that the request was longer than the context window.
 // Servers word it in their own way; OpenAI sends the code context_length_exceeded.
+func saysOverflow(code, message string) bool {
+	if code == "context_length_exceeded" {
+		return true
+	}
+	text := strings.ToLower(message)
+	return !rateWording.MatchString(text) && overflowWording.MatchString(text)
+}
+
+// isContextOverflow reports whether a server refused a request for being longer than its context window, at once or
+// inside a response.
 func isContextOverflow(err error) bool {
+	var fault *streamFault
+	if errors.As(err, &fault) {
+		return fault.overflow()
+	}
 	var api *openai.Error
 	if !errors.As(err, &api) || (api.StatusCode != http.StatusBadRequest && api.StatusCode != http.StatusRequestEntityTooLarge) {
 		return false
 	}
-	if api.Code == "context_length_exceeded" {
-		return true
-	}
-	text := strings.ToLower(api.Message)
-	return strings.Contains(text, "too long") || overflowWording.MatchString(text)
+	return saysOverflow(api.Code, api.Message)
 }
 
 // describeError returns err with a message for the user. The SDK's own text for an API error is only the
@@ -53,6 +73,7 @@ func describeError(err error) error {
 	var already *described
 	var api *openai.Error
 	var urlErr *url.Error
+	var fault *streamFault
 	switch {
 	case errors.Is(err, context.Canceled), errors.As(err, &already):
 		return err
@@ -68,12 +89,14 @@ func describeError(err error) error {
 		text := fmt.Sprintf("API error %d%s: %s", api.StatusCode, code, message)
 		hint := statusHints[api.StatusCode]
 		if isContextOverflow(err) {
-			hint = "The conversation is too long for the model."
+			hint = tooLongHint
 		}
 		if hint != "" {
 			text += " " + hint
 		}
 		return &described{text, err}
+	case errors.As(err, &fault) && fault.overflow():
+		return &described{fault.text + " " + tooLongHint, err}
 	case errors.As(err, &urlErr):
 		// The URL itself is left out of the text: it may carry what should not be shown.
 		return &described{fmt.Sprintf("%v. Check base_url in the config file and the network.", urlErr.Err), err}
@@ -86,6 +109,7 @@ func describeError(err error) error {
 func reasonOf(err error) string {
 	var api *openai.Error
 	var cut *streamCut
+	var fault *streamFault
 	switch {
 	case errors.Is(err, context.Canceled):
 		return "interrupted by the user"
@@ -95,6 +119,8 @@ func reasonOf(err error) string {
 		return fmt.Sprintf("API error %d", api.StatusCode)
 	case errors.As(err, &cut):
 		return cut.reason
+	case errors.As(err, &fault):
+		return "the server reported an error"
 	}
 	return "an error occurred"
 }

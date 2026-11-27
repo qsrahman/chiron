@@ -163,6 +163,8 @@ because tool language in such a prompt makes some models type tool calls as text
 - **A stream that breaks** (it ends with no final response, or the connection drops) is sent again, up to twice,
   with a notice; the text of the failed attempt is dropped from the screen. In `-p` mode that text is already on
   stdout, so after a retry the answer can start over (the notice goes to stderr).
+- **A server that reports a passing fault** inside a reply (overloaded, a rate limit, a server error) is asked again,
+  up to twice, after 2 and then 4 seconds, in the same way. Other faults end the turn with the server's reason.
 - **Error answers from compatible servers** are read in their various shapes (`error` as text, `detail`, `errors`, a
   plain `message` or plain text), so the reason is shown and a request refused as too long is recognized.
 - **An empty reply** is asked for again once. A refusal, a failed or incomplete response, or an API error ends the
@@ -182,7 +184,7 @@ because tool language in such a prompt makes some models type tool calls as text
   server sends back. Keep it well below the model's real window. When a round of tool calls would push the next
   request over it, the results of earlier rounds are shortened first (a result over 8,000 characters keeps its first
   4,000 and last 1,000 characters and says how much is hidden), then dropped; only if even the newest results do not
-  fit, the turn stops with a note. If the server refuses a request as too long, it is sent once more, shorter.
+  fit, the turn stops with a note. If the server refuses a request as too long, at once or inside the reply, it is sent once more, shorter.
 - **Summaries:** `/compact` asks the model to write notes about the oldest turns and replaces them with those notes,
   keeping the newest turns as they are. The notes go first in every request, marked as notes and not instructions;
   there is only ever one summary (the next one builds on it). A summary that is empty, has no headings, is longer than

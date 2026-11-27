@@ -30,6 +30,7 @@ type Agent struct {
 	instructions string
 	tools        *tools.Registry
 	idleTimeout  time.Duration
+	busyDelay    time.Duration // the pause before a retry after a fault that passes; a field so tests can shorten it
 	history      history
 	grants       map[grant]bool // what the user allowed for the session; lasts until the program exits
 	lastInput    int64          // input tokens the server counted for the last request; 0 until one is known
@@ -49,7 +50,7 @@ func New(client openai.Client, settings Settings, instructions string, registry 
 	if settings.MaxContextTokens <= 0 {
 		settings.MaxContextTokens = defaultMaxContextTokens
 	}
-	return &Agent{client: client, settings: settings, instructions: instructions, tools: registry, idleTimeout: defaultIdleTimeout, grants: map[grant]bool{}, todos: &tools.TodoList{}, loopWarnAt: loopWarnRepeats}
+	return &Agent{client: client, settings: settings, instructions: instructions, tools: registry, idleTimeout: defaultIdleTimeout, busyDelay: defaultBusyDelay, grants: map[grant]bool{}, todos: &tools.TodoList{}, loopWarnAt: loopWarnRepeats}
 }
 
 // Send starts a turn for the user's text and streams events on the returned channel.

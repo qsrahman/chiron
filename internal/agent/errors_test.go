@@ -76,6 +76,13 @@ func TestIsContextOverflow(t *testing.T) {
 		{&openai.Error{StatusCode: 400, Message: "prompt is too long"}, true},
 		{&openai.Error{StatusCode: 400, Message: "token limit exceeded"}, true},
 		{&openai.Error{StatusCode: 400, Message: "invalid image"}, false},
+		{&openai.Error{StatusCode: 400, Message: "too many input tokens"}, true},
+		{&openai.Error{StatusCode: 400, Message: "Input length 9000 exceeds the maximum"}, true},
+		{&openai.Error{StatusCode: 400, Message: "request exceeds the available context size"}, true},
+		{&openai.Error{StatusCode: 400, Message: "token rate limit exceeded"}, false},
+		{&openai.Error{StatusCode: 400, Message: "exceeded 1000 tokens per minute"}, false},
+		{&streamFault{code: "context_length_exceeded"}, true},
+		{&streamFault{code: "server_error", message: "boom"}, false},
 		{&openai.Error{StatusCode: 500, Message: "context length exceeded"}, false},
 		{errors.New("context length exceeded"), false},
 	}

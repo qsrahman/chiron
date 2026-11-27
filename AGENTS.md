@@ -83,6 +83,9 @@ text from a redraw, no leftover stand-in character, no banner.
 - **Text from the model, tools and servers is sanitised** before display (`sanitize.go`, applied in `render` and to
   the streamed text and the session info). The Markdown renderer decodes HTML entities after that, so its input also goes
   through `removeUnsafeEntities`. New code that shows such text must go through the same path.
+- **API errors:** an error status reaches the code as `*openai.Error` only because `newClient` installs
+  `agent.ReadableErrors`; a fault inside an accepted response is a `streamFault` (`fault.go`), whose code and words
+  decide whether it is retried (`respond`) or the request shortened (`isContextOverflow`).
 - **Config:** unknown keys are an error; the only environment variable is `OPENAI_API_KEY`; the client is always
   built with an explicit base URL (`newClient`), because the OpenAI library reads `OPENAI_BASE_URL` itself.
 - **Tool errors go to the model** as the tool output text, not as Go errors that abort the loop. A panic in a tool is
