@@ -8,6 +8,11 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 - `/model` lists the models the server offers, and their names are completed after it.
 
+### Changed
+
+- **Only the newest 50 saved sessions of a directory are kept.** Starting a new one deletes the older ones beyond that.
+  Before, none was ever deleted.
+
 ### Fixed
 
 - A server that ended a reply with a passing fault (overloaded, a rate limit, a server error) ended the turn at once.

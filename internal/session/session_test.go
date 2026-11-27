@@ -3,6 +3,7 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -237,5 +238,49 @@ func TestDeleteRemovesOnlyTheNamedSession(t *testing.T) {
 	}
 	if err := s.Delete("../x"); err == nil || !strings.Contains(err.Error(), "not a session id") {
 		t.Errorf("an id that is not an id: %v", err)
+	}
+}
+
+func TestPruneKeepsTheNewestSessionsOfADirectory(t *testing.T) {
+	state := t.TempDir()
+	s := NewStore(state)
+	// Written oldest first, with times far enough apart for any file system.
+	start := time.Now().Add(-time.Hour)
+	for i, f := range []File{
+		file("a-current", "/w", start), file("a-1", "/w", start), file("b-1", "/other", start),
+		file("a-2", "/w", start), file("a-3", "/w", start),
+	} {
+		if _, err := s.Save(f); err != nil {
+			t.Fatal(err)
+		}
+		at := start.Add(time.Duration(i) * time.Minute)
+		if err := os.Chtimes(filepath.Join(state, "sessions", f.ID+".json"), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	damaged := filepath.Join(state, "sessions", "damaged.json")
+	if err := os.WriteFile(damaged, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// The session in use is the oldest here, and stays all the same.
+	if err := s.Prune("/w", 3, "a-current"); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := s.List(func(Info) bool { return true }, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	for _, i := range list {
+		left = append(left, i.ID)
+	}
+	slices.Sort(left)
+	if want := []string{"a-2", "a-3", "a-current", "b-1"}; !slices.Equal(left, want) {
+		t.Errorf("left %v, want %v", left, want)
+	}
+	if _, err := os.Stat(damaged); err != nil {
+		t.Errorf("a file that cannot be read must be left alone: %v", err)
 	}
 }

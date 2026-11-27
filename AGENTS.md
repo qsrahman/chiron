@@ -11,7 +11,7 @@ internal/agent/     loop, events, history, system prompt (no UI imports)
 internal/tools/     Tool interface, MustNew, Registry, the todo list and its tool (other built-in tools are added from Phase 5)
 internal/tui/       Bubble Tea chat UI (model, theme, layout, cards, chrome; golden tests in testdata/)
 internal/mcp/       MCP servers adapted to tools.Tool: connect, adapter, results, transports (Phase 4b)
-internal/session/   saved conversations: private files, atomic writes, list and load (Phase 9b)
+internal/session/   saved conversations: private files, atomic writes, list, load and prune (Phase 9b)
 ```
 
 Packages are created in the phase that needs them; do not add empty ones.

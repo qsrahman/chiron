@@ -25,6 +25,9 @@ type saving struct {
 	stamp    time.Time // modification time of the file as this process last wrote or read it
 }
 
+// sessionsKept is how many sessions of a directory are kept: starting a new one deletes the oldest beyond it.
+const sessionsKept = 50
+
 // SessionListLimit is how many sessions a list shows: the newest.
 const SessionListLimit = 20
 
@@ -53,7 +56,8 @@ func (a *Agent) persist() (note string, err error) {
 			s.id = ""
 		}
 	}
-	if s.id == "" {
+	started := s.id == ""
+	if started {
 		s.id, s.created = session.NewID(now), now
 	}
 	if s.title == "" {
@@ -78,6 +82,11 @@ func (a *Agent) persist() (note string, err error) {
 		}
 	}
 	s.stamp, err = s.store.Save(f)
+	// Once for each new file, not on every save: pruning reads all of them. A failure to delete an old one is no
+	// failure of this save, and the next new session tries again.
+	if err == nil && started {
+		_ = s.store.Prune(s.workDir, sessionsKept, s.id)
+	}
 	return note, err
 }
 

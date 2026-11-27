@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
 	"os"
@@ -519,5 +520,26 @@ func TestDeleteSessionDeletesAnotherSessionButNeverTheCurrentOne(t *testing.T) {
 	}
 	if err := newTestAgent(srv).DeleteSession("x"); err != ErrSessionsOff {
 		t.Errorf("with sessions off: %v", err)
+	}
+}
+
+func TestANewSessionPrunesTheOldestOnes(t *testing.T) {
+	store := session.NewStore(t.TempDir())
+	for i := range sessionsKept + 2 {
+		old := session.File{ID: fmt.Sprintf("20200101-000000-%04d", i), Dir: "/work"}
+		if _, err := store.Save(old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := saved(t, newScriptedServer(t, chatReply("one")), store)
+
+	drain(t, a.Send(context.Background(), "first question"))
+
+	list, err := store.List(func(session.Info) bool { return true }, 0)
+	if err != nil || len(list) != sessionsKept {
+		t.Fatalf("%d sessions left, %v; want %d", len(list), err, sessionsKept)
+	}
+	if !slices.ContainsFunc(list, func(i session.Info) bool { return i.ID == a.SessionID() }) {
+		t.Error("the session in use is gone")
 	}
 }

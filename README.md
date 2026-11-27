@@ -416,8 +416,9 @@ atomically: a failed write leaves the previous one. A conversation that never go
 - **Reasoning items** are dropped when you resume with another model or server than the one that wrote them, and when
   you switch with `/model`; they only make sense to the model that produced them. Everything else is kept.
 - **Opt out** with `"sessions": false` in the config file or `--no-save` for one run. Resuming still works with
-  saving off. The files hold your prompts, the answers and tool results, and the working directory; they are not
-  pruned, so delete old ones by hand.
+  saving off. The files hold your prompts, the answers and tool results, and the working directory.
+- **Only the newest 50 sessions of a directory are kept.** When a new conversation is first saved, the older ones of
+  that directory beyond 50 are deleted.
 - **Prompt history** (`Up`, `Ctrl-R`) is kept next to them, in `$XDG_STATE_HOME/chiron/history` (private, the last 1,000
   prompts, one JSON string a line, no repeats in a row, and a prompt that starts with a space is not remembered, as in a
   shell, for what should leave no trace), and follows the same switch: with sessions off, prompts are

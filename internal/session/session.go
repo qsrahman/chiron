@@ -120,6 +120,21 @@ func (s *Store) Delete(id string) error {
 	return nil
 }
 
+// Prune deletes the sessions that began in dir beyond the keep most recently written ones. The session current, which
+// is in use, counts among those kept and is never deleted. A file that cannot be read is left alone, since it does not
+// say which directory it belongs to.
+func (s *Store) Prune(dir string, keep int, current string) error {
+	others, err := s.List(func(i Info) bool { return i.Dir == dir && i.ID != current }, 0)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, old := range others[min(max(keep-1, 0), len(others)):] {
+		errs = append(errs, s.Delete(old.ID))
+	}
+	return errors.Join(errs...)
+}
+
 // Stamp is the modification time of the session's file, zero if there is none. A writer that remembers the stamp of
 // its last Save can tell that another process has written the file since.
 func (s *Store) Stamp(id string) (time.Time, error) {
