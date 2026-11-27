@@ -4,6 +4,11 @@ All notable changes to the codebase are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Fixed
+
+- Error answers from compatible servers are read: `{"error": "..."}` showed a JSON decoding error instead of the status,
+  and `detail`, a plain `message` or plain text showed only the status text.
+
 ## [0.11.1] - 2026-11-26
 
 ### Changed

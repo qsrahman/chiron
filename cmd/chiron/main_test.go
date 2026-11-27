@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
 
@@ -305,6 +306,22 @@ func TestEnvironmentBaseURLCannotRedirectTheKey(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// A compatible server may shape its errors in a way the library cannot read.
+func TestTheClientReadsErrorBodiesOfCompatibleServers(t *testing.T) {
+	transport := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 400, Header: http.Header{"Content-Type": {"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{"error":"bad thing"}`))}, nil
+	})
+	client := newClient(config.Config{}, option.WithHTTPClient(&http.Client{Transport: transport}), option.WithMaxRetries(0))
+
+	_, err := client.Responses.New(context.Background(), responses.ResponseNewParams{Model: "m"})
+
+	var api *openai.Error
+	if !errors.As(err, &api) || api.StatusCode != 400 || api.Message != "bad thing" {
+		t.Errorf("error = %v, want API error 400 with the server's message", err)
+	}
+}
 
 // toolCallStream is a response that calls the mutating tool "write", and then a plain answer.
 const toolCallStream = `event: response.completed

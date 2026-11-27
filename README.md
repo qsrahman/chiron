@@ -163,6 +163,8 @@ because tool language in such a prompt makes some models type tool calls as text
 - **A stream that breaks** (it ends with no final response, or the connection drops) is sent again, up to twice,
   with a notice; the text of the failed attempt is dropped from the screen. In `-p` mode that text is already on
   stdout, so after a retry the answer can start over (the notice goes to stderr).
+- **Error answers from compatible servers** are read in their various shapes (`error` as text, `detail`, `errors`, a
+  plain `message` or plain text), so the reason is shown and a request refused as too long is recognized.
 - **An empty reply** is asked for again once. A refusal, a failed or incomplete response, or an API error ends the
   turn with a message; the usual causes come with a hint (wrong key, wrong model or base URL, quota, a conversation
   that is too long). A reply that was cut off after some text keeps that text in the conversation.

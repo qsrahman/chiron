@@ -232,7 +232,7 @@ func runPrompt(ctx context.Context, a *agent.Agent, prompt string, w, notices io
 // extra options are applied last; tests use them to replace the HTTP transport.
 func newClient(cfg config.Config, extra ...option.RequestOption) openai.Client {
 	baseURL := cmp.Or(cfg.BaseURL, openAIBaseURL)
-	opts := []option.RequestOption{option.WithBaseURL(baseURL)}
+	opts := []option.RequestOption{option.WithBaseURL(baseURL), option.WithMiddleware(agent.ReadableErrors)}
 	if cfg.APIKey != "" {
 		opts = append(opts, option.WithAPIKey(cfg.APIKey))
 	}
